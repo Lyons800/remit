@@ -1,7 +1,4 @@
-'use client';
-
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -14,81 +11,48 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
-import {
-  dayInvoices,
-  HELD_INVOICE_ID,
-  initialQueue,
-  type QueueInvoice,
-} from '../lib/demo';
+import { auditEvents, initialQueue, settlements } from '../lib/demo';
 
-export default function QueuePage() {
-  const [rows, setRows] = useState<readonly QueueInvoice[]>(initialQueue);
-  const [running, setRunning] = useState(false);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+const kpis = [
+  { hint: 'this month', label: 'Paid by agent', value: '990' },
+  { hint: 'awaiting people', label: 'Held for approval', value: '2' },
+  { hint: 'on Hedera Testnet', label: 'Settled volume', value: '€142,380' },
+  { hint: 'routine invoices', label: 'Human minutes', value: '0' },
+] as const;
 
-  useEffect(() => {
-    const pending = timers.current;
-    return () => pending.forEach(clearTimeout);
-  }, []);
-
-  const runDay = useCallback(() => {
-    if (running) return;
-    setRunning(true);
-    dayInvoices.forEach((invoice, index) => {
-      timers.current.push(
-        setTimeout(() => {
-          setRows((current) => [invoice, ...current]);
-          if (index === dayInvoices.length - 1) setRunning(false);
-        }, 700 * (index + 1)),
-      );
-    });
-  }, [running]);
-
-  const paid = rows.filter((row) => row.status === 'paid').length;
-  const held = rows.filter((row) => row.status === 'held').length;
+export default function DashboardPage() {
+  const held = initialQueue.filter((invoice) => invoice.status === 'held');
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Queue</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            The agent pays routine invoices. Only risky changes wait for people.
+            The agent handles the volume. This page shows what needs you.
           </p>
         </div>
-        <Button disabled={running} onClick={runDay}>
-          {running ? 'Agent working…' : 'Run the day'}
-        </Button>
+        <Link href="/invoices">
+          <Button variant="outline">Open queue</Button>
+        </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-        <Card>
-          <CardContent className="py-3">
-            <p className="text-xs text-muted-foreground">Paid by agent</p>
-            <p className="tabular text-2xl font-semibold">{paid}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-3">
-            <p className="text-xs text-muted-foreground">
-              Held for human authority
-            </p>
-            <p className="tabular text-2xl font-semibold">{held}</p>
-          </CardContent>
-        </Card>
-        <Card className="col-span-2 md:col-span-1">
-          <CardContent className="py-3">
-            <p className="text-xs text-muted-foreground">
-              Human minutes on routine invoices
-            </p>
-            <p className="tabular text-2xl font-semibold">0</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {kpis.map((kpi) => (
+          <Card key={kpi.label}>
+            <CardContent className="py-3">
+              <p className="text-xs text-muted-foreground">{kpi.label}</p>
+              <p className="tabular text-2xl font-semibold">{kpi.value}</p>
+              <p className="text-xs text-muted-foreground">{kpi.hint}</p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Invoices</CardTitle>
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle>Needs your decision</CardTitle>
+          <Badge variant="destructive">{held.length} held</Badge>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -97,41 +61,27 @@ export default function QueuePage() {
                 <TableHead>Invoice</TableHead>
                 <TableHead>Supplier</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Handled by</TableHead>
+                <TableHead>Why it stopped</TableHead>
+                <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
-                <TableRow
-                  className={row.status === 'held' ? 'bg-destructive/5' : ''}
-                  key={row.id}
-                >
-                  <TableCell className="font-medium">
-                    {row.id === HELD_INVOICE_ID ? (
-                      <Link
-                        className="text-primary underline-offset-2 hover:underline"
-                        href={`/approvals/${row.id}`}
-                      >
-                        {row.id}
-                      </Link>
-                    ) : (
-                      row.id
-                    )}
-                  </TableCell>
-                  <TableCell>{row.supplier}</TableCell>
+              {held.map((invoice) => (
+                <TableRow className="bg-destructive/5" key={invoice.id}>
+                  <TableCell className="font-medium">{invoice.id}</TableCell>
+                  <TableCell>{invoice.supplier}</TableCell>
                   <TableCell className="tabular text-right">
-                    {row.amount}
-                  </TableCell>
-                  <TableCell>
-                    {row.status === 'paid' ? (
-                      <Badge>Paid</Badge>
-                    ) : (
-                      <Badge variant="destructive">Held</Badge>
-                    )}
+                    {invoice.amount}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {row.handledBy}
+                    {invoice.handledBy}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Link href={`/approvals/${invoice.id}`}>
+                      <Button size="sm" variant="secondary">
+                        Review
+                      </Button>
+                    </Link>
                   </TableCell>
                 </TableRow>
               ))}
@@ -139,6 +89,63 @@ export default function QueuePage() {
           </Table>
         </CardContent>
       </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent settlements</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {settlements.slice(0, 4).map((settlement) => (
+                  <TableRow key={settlement.invoiceId}>
+                    <TableCell className="font-medium">
+                      {settlement.invoiceId}
+                    </TableCell>
+                    <TableCell className="tabular text-right">
+                      {settlement.amount}
+                    </TableCell>
+                    <TableCell>
+                      <Badge>Consumed</Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Latest control decisions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ol className="flex flex-col gap-2 text-sm">
+              {auditEvents.slice(0, 4).map((event) => (
+                <li
+                  className={`border-l-2 pl-3 text-xs leading-relaxed ${
+                    event.kind === 'refuse'
+                      ? 'border-destructive'
+                      : 'border-primary'
+                  }`}
+                  key={event.text}
+                >
+                  <span className="text-muted-foreground">{event.at} · </span>
+                  {event.text}
+                </li>
+              ))}
+            </ol>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
