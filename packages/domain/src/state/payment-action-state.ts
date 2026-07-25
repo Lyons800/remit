@@ -325,7 +325,9 @@ export type VerificationQuoteRequestEffect = Readonly<{
   actionDigest: string;
   atomicGroupKey: string;
   evidencePolicyDigest: string;
+  eventId: string;
   expiresAt: string;
+  idempotencyKey: string;
   serviceId: string;
   serviceKeyId: string;
   serviceNetworkId: string;
@@ -1725,7 +1727,9 @@ function verifyTerminalState(
   return validateFactsForState(previous, aggregate.authorization, facts);
 }
 
-function verifyAggregate(input: unknown): DomainResult<PaymentActionAggregate> {
+export function hydratePaymentActionAggregate(
+  input: unknown,
+): DomainResult<PaymentActionAggregate> {
   if (
     !isRecord(input) ||
     !hasExactKeys(input, AGGREGATE_KEYS) ||
@@ -1842,6 +1846,10 @@ function settlementSubmissionEventId(attempt: FrozenSettlementAttempt): string {
   return `invoiceguard:settlement:submit:v1:${attempt.actionDigest}:${attempt.attemptId}`;
 }
 
+function verificationQuoteEventId(aggregate: PaymentActionAggregate): string {
+  return `invoiceguard:verification:quote:v1:${aggregate.authorization.envelope.actionDigest}:${aggregate.authorization.decision.evidencePolicy.digest}`;
+}
+
 function transitionResult(
   aggregate: PaymentActionAggregate,
   next: PaymentActionState,
@@ -1867,7 +1875,7 @@ function transitionResult(
             now,
           ),
   });
-  const verified = verifyAggregate(nextAggregate);
+  const verified = hydratePaymentActionAggregate(nextAggregate);
   if (!verified.ok) {
     return verified;
   }
@@ -2369,7 +2377,7 @@ export function transitionPaymentAction(
   eventInput: unknown,
   contextInput: unknown,
 ): DomainResult<PaymentActionTransition> {
-  const aggregateResult = verifyAggregate(aggregateInput);
+  const aggregateResult = hydratePaymentActionAggregate(aggregateInput);
   if (!aggregateResult.ok) {
     return aggregateResult;
   }
@@ -2434,13 +2442,16 @@ export function transitionPaymentAction(
       return refuse('VERIFICATION_REQUIRED');
     }
     const group = atomicGroupKey(aggregate);
+    const eventId = verificationQuoteEventId(aggregate);
     return transitionResult(aggregate, next, eventType, now, {}, [
       Object.freeze({
         actionDigest: aggregate.authorization.envelope.actionDigest,
         atomicGroupKey: group,
         evidencePolicyDigest:
           aggregate.authorization.decision.evidencePolicy.digest,
+        eventId,
         expiresAt: aggregate.authorization.actionCore.expiresAt,
+        idempotencyKey: eventId,
         serviceId: aggregate.authorization.decision.evidencePolicy.serviceId,
         serviceKeyId:
           aggregate.authorization.decision.evidencePolicy.serviceKeyId,
