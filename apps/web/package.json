@@ -11,9 +11,14 @@
     "typecheck": "next typegen && tsc -p tsconfig.typecheck.json --noEmit"
   },
   "dependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "next": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@types/node": "catalog:",
