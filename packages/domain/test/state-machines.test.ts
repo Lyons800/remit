@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { hashAdapterRecord } from '../src/facts/adapter-record.js';
 import {
   actionFactBinding,
   createAdapterVerifiedApprovalFact,
@@ -10,6 +11,7 @@ import {
   createAdapterVerifiedSettlementUncertainty,
   createAdapterVerifiedVerificationPayment,
   createAtomicSettlementConsumptionClaim,
+  encodeCanonicalSignedTransactionBytes,
   createFrozenSettlementAttempt,
   createMandateReservationLedger,
   createPaymentActionAggregate,
@@ -36,6 +38,7 @@ import {
   type PaymentActionAggregate,
   type PaymentActionEvent,
   type PaymentActionTransition,
+  type PaymentAuthorizationBasis,
   type RequestingAgentExecutionFactCore,
 } from '../src/index.js';
 import {
@@ -92,14 +95,23 @@ function requestingAgent(
     actionHumanPrincipal: 'requesting-human-1',
     adapterId: 'world-agentbook-adapter',
     agentBackingRecordId: 'agent-backing-record-1',
+    agentBookRegistry: 'world-agentbook:eip155:480',
     agentBookStatus: 'CURRENT',
     agentId: 'payment-agent-1',
     agentTenantPrincipal: 'agent-tenant-1',
+    audience: 'invoiceguard:settlement',
     companyRoleStatus: 'CURRENT',
     expiresAt: FACT_EXPIRES_AT,
     factId: `requesting-agent:${verifiedAt}`,
+    grantDigest: '7'.repeat(64),
+    grantId: 'payment-executor-grant',
+    grantStatus: 'CURRENT',
+    grantVersion: 1,
     role: 'PAYMENT_EXECUTOR',
     roleCredentialId: 'role-credential-payment-executor-1',
+    scope: 'payments:execute',
+    subjectId: 'payment-agent-1',
+    tenantId: frozenAuthorization.actionCore.organizationId,
     verifiedAt,
     ...overrides,
   });
@@ -160,11 +172,14 @@ function approvalFacts(
 function verificationPayment(verifiedAt = T3) {
   return createAdapterVerifiedVerificationPayment(humanAuthorization, {
     adapterId: 'hedera-x402-adapter',
-    networkId: 'hedera:296',
     paidAt: verifiedAt,
+    paymentAttemptId: 'verification-payment-attempt-1',
+    paymentNetworkId: 'hedera:296',
+    paymentTransactionId: '0.0.1000@1753437603.000000001',
+    quoteDigest: '6'.repeat(64),
+    quoteId: 'verification-quote-1',
     servicePaymentId: 'verification-payment-1',
     serviceRequestDigest: '7'.repeat(64),
-    transactionId: '0.0.1000@1753437603.000000001',
   });
 }
 
@@ -189,7 +204,7 @@ function frozenAttempt(
   overrides: Partial<{
     adapterId: string;
     attemptId: string;
-    signedBytesHash: string;
+    signedTransactionBytes: string;
     transactionId: string;
   }> = {},
 ): FrozenSettlementAttempt {
@@ -198,7 +213,9 @@ function frozenAttempt(
     attemptId: 'settlement-attempt-1',
     createdAt,
     expiresAt: ACTION_EXPIRES_AT,
-    signedBytesHash: 'f'.repeat(64),
+    signedTransactionBytes: encodeCanonicalSignedTransactionBytes(
+      Buffer.from('invoiceguard-frozen-settlement-transaction-1'),
+    ),
     transactionId: 'hedera-frozen-transaction-1',
     ...overrides,
   });
@@ -212,12 +229,15 @@ function settlementReceipt(
   return createAdapterVerifiedSettlementReceipt(frozenAuthorization, attempt, {
     adapterId: 'hedera-settlement-adapter',
     receiptId: `settlement-receipt:${attempt.attemptId}`,
+    receiptSource: 'MIRROR_NODE',
     settledAt,
+    sourceNodeId: 'hedera-mirror-node-testnet',
   });
 }
 
 function consumptionClaim(
   frozenAuthorization: typeof authorization,
+  aggregate: PaymentActionAggregate,
   attempt: FrozenSettlementAttempt,
   receipt: ReturnType<typeof settlementReceipt>,
   consumedAt: string,
@@ -228,8 +248,14 @@ function consumptionClaim(
     receipt,
     {
       adapterId: 'postgres-atomic-payment-writer',
+      atomicGroupKey: `payment:${attempt.actionDigest}:v${
+        aggregate.metadata.version + 1
+      }`,
       claimId: `settlement-consumption:${attempt.attemptId}`,
       consumedAt,
+      expectedAggregateVersion: aggregate.metadata.version,
+      writerId: 'postgres-payment-writer',
+      writerVersion: 1,
     },
   );
 }
@@ -248,6 +274,27 @@ function emptyMandateLedger(now = T3): MandateReservationLedger {
     throw new Error('mandate ledger fixture must be valid');
   }
   return ledger.value;
+}
+
+function replaceBasisAuthority(
+  basis: PaymentAuthorizationBasis,
+  authority: ReturnType<typeof requestingAgent>,
+): PaymentAuthorizationBasis {
+  const { basisDigest, ...currentCore } = basis;
+  void basisDigest;
+  const core = Object.freeze({
+    ...currentCore,
+    requestingAgent: authority,
+  });
+  return Object.freeze({
+    ...core,
+    basisDigest: hashAdapterRecord(
+      basis.kind === 'MANDATE'
+        ? 'MANDATE_AUTHORIZATION_BASIS'
+        : 'HUMAN_AUTHORIZATION_BASIS',
+      core,
+    ),
+  });
 }
 
 function mandateThroughEvidence(): PaymentActionAggregate {
@@ -279,20 +326,30 @@ function auditedMandate() {
   if (basis === null) {
     throw new Error('authorization basis must exist');
   }
+  const auditAuthority = requestingAgent(authorization, T4);
   const authorizationAudit = createAdapterVerifiedAuthorizationAudit(
     authorization,
     basis.basisDigest,
+    auditAuthority,
     {
       adapterId: 'hedera-consensus-adapter',
       auditId: 'authorization-audit-1',
       committedAt: T4,
+      networkId: 'hedera:296',
       topicId: '0.0.9000',
       transactionId: '0.0.1000@1753437604.000000001',
+      writerAccountId: '0.0.1000',
+      writerId: 'authorization-audit-writer',
+      writerKeyId: 'hedera-audit-key-1',
     },
   );
   return applyEvent(
     authorized.aggregate,
-    { authorizationAudit, type: 'COMMIT_AUDIT' },
+    {
+      authorizationAudit,
+      requestingAgent: auditAuthority,
+      type: 'COMMIT_AUDIT',
+    },
     T4,
   );
 }
@@ -363,20 +420,30 @@ function auditedHuman() {
   if (basis === null) {
     throw new Error('human basis must exist');
   }
+  const auditAuthority = requestingAgent(humanAuthorization, T7);
   const audit = createAdapterVerifiedAuthorizationAudit(
     humanAuthorization,
     basis.basisDigest,
+    auditAuthority,
     {
       adapterId: 'hedera-consensus-adapter',
       auditId: 'authorization-audit-human-1',
       committedAt: T7,
+      networkId: 'hedera:296',
       topicId: '0.0.9000',
       transactionId: '0.0.1000@1753437607.000000001',
+      writerAccountId: '0.0.1000',
+      writerId: 'authorization-audit-writer',
+      writerKeyId: 'hedera-audit-key-1',
     },
   );
   return applyEvent(
     authorized.aggregate,
-    { authorizationAudit: audit, type: 'COMMIT_AUDIT' },
+    {
+      authorizationAudit: audit,
+      requestingAgent: auditAuthority,
+      type: 'COMMIT_AUDIT',
+    },
     T7,
   );
 }
@@ -558,7 +625,13 @@ describe('persisted payment-action aggregate', () => {
       throw new Error('queued mandate fixtures must carry their basis');
     }
     const receipt = settlementReceipt(authorization, attempt, T6);
-    const claim = consumptionClaim(authorization, attempt, receipt, T6);
+    const claim = consumptionClaim(
+      authorization,
+      queued.aggregate,
+      attempt,
+      receipt,
+      T6,
+    );
     const settled = applyEvent(
       queued.aggregate,
       {
@@ -650,6 +723,103 @@ describe('persisted payment-action aggregate', () => {
     });
   });
 
+  it.each([
+    {
+      label: 'revoked company role',
+      authority: requestingAgent(authorization, T3, {
+        companyRoleStatus: 'REVOKED',
+      }),
+    },
+    {
+      label: 'expired company role',
+      authority: requestingAgent(authorization, T3, {
+        companyRoleStatus: 'EXPIRED',
+      }),
+    },
+    {
+      label: 'changed AgentBook backing',
+      authority: requestingAgent(authorization, T3, {
+        agentBookStatus: 'CHANGED',
+      }),
+    },
+    {
+      label: 'expired retained fact',
+      authority: requestingAgent(authorization, T2, {
+        expiresAt: T3,
+      }),
+    },
+    {
+      label: 'revoked executor grant',
+      authority: requestingAgent(authorization, T3, {
+        grantStatus: 'REVOKED',
+      }),
+    },
+    {
+      label: 'wrong executor scope',
+      authority: requestingAgent(authorization, T3, {
+        scope: 'payments:read',
+      }),
+    },
+  ])('refuses a hydrated basis with $label', ({ authority }) => {
+    const authorized = authorizedMandate();
+    const basis = authorized.aggregate.authorizationBasis;
+    if (basis === null) {
+      throw new Error('authorization basis must exist');
+    }
+    expect(
+      transitionPaymentAction(
+        {
+          ...authorized.aggregate,
+          authorizationBasis: replaceBasisAuthority(basis, authority),
+        },
+        { type: 'START_AUTHORIZATION_RECOVERY' },
+        { now: T4 },
+      ),
+    ).toMatchObject({
+      error: { code: 'POLICY_CORE_BINDING_MISMATCH' },
+      ok: false,
+    });
+  });
+
+  it('refuses hydrated audit authority whose chronology follows the audit commit', () => {
+    const audited = auditedMandate();
+    const basis = audited.aggregate.authorizationBasis;
+    if (basis === null) {
+      throw new Error('authorization basis must exist');
+    }
+    const lateAuthority = requestingAgent(authorization, T5);
+    const lateAudit = createAdapterVerifiedAuthorizationAudit(
+      authorization,
+      basis.basisDigest,
+      lateAuthority,
+      {
+        adapterId: 'hedera-consensus-adapter',
+        auditId: 'authorization-audit-late-authority',
+        committedAt: T4,
+        networkId: 'hedera:296',
+        topicId: '0.0.9000',
+        transactionId: '0.0.1000@1753437604.000000099',
+        writerAccountId: '0.0.1000',
+        writerId: 'authorization-audit-writer',
+        writerKeyId: 'hedera-audit-key-1',
+      },
+    );
+    expect(
+      transitionPaymentAction(
+        {
+          ...audited.aggregate,
+          auditAuthority: lateAuthority,
+          authorizationAudit: lateAudit,
+        },
+        { reservationLedger: null, type: 'CANCEL' },
+        { now: T5 },
+      ),
+    ).toMatchObject({
+      error: { code: 'POLICY_CORE_BINDING_MISMATCH' },
+      ok: false,
+    });
+  });
+
   it('compares retries with the aggregate-held frozen attempt', () => {
     const queued = queuedMandate();
     const attempt = queued.aggregate.settlementAttempt;
@@ -673,32 +843,134 @@ describe('persisted payment-action aggregate', () => {
     );
     expect(recovery.effects).toEqual([]);
     expect(recovery.aggregate.authorizationBasis?.kind).toBe('MANDATE');
+    const recoveryBasis = recovery.aggregate.authorizationBasis;
+    if (recoveryBasis === null || recoveryBasis.kind !== 'MANDATE') {
+      throw new Error('recovery must retain its mandate basis');
+    }
 
-    expect(
-      transitionPaymentAction(
-        recovery.aggregate,
-        { candidate: attempt, type: 'RETRY_SAME_TRANSACTION' },
-        { now: T7 },
-      ),
-    ).toMatchObject({
+    const retried = transitionPaymentAction(
+      recovery.aggregate,
+      {
+        approvals: null,
+        mandate: activeMandateAggregate,
+        requestingAgent: requestingAgent(authorization, T7),
+        reservationLedger: recoveryBasis.reservedLedger,
+        type: 'RETRY_SAME_TRANSACTION',
+      },
+      { now: T7 },
+    );
+    expect(retried).toMatchObject({
       ok: true,
-      value: { aggregate: { state: 'SETTLEMENT_PENDING' } },
+      value: {
+        aggregate: {
+          settlementUncertainty: uncertainty,
+          state: 'SETTLEMENT_PENDING',
+        },
+        effects: [
+          {
+            attempt,
+            type: 'SETTLEMENT_RETRY_REQUEST',
+          },
+        ],
+      },
     });
 
     const alternate = frozenAttempt(authorization, T5, {
-      attemptId: 'settlement-attempt-2',
-      signedBytesHash: 'e'.repeat(64),
-      transactionId: 'hedera-frozen-transaction-2',
+      adapterId: 'substituted-settlement-adapter',
     });
     expect(
       transitionPaymentAction(
         recovery.aggregate,
-        { candidate: alternate, type: 'RETRY_SAME_TRANSACTION' },
+        {
+          approvals: null,
+          attempt: alternate,
+          mandate: activeMandateAggregate,
+          requestingAgent: requestingAgent(authorization, T7),
+          reservationLedger: recoveryBasis.reservedLedger,
+          type: 'RETRY_SAME_TRANSACTION',
+        },
         { now: T7 },
       ),
     ).toMatchObject({
       error: { code: 'SETTLEMENT_TRANSACTION_MISMATCH' },
       ok: false,
+    });
+  });
+
+  it('preserves settlement uncertainty when retry authority is no longer valid', () => {
+    const queued = queuedMandate();
+    const attempt = queued.aggregate.settlementAttempt;
+    const basis = queued.aggregate.authorizationBasis;
+    if (attempt === null || basis === null || basis.kind !== 'MANDATE') {
+      throw new Error('queued mandate must retain its attempt and basis');
+    }
+    const uncertainty = createAdapterVerifiedSettlementUncertainty(
+      authorization,
+      attempt,
+      {
+        adapterId: 'hedera-settlement-adapter',
+        observedAt: T6,
+        reason: 'SUBMISSION_RESULT_UNKNOWN',
+        uncertaintyId: 'settlement-uncertainty-revalidation',
+      },
+    );
+    const recovery = applyEvent(
+      queued.aggregate,
+      { type: 'START_SETTLEMENT_RECOVERY', uncertainty },
+      T6,
+    ).aggregate;
+    const retry = {
+      approvals: null,
+      mandate: activeMandateAggregate,
+      reservationLedger: basis.reservedLedger,
+      type: 'RETRY_SAME_TRANSACTION',
+    } as const;
+
+    expect(
+      transitionPaymentAction(
+        recovery,
+        {
+          ...retry,
+          requestingAgent: requestingAgent(authorization, T7, {
+            grantStatus: 'REVOKED',
+          }),
+        },
+        { now: T7 },
+      ),
+    ).toMatchObject({
+      error: { code: 'EXECUTOR_GRANT_REVOKED' },
+      ok: false,
+    });
+    expect(
+      transitionPaymentAction(
+        recovery,
+        {
+          ...retry,
+          mandate: { ...activeMandateAggregate, state: 'PAUSED' },
+          requestingAgent: requestingAgent(authorization, T7),
+        },
+        { now: T7 },
+      ),
+    ).toMatchObject({
+      error: { code: 'MANDATE_NOT_ACTIVE' },
+      ok: false,
+    });
+    expect(
+      transitionPaymentAction(
+        recovery,
+        {
+          ...retry,
+          requestingAgent: requestingAgent(authorization, T7),
+        },
+        { now: ACTION_EXPIRES_AT },
+      ),
+    ).toMatchObject({
+      error: { code: 'ACTION_EXPIRED' },
+      ok: false,
+    });
+    expect(recovery).toMatchObject({
+      settlementUncertainty: uncertainty,
+      state: 'SETTLEMENT_RECOVERY',
     });
   });
 
@@ -710,13 +982,98 @@ describe('persisted payment-action aggregate', () => {
       throw new Error('queued mandate must carry its attempt and basis');
     }
     const alternate = frozenAttempt(authorization, T5, {
-      attemptId: 'settlement-attempt-2',
-      signedBytesHash: 'e'.repeat(64),
-      transactionId: 'hedera-frozen-transaction-2',
+      adapterId: 'substituted-settlement-adapter',
     });
     const receipt = settlementReceipt(authorization, alternate, T6);
-    const claim = consumptionClaim(authorization, alternate, receipt, T6);
+    const claim = consumptionClaim(
+      authorization,
+      queued.aggregate,
+      alternate,
+      receipt,
+      T6,
+    );
 
+    expect(
+      transitionPaymentAction(
+        queued.aggregate,
+        {
+          consumptionClaim: claim,
+          receipt,
+          reservationLedger: basis.reservedLedger,
+          type: 'SETTLE_CONSENSUS',
+        },
+        { now: T6 },
+      ),
+    ).toMatchObject({
+      error: { code: 'SETTLEMENT_TRANSACTION_MISMATCH' },
+      ok: false,
+    });
+  });
+
+  it('rejects signed transaction bytes that no longer match their frozen hash', () => {
+    const queued = queuedMandate();
+    const attempt = queued.aggregate.settlementAttempt;
+    if (attempt === null) {
+      throw new Error('queued mandate must retain its settlement attempt');
+    }
+    const { recordDigest, ...attemptCore } = attempt;
+    void recordDigest;
+    const tamperedCore = Object.freeze({
+      ...attemptCore,
+      signedTransactionBytes: encodeCanonicalSignedTransactionBytes(
+        Buffer.from('different-but-canonically-encoded-transaction'),
+      ),
+    });
+    const tamperedAttempt = Object.freeze({
+      ...tamperedCore,
+      recordDigest: hashAdapterRecord(
+        'FROZEN_SETTLEMENT_ATTEMPT',
+        tamperedCore,
+      ),
+    });
+    expect(
+      transitionPaymentAction(
+        {
+          ...queued.aggregate,
+          settlementAttempt: tamperedAttempt,
+        },
+        {
+          type: 'START_SETTLEMENT_RECOVERY',
+          uncertainty: { forged: true },
+        },
+        { now: T6 },
+      ),
+    ).toMatchObject({
+      error: { code: 'POLICY_CORE_BINDING_MISMATCH' },
+      ok: false,
+    });
+  });
+
+  it('rejects a settlement claim with a substituted aggregate CAS context', () => {
+    const queued = queuedMandate();
+    const attempt = queued.aggregate.settlementAttempt;
+    const basis = queued.aggregate.authorizationBasis;
+    if (attempt === null || basis === null || basis.kind !== 'MANDATE') {
+      throw new Error('queued mandate must retain its attempt and basis');
+    }
+    const receipt = settlementReceipt(authorization, attempt, T6);
+    const substitutedVersion = queued.aggregate.metadata.version + 1;
+    const claim = createAtomicSettlementConsumptionClaim(
+      authorization,
+      attempt,
+      receipt,
+      {
+        adapterId: 'postgres-atomic-payment-writer',
+        atomicGroupKey: `payment:${attempt.actionDigest}:v${
+          substitutedVersion + 1
+        }`,
+        claimId: 'settlement-consumption:substituted-cas',
+        consumedAt: T6,
+        expectedAggregateVersion: substitutedVersion,
+        writerId: 'postgres-payment-writer',
+        writerVersion: 1,
+      },
+    );
     expect(
       transitionPaymentAction(
         queued.aggregate,
@@ -788,6 +1145,27 @@ describe('persisted payment-action aggregate', () => {
         { now: T5 },
       ),
     ).toMatchObject({ error: { code: 'ROLE_REVOKED' }, ok: false });
+    for (const override of [
+      { role: 'PAYMENT_REVIEWER' },
+      { scope: 'payments:read' },
+      { audience: 'invoiceguard:reporting' },
+      { agentBookRegistry: 'unconfigured-agentbook' },
+      { tenantId: 'another-organization' },
+    ]) {
+      expect(
+        transitionPaymentAction(
+          audited.aggregate,
+          {
+            ...baseEvent,
+            requestingAgent: requestingAgent(authorization, T5, override),
+          },
+          { now: T5 },
+        ),
+      ).toMatchObject({
+        error: { code: 'EXECUTOR_POLICY_MISMATCH' },
+        ok: false,
+      });
+    }
     expect(
       transitionPaymentAction(
         audited.aggregate,
@@ -970,8 +1348,12 @@ describe('persisted payment-action aggregate', () => {
         adapterId: 'hedera-consensus-adapter',
         cancellationId: 'cancellation-audit-1',
         committedAt: T5,
+        networkId: 'hedera:296',
         topicId: '0.0.9000',
         transactionId: '0.0.1000@1753437605.000000001',
+        writerAccountId: '0.0.1000',
+        writerId: 'authorization-audit-writer',
+        writerKeyId: 'hedera-audit-key-1',
       },
     );
     expect(
@@ -1006,11 +1388,14 @@ describe('persisted payment-action aggregate', () => {
       humanAuthorization,
       {
         adapterId: 'hedera-x402-adapter',
-        networkId: 'hedera:296',
         paidAt: T3,
+        paymentAttemptId: 'verification-payment-attempt-substituted',
+        paymentNetworkId: 'hedera:296',
+        paymentTransactionId: '0.0.1000@1753437603.000000002',
+        quoteDigest: '9'.repeat(64),
+        quoteId: 'verification-quote-substituted',
         servicePaymentId: 'verification-payment-substituted',
         serviceRequestDigest: '8'.repeat(64),
-        transactionId: '0.0.1000@1753437603.000000002',
       },
     );
     aggregate = applyEvent(
@@ -1032,6 +1417,40 @@ describe('persisted payment-action aggregate', () => {
       ),
     ).toMatchObject({
       error: { code: 'VERIFICATION_MISMATCH' },
+      ok: false,
+    });
+  });
+
+  it('rejects a verification payment from a substituted service network', () => {
+    let aggregate = initialAggregate(humanAuthorization);
+    aggregate = applyEvent(aggregate, { type: 'CLASSIFY' }, T1).aggregate;
+    aggregate = applyEvent(
+      aggregate,
+      { type: 'QUOTE_VERIFICATION' },
+      T2,
+    ).aggregate;
+    const payment = createAdapterVerifiedVerificationPayment(
+      humanAuthorization,
+      {
+        adapterId: 'hedera-x402-adapter',
+        paidAt: T3,
+        paymentAttemptId: 'verification-payment-attempt-wrong-network',
+        paymentNetworkId: 'hedera:295',
+        paymentTransactionId: '0.0.1000@1753437603.000000099',
+        quoteDigest: '6'.repeat(64),
+        quoteId: 'verification-quote-1',
+        servicePaymentId: 'verification-payment-wrong-network',
+        serviceRequestDigest: '7'.repeat(64),
+      },
+    );
+    expect(
+      transitionPaymentAction(
+        aggregate,
+        { payment, type: 'RECORD_VERIFICATION_PAYMENT' },
+        { now: T3 },
+      ),
+    ).toMatchObject({
+      error: { code: 'VERIFICATION_PAYMENT_INVALID' },
       ok: false,
     });
   });

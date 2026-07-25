@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   verifyAuthorizationBundle,
   type AuthorizationBundleV1,
@@ -12,6 +14,7 @@ import {
 import { isCanonicalUtcInstant } from '../state/temporal.js';
 import {
   isNonEmptyBoundedString,
+  isPositiveSafeInteger,
   isRecord,
   isSha256Digest,
 } from '../values/validation.js';
@@ -30,12 +33,18 @@ export type AdapterVerifiedVerificationPaymentCore = Readonly<
     adapterId: string;
     evidencePolicyDigest: string;
     kind: 'VERIFICATION_PAYMENT';
-    networkId: string;
     paidAt: string;
+    paymentAttemptId: string;
+    paymentNetworkId: string;
+    paymentTransactionId: string;
+    quoteDigest: string;
+    quoteId: string;
+    serviceId: string;
+    serviceKeyId: string;
+    serviceNetworkId: string;
     servicePaymentId: string;
     serviceRequestDigest: string;
     status: 'CONSENSUS';
-    transactionId: string;
   }
 >;
 export type AdapterVerifiedVerificationPayment = Readonly<
@@ -50,7 +59,15 @@ export type AdapterVerifiedEvidenceResultCore = Readonly<
     evidenceRoot: string;
     expiresAt: string;
     kind: 'VERIFICATION_EVIDENCE';
+    paymentAttemptId: string;
+    paymentNetworkId: string;
+    paymentTransactionId: string;
+    quoteDigest: string;
+    quoteId: string;
     result: 'MATCH' | 'MISMATCH' | 'UNKNOWN';
+    serviceId: string;
+    serviceKeyId: string;
+    serviceNetworkId: string;
     servicePaymentId: string;
     serviceRequestDigest: string;
     status: 'VERIFIED';
@@ -66,16 +83,25 @@ export type RequestingAgentExecutionFactCore = Readonly<
     actionHumanPrincipal: string;
     adapterId: string;
     agentBackingRecordId: string;
+    agentBookRegistry: string;
     agentBookStatus: 'CURRENT' | 'CHANGED' | 'REVOKED' | 'UNVERIFIED';
     agentId: string;
     agentTenantPrincipal: string;
+    audience: string;
     companyRoleStatus: 'CURRENT' | 'EXPIRED' | 'REVOKED' | 'UNVERIFIED';
     effectDigest: string;
     expiresAt: string;
     factId: string;
+    grantDigest: string;
+    grantId: string;
+    grantStatus: 'CURRENT' | 'EXPIRED' | 'REVOKED' | 'UNVERIFIED';
+    grantVersion: number;
     kind: 'REQUESTING_AGENT_EXECUTION';
     role: string;
     roleCredentialId: string;
+    scope: string;
+    subjectId: string;
+    tenantId: string;
     verifiedAt: string;
   }
 >;
@@ -88,11 +114,16 @@ export type AdapterVerifiedAuthorizationAuditCore = Readonly<
     adapterId: string;
     auditId: string;
     authorizationBasisDigest: string;
+    authorityFactDigest: string;
     committedAt: string;
     kind: 'AUTHORIZATION_AUDIT';
+    networkId: string;
     status: 'CONSENSUS';
     topicId: string;
     transactionId: string;
+    writerAccountId: string;
+    writerId: string;
+    writerKeyId: string;
   }
 >;
 export type AdapterVerifiedAuthorizationAudit = Readonly<
@@ -107,10 +138,14 @@ export type AdapterVerifiedCancellationAuditCore = Readonly<
     committedAt: string;
     effectStatus: 'NOT_SIGNED';
     kind: 'CANCELLATION_AUDIT';
+    networkId: string;
     reason: 'OPERATOR_CANCELLED';
     status: 'CONSENSUS';
     topicId: string;
     transactionId: string;
+    writerAccountId: string;
+    writerId: string;
+    writerKeyId: string;
   }
 >;
 export type AdapterVerifiedCancellationAudit = Readonly<
@@ -128,6 +163,7 @@ export type FrozenSettlementAttemptCore = Readonly<
     kind: 'FROZEN_SETTLEMENT_ATTEMPT';
     networkId: string;
     signedBytesHash: string;
+    signedTransactionBytes: string;
     status: 'FROZEN';
     transactionId: string;
   }
@@ -139,6 +175,7 @@ export type FrozenSettlementAttempt = Readonly<
 export type AdapterVerifiedSettlementUncertaintyCore = Readonly<
   ActionFactBinding & {
     adapterId: string;
+    attemptAdapterId: string;
     attemptId: string;
     effectDigest: string;
     idempotencyKey: string;
@@ -147,6 +184,7 @@ export type AdapterVerifiedSettlementUncertaintyCore = Readonly<
     observedAt: string;
     reason: 'SUBMISSION_RESULT_UNKNOWN' | 'RECEIPT_LOOKUP_INCONCLUSIVE';
     signedBytesHash: string;
+    signedTransactionBytes: string;
     status: 'UNKNOWN';
     transactionId: string;
     uncertaintyId: string;
@@ -159,14 +197,18 @@ export type AdapterVerifiedSettlementUncertainty = Readonly<
 export type AdapterVerifiedSettlementReceiptCore = Readonly<
   ActionFactBinding & {
     adapterId: string;
+    attemptAdapterId: string;
     attemptId: string;
     effectDigest: string;
     idempotencyKey: string;
     kind: 'SETTLEMENT_RECEIPT';
     networkId: string;
     receiptId: string;
+    receiptSource: 'CONSENSUS_NODE' | 'MIRROR_NODE';
     settledAt: string;
     signedBytesHash: string;
+    signedTransactionBytes: string;
+    sourceNodeId: string;
     status: 'SUCCESS';
     transactionId: string;
   }
@@ -178,13 +220,18 @@ export type AdapterVerifiedSettlementReceipt = Readonly<
 export type AtomicSettlementConsumptionClaimCore = Readonly<
   ActionFactBinding & {
     adapterId: string;
+    atomicGroupKey: string;
     attemptId: string;
     claimId: string;
     consumedAt: string;
+    expectedAggregateVersion: number;
     idempotencyKey: string;
     kind: 'ATOMIC_SETTLEMENT_CONSUMPTION';
     receiptId: string;
     status: 'CONSUMED';
+    transactionScope: 'SERIALIZABLE_PAYMENT_WRITE';
+    writerId: string;
+    writerVersion: number;
   }
 >;
 export type AtomicSettlementConsumptionClaim = Readonly<
@@ -204,12 +251,18 @@ const VERIFICATION_PAYMENT_KEYS = [
   'adapterId',
   'evidencePolicyDigest',
   'kind',
-  'networkId',
   'paidAt',
+  'paymentAttemptId',
+  'paymentNetworkId',
+  'paymentTransactionId',
+  'quoteDigest',
+  'quoteId',
+  'serviceId',
+  'serviceKeyId',
+  'serviceNetworkId',
   'servicePaymentId',
   'serviceRequestDigest',
   'status',
-  'transactionId',
 ] as const;
 const EVIDENCE_KEYS = [
   ...ACTION_BINDING_KEYS,
@@ -219,7 +272,15 @@ const EVIDENCE_KEYS = [
   'evidenceRoot',
   'expiresAt',
   'kind',
+  'paymentAttemptId',
+  'paymentNetworkId',
+  'paymentTransactionId',
+  'quoteDigest',
+  'quoteId',
   'result',
+  'serviceId',
+  'serviceKeyId',
+  'serviceNetworkId',
   'servicePaymentId',
   'serviceRequestDigest',
   'status',
@@ -230,16 +291,25 @@ const REQUESTING_AGENT_KEYS = [
   'actionHumanPrincipal',
   'adapterId',
   'agentBackingRecordId',
+  'agentBookRegistry',
   'agentBookStatus',
   'agentId',
   'agentTenantPrincipal',
+  'audience',
   'companyRoleStatus',
   'effectDigest',
   'expiresAt',
   'factId',
+  'grantDigest',
+  'grantId',
+  'grantStatus',
+  'grantVersion',
   'kind',
   'role',
   'roleCredentialId',
+  'scope',
+  'subjectId',
+  'tenantId',
   'verifiedAt',
 ] as const;
 const AUTHORIZATION_AUDIT_KEYS = [
@@ -247,11 +317,16 @@ const AUTHORIZATION_AUDIT_KEYS = [
   'adapterId',
   'auditId',
   'authorizationBasisDigest',
+  'authorityFactDigest',
   'committedAt',
   'kind',
+  'networkId',
   'status',
   'topicId',
   'transactionId',
+  'writerAccountId',
+  'writerId',
+  'writerKeyId',
 ] as const;
 const CANCELLATION_AUDIT_KEYS = [
   ...ACTION_BINDING_KEYS,
@@ -261,10 +336,14 @@ const CANCELLATION_AUDIT_KEYS = [
   'committedAt',
   'effectStatus',
   'kind',
+  'networkId',
   'reason',
   'status',
   'topicId',
   'transactionId',
+  'writerAccountId',
+  'writerId',
+  'writerKeyId',
 ] as const;
 const ATTEMPT_KEYS = [
   ...ACTION_BINDING_KEYS,
@@ -277,12 +356,14 @@ const ATTEMPT_KEYS = [
   'kind',
   'networkId',
   'signedBytesHash',
+  'signedTransactionBytes',
   'status',
   'transactionId',
 ] as const;
 const UNCERTAINTY_KEYS = [
   ...ACTION_BINDING_KEYS,
   'adapterId',
+  'attemptAdapterId',
   'attemptId',
   'effectDigest',
   'idempotencyKey',
@@ -291,6 +372,7 @@ const UNCERTAINTY_KEYS = [
   'observedAt',
   'reason',
   'signedBytesHash',
+  'signedTransactionBytes',
   'status',
   'transactionId',
   'uncertaintyId',
@@ -298,28 +380,80 @@ const UNCERTAINTY_KEYS = [
 const RECEIPT_KEYS = [
   ...ACTION_BINDING_KEYS,
   'adapterId',
+  'attemptAdapterId',
   'attemptId',
   'effectDigest',
   'idempotencyKey',
   'kind',
   'networkId',
   'receiptId',
+  'receiptSource',
   'settledAt',
   'signedBytesHash',
+  'signedTransactionBytes',
+  'sourceNodeId',
   'status',
   'transactionId',
 ] as const;
 const CONSUMPTION_KEYS = [
   ...ACTION_BINDING_KEYS,
   'adapterId',
+  'atomicGroupKey',
   'attemptId',
   'claimId',
   'consumedAt',
+  'expectedAggregateVersion',
   'idempotencyKey',
   'kind',
   'receiptId',
   'status',
+  'transactionScope',
+  'writerId',
+  'writerVersion',
 ] as const;
+
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/u;
+const MAX_SIGNED_TRANSACTION_BYTES = 32_768;
+const MAX_SIGNED_TRANSACTION_BASE64URL_LENGTH = Math.ceil(
+  (MAX_SIGNED_TRANSACTION_BYTES * 4) / 3,
+);
+
+function decodeCanonicalSignedTransactionBytes(value: unknown): Buffer | null {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length > MAX_SIGNED_TRANSACTION_BASE64URL_LENGTH ||
+    !BASE64URL_PATTERN.test(value)
+  ) {
+    return null;
+  }
+
+  const decoded = Buffer.from(value, 'base64url');
+  return decoded.length > 0 &&
+    decoded.length <= MAX_SIGNED_TRANSACTION_BYTES &&
+    decoded.toString('base64url') === value
+    ? decoded
+    : null;
+}
+
+export function encodeCanonicalSignedTransactionBytes(
+  bytes: Uint8Array,
+): string {
+  if (
+    bytes.byteLength === 0 ||
+    bytes.byteLength > MAX_SIGNED_TRANSACTION_BYTES
+  ) {
+    throw new Error('Signed transaction bytes are outside the allowed bounds.');
+  }
+  return Buffer.from(bytes).toString('base64url');
+}
+
+export function hashSignedTransactionBytes(input: unknown): string | null {
+  const bytes = decodeCanonicalSignedTransactionBytes(input);
+  return bytes === null
+    ? null
+    : createHash('sha256').update(bytes).digest('hex');
+}
 
 function isActionBinding(input: Record<string, unknown>): boolean {
   return (
@@ -403,13 +537,19 @@ const validateVerificationPaymentCore = (
   value.kind === 'VERIFICATION_PAYMENT' &&
   value.status === 'CONSENSUS' &&
   isSha256Digest(value.evidencePolicyDigest) &&
+  isSha256Digest(value.quoteDigest) &&
   isSha256Digest(value.serviceRequestDigest) &&
   validInstant(value.paidAt) &&
   validStringFields(value, [
     'adapterId',
-    'networkId',
+    'paymentAttemptId',
+    'paymentNetworkId',
+    'paymentTransactionId',
+    'quoteId',
+    'serviceId',
+    'serviceKeyId',
+    'serviceNetworkId',
     'servicePaymentId',
-    'transactionId',
   ]);
 
 const validateEvidenceCore = (value: Record<string, unknown>): boolean =>
@@ -421,6 +561,7 @@ const validateEvidenceCore = (value: Record<string, unknown>): boolean =>
     value.result === 'UNKNOWN') &&
   isSha256Digest(value.evidencePolicyDigest) &&
   isSha256Digest(value.evidenceRoot) &&
+  isSha256Digest(value.quoteDigest) &&
   isSha256Digest(value.serviceRequestDigest) &&
   validInstant(value.verifiedAt) &&
   validInstant(value.expiresAt) &&
@@ -428,6 +569,13 @@ const validateEvidenceCore = (value: Record<string, unknown>): boolean =>
   validStringFields(value, [
     'adapterId',
     'evidenceResultId',
+    'paymentAttemptId',
+    'paymentNetworkId',
+    'paymentTransactionId',
+    'quoteId',
+    'serviceId',
+    'serviceKeyId',
+    'serviceNetworkId',
     'servicePaymentId',
   ]);
 
@@ -443,7 +591,13 @@ const validateRequestingAgentCore = (value: Record<string, unknown>): boolean =>
     value.agentBookStatus === 'CHANGED' ||
     value.agentBookStatus === 'REVOKED' ||
     value.agentBookStatus === 'UNVERIFIED') &&
+  (value.grantStatus === 'CURRENT' ||
+    value.grantStatus === 'EXPIRED' ||
+    value.grantStatus === 'REVOKED' ||
+    value.grantStatus === 'UNVERIFIED') &&
   isSha256Digest(value.effectDigest) &&
+  isSha256Digest(value.grantDigest) &&
+  isPositiveSafeInteger(value.grantVersion) &&
   validInstant(value.verifiedAt) &&
   validInstant(value.expiresAt) &&
   (value.verifiedAt as string) < (value.expiresAt as string) &&
@@ -451,11 +605,17 @@ const validateRequestingAgentCore = (value: Record<string, unknown>): boolean =>
     'actionHumanPrincipal',
     'adapterId',
     'agentBackingRecordId',
+    'agentBookRegistry',
     'agentId',
     'agentTenantPrincipal',
+    'audience',
     'factId',
+    'grantId',
     'role',
     'roleCredentialId',
+    'scope',
+    'subjectId',
+    'tenantId',
   ]);
 
 const validateAuthorizationAuditCore = (
@@ -465,12 +625,17 @@ const validateAuthorizationAuditCore = (
   value.kind === 'AUTHORIZATION_AUDIT' &&
   value.status === 'CONSENSUS' &&
   isSha256Digest(value.authorizationBasisDigest) &&
+  isSha256Digest(value.authorityFactDigest) &&
   validInstant(value.committedAt) &&
   validStringFields(value, [
     'adapterId',
     'auditId',
+    'networkId',
     'topicId',
     'transactionId',
+    'writerAccountId',
+    'writerId',
+    'writerKeyId',
   ]);
 
 const validateCancellationAuditCore = (
@@ -486,8 +651,12 @@ const validateCancellationAuditCore = (
     'adapterId',
     'authorizationAuditId',
     'cancellationId',
+    'networkId',
     'topicId',
     'transactionId',
+    'writerAccountId',
+    'writerId',
+    'writerKeyId',
   ]);
 
 const validateAttemptCore = (value: Record<string, unknown>): boolean =>
@@ -496,6 +665,8 @@ const validateAttemptCore = (value: Record<string, unknown>): boolean =>
   value.status === 'FROZEN' &&
   isSha256Digest(value.effectDigest) &&
   isSha256Digest(value.signedBytesHash) &&
+  hashSignedTransactionBytes(value.signedTransactionBytes) ===
+    value.signedBytesHash &&
   validInstant(value.createdAt) &&
   validInstant(value.expiresAt) &&
   (value.createdAt as string) < (value.expiresAt as string) &&
@@ -515,9 +686,12 @@ const validateUncertaintyCore = (value: Record<string, unknown>): boolean =>
     value.reason === 'RECEIPT_LOOKUP_INCONCLUSIVE') &&
   isSha256Digest(value.effectDigest) &&
   isSha256Digest(value.signedBytesHash) &&
+  hashSignedTransactionBytes(value.signedTransactionBytes) ===
+    value.signedBytesHash &&
   validInstant(value.observedAt) &&
   validStringFields(value, [
     'adapterId',
+    'attemptAdapterId',
     'attemptId',
     'idempotencyKey',
     'networkId',
@@ -529,15 +703,21 @@ const validateReceiptCore = (value: Record<string, unknown>): boolean =>
   isActionBinding(value) &&
   value.kind === 'SETTLEMENT_RECEIPT' &&
   value.status === 'SUCCESS' &&
+  (value.receiptSource === 'CONSENSUS_NODE' ||
+    value.receiptSource === 'MIRROR_NODE') &&
   isSha256Digest(value.effectDigest) &&
   isSha256Digest(value.signedBytesHash) &&
+  hashSignedTransactionBytes(value.signedTransactionBytes) ===
+    value.signedBytesHash &&
   validInstant(value.settledAt) &&
   validStringFields(value, [
     'adapterId',
+    'attemptAdapterId',
     'attemptId',
     'idempotencyKey',
     'networkId',
     'receiptId',
+    'sourceNodeId',
     'transactionId',
   ]);
 
@@ -545,13 +725,18 @@ const validateConsumptionCore = (value: Record<string, unknown>): boolean =>
   isActionBinding(value) &&
   value.kind === 'ATOMIC_SETTLEMENT_CONSUMPTION' &&
   value.status === 'CONSUMED' &&
+  value.transactionScope === 'SERIALIZABLE_PAYMENT_WRITE' &&
+  isPositiveSafeInteger(value.expectedAggregateVersion) &&
+  isPositiveSafeInteger(value.writerVersion) &&
   validInstant(value.consumedAt) &&
   validStringFields(value, [
     'adapterId',
+    'atomicGroupKey',
     'attemptId',
     'claimId',
     'idempotencyKey',
     'receiptId',
+    'writerId',
   ]);
 
 export function actionFactBinding(
@@ -599,7 +784,13 @@ export function createAdapterVerifiedVerificationPayment(
   authorization: AuthorizationBundleV1,
   details: Omit<
     AdapterVerifiedVerificationPaymentCore,
-    keyof ActionFactBinding | 'evidencePolicyDigest' | 'kind' | 'status'
+    | keyof ActionFactBinding
+    | 'evidencePolicyDigest'
+    | 'kind'
+    | 'serviceId'
+    | 'serviceKeyId'
+    | 'serviceNetworkId'
+    | 'status'
   >,
 ): AdapterVerifiedVerificationPayment {
   return createFact(
@@ -608,6 +799,9 @@ export function createAdapterVerifiedVerificationPayment(
       ...details,
       evidencePolicyDigest: authorization.decision.evidencePolicy.digest,
       kind: 'VERIFICATION_PAYMENT',
+      serviceId: authorization.decision.evidencePolicy.serviceId,
+      serviceKeyId: authorization.decision.evidencePolicy.serviceKeyId,
+      serviceNetworkId: authorization.decision.evidencePolicy.serviceNetworkId,
       status: 'CONSENSUS',
     },
     'VERIFICATION_PAYMENT',
@@ -635,6 +829,14 @@ export function createAdapterVerifiedEvidenceResult(
     | keyof ActionFactBinding
     | 'evidencePolicyDigest'
     | 'kind'
+    | 'paymentAttemptId'
+    | 'paymentNetworkId'
+    | 'paymentTransactionId'
+    | 'quoteDigest'
+    | 'quoteId'
+    | 'serviceId'
+    | 'serviceKeyId'
+    | 'serviceNetworkId'
     | 'servicePaymentId'
     | 'serviceRequestDigest'
     | 'status'
@@ -646,6 +848,14 @@ export function createAdapterVerifiedEvidenceResult(
       ...details,
       evidencePolicyDigest: authorization.decision.evidencePolicy.digest,
       kind: 'VERIFICATION_EVIDENCE',
+      paymentAttemptId: payment.paymentAttemptId,
+      paymentNetworkId: payment.paymentNetworkId,
+      paymentTransactionId: payment.paymentTransactionId,
+      quoteDigest: payment.quoteDigest,
+      quoteId: payment.quoteId,
+      serviceId: payment.serviceId,
+      serviceKeyId: payment.serviceKeyId,
+      serviceNetworkId: payment.serviceNetworkId,
       servicePaymentId: payment.servicePaymentId,
       serviceRequestDigest: payment.serviceRequestDigest,
       status: 'VERIFIED',
@@ -701,9 +911,14 @@ export function parseRequestingAgentExecutionFact(
 export function createAdapterVerifiedAuthorizationAudit(
   authorization: AuthorizationBundleV1,
   authorizationBasisDigest: string,
+  authority: RequestingAgentExecutionFact,
   details: Omit<
     AdapterVerifiedAuthorizationAuditCore,
-    keyof ActionFactBinding | 'authorizationBasisDigest' | 'kind' | 'status'
+    | keyof ActionFactBinding
+    | 'authorizationBasisDigest'
+    | 'authorityFactDigest'
+    | 'kind'
+    | 'status'
   >,
 ): AdapterVerifiedAuthorizationAudit {
   return createFact(
@@ -711,6 +926,7 @@ export function createAdapterVerifiedAuthorizationAudit(
       ...actionFactBinding(authorization),
       ...details,
       authorizationBasisDigest,
+      authorityFactDigest: authority.recordDigest,
       kind: 'AUTHORIZATION_AUDIT',
       status: 'CONSENSUS',
     },
@@ -780,9 +996,17 @@ export function createFrozenSettlementAttempt(
     | 'idempotencyKey'
     | 'kind'
     | 'networkId'
+    | 'signedBytesHash'
     | 'status'
   >,
 ): FrozenSettlementAttempt {
+  const signedBytesHash = hashSignedTransactionBytes(
+    details.signedTransactionBytes,
+  );
+  if (signedBytesHash === null) {
+    throw new Error('Invalid signed transaction bytes.');
+  }
+
   return createFact(
     {
       ...actionFactBinding(authorization),
@@ -791,6 +1015,7 @@ export function createFrozenSettlementAttempt(
       idempotencyKey: deriveSettlementIdempotencyKey(authorization),
       kind: 'FROZEN_SETTLEMENT_ATTEMPT',
       networkId: authorization.actionCore.settlement.networkId,
+      signedBytesHash,
       status: 'FROZEN',
     },
     'FROZEN_SETTLEMENT_ATTEMPT',
@@ -816,12 +1041,14 @@ export function createAdapterVerifiedSettlementUncertainty(
   details: Omit<
     AdapterVerifiedSettlementUncertaintyCore,
     | keyof ActionFactBinding
+    | 'attemptAdapterId'
     | 'attemptId'
     | 'effectDigest'
     | 'idempotencyKey'
     | 'kind'
     | 'networkId'
     | 'signedBytesHash'
+    | 'signedTransactionBytes'
     | 'status'
     | 'transactionId'
   >,
@@ -830,12 +1057,14 @@ export function createAdapterVerifiedSettlementUncertainty(
     {
       ...actionFactBinding(authorization),
       ...details,
+      attemptAdapterId: attempt.adapterId,
       attemptId: attempt.attemptId,
       effectDigest: attempt.effectDigest,
       idempotencyKey: attempt.idempotencyKey,
       kind: 'SETTLEMENT_UNCERTAINTY',
       networkId: attempt.networkId,
       signedBytesHash: attempt.signedBytesHash,
+      signedTransactionBytes: attempt.signedTransactionBytes,
       status: 'UNKNOWN',
       transactionId: attempt.transactionId,
     },
@@ -862,12 +1091,14 @@ export function createAdapterVerifiedSettlementReceipt(
   details: Omit<
     AdapterVerifiedSettlementReceiptCore,
     | keyof ActionFactBinding
+    | 'attemptAdapterId'
     | 'attemptId'
     | 'effectDigest'
     | 'idempotencyKey'
     | 'kind'
     | 'networkId'
     | 'signedBytesHash'
+    | 'signedTransactionBytes'
     | 'status'
     | 'transactionId'
   >,
@@ -876,12 +1107,14 @@ export function createAdapterVerifiedSettlementReceipt(
     {
       ...actionFactBinding(authorization),
       ...details,
+      attemptAdapterId: attempt.adapterId,
       attemptId: attempt.attemptId,
       effectDigest: attempt.effectDigest,
       idempotencyKey: attempt.idempotencyKey,
       kind: 'SETTLEMENT_RECEIPT',
       networkId: attempt.networkId,
       signedBytesHash: attempt.signedBytesHash,
+      signedTransactionBytes: attempt.signedTransactionBytes,
       status: 'SUCCESS',
       transactionId: attempt.transactionId,
     },
@@ -914,6 +1147,7 @@ export function createAtomicSettlementConsumptionClaim(
     | 'kind'
     | 'receiptId'
     | 'status'
+    | 'transactionScope'
   >,
 ): AtomicSettlementConsumptionClaim {
   return createFact(
@@ -925,6 +1159,7 @@ export function createAtomicSettlementConsumptionClaim(
       kind: 'ATOMIC_SETTLEMENT_CONSUMPTION',
       receiptId: receipt.receiptId,
       status: 'CONSUMED',
+      transactionScope: 'SERIALIZABLE_PAYMENT_WRITE',
     },
     'ATOMIC_SETTLEMENT_CONSUMPTION',
     CONSUMPTION_KEYS,
