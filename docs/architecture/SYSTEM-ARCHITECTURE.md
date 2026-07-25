@@ -209,9 +209,9 @@ payable silently.
 
 ## Invoice routing
 
-A frozen policy evaluation binds the action digest, input root, policy version,
-route, reason codes, required roles and quorums, and verification mode. The
-route is exactly `STRAIGHT_THROUGH`, `HUMAN_APPROVAL`, or `BLOCK`.
+A frozen policy evaluation binds the action core digest, input root, policy
+version, route, reason codes, required roles and quorums, and verification mode.
+The route is exactly `STRAIGHT_THROUGH`, `HUMAN_APPROVAL`, or `BLOCK`.
 `verificationMode` is exactly `NOT_REQUIRED` or `REQUIRED`.
 
 `STRAIGHT_THROUGH` requires exact containment by a current standing mandate plus

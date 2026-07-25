@@ -1,0 +1,79 @@
+{
+  "actionCore": {
+    "actionId": "019f939b-fe5e-7e92-b72e-8d4531958c30",
+    "beneficiary": {
+      "approved": {
+        "accountId": "hedera:296:0.0.1000",
+        "kind": "CAIP_10"
+      },
+      "proposed": {
+        "accountId": "hedera:296:0.0.1000",
+        "kind": "CAIP_10"
+      }
+    },
+    "createdAt": "2026-07-25T10:00:00.000Z",
+    "evidenceRoot": "1111111111111111111111111111111111111111111111111111111111111111",
+    "expiresAt": "2026-07-25T11:00:00.000Z",
+    "nonce": "0123456789abcdef0123456789abcdef",
+    "organizationId": "019f939b-fe5e-7e92-b72e-8d4531958c33",
+    "policy": {
+      "id": "routine-invoice-policy",
+      "version": 1
+    },
+    "requestType": "SUPPLIER_INVOICE_PAYMENT",
+    "schemaVersion": 1,
+    "settlement": {
+      "amountAtoms": "2500000",
+      "assetId": "hedera:296/hts:0.0.9001",
+      "beneficiary": "hedera:296:0.0.1000",
+      "mappingPolicyHash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "networkId": "hedera:296"
+    },
+    "sourceInvoice": {
+      "amountAtoms": "2500000",
+      "assetId": "iso4217:EUR",
+      "digest": "3333333333333333333333333333333333333333333333333333333333333333",
+      "obligationId": "019f939b-fe5e-7e92-b72e-8d4531958c32"
+    },
+    "supplierId": "019f939b-fe5e-7e92-b72e-8d4531958c34"
+  },
+  "decisionInput": {
+    "evaluatedAt": "2026-07-25T10:00:01.000Z",
+    "expiresAt": "2026-07-25T11:00:00.000Z",
+    "inputRoot": "4444444444444444444444444444444444444444444444444444444444444444",
+    "policy": {
+      "id": "routine-invoice-policy",
+      "version": 1
+    },
+    "reasonCodes": [
+      "AMOUNT_WITHIN_MANDATE",
+      "BENEFICIARY_EXACT_MATCH",
+      "DUPLICATE_CLEAR",
+      "EVIDENCE_NOT_REQUIRED_BY_MANDATE",
+      "MANDATE_EXACT_CONTAINMENT",
+      "PERIOD_CAP_AVAILABLE",
+      "PURCHASE_ORDER_EXACT_MATCH",
+      "SOURCE_AUTHENTICATED_STRUCTURED",
+      "SUPPLIER_ACTIVE_EXACT_MATCH"
+    ],
+    "requiredAuthority": {
+      "actionHumanQuorum": 0,
+      "agentBookQuorum": 0,
+      "companySubjectQuorum": 0,
+      "roles": []
+    },
+    "route": "STRAIGHT_THROUGH",
+    "schemaVersion": 1,
+    "standingMandate": {
+      "mandateDigest": "5555555555555555555555555555555555555555555555555555555555555555",
+      "mandateId": "019f939b-fe5e-7e92-b72e-8d4531958c31",
+      "mandateVersion": 1
+    },
+    "verificationMode": "NOT_REQUIRED"
+  },
+  "expected": {
+    "actionCoreDigest": "f54d3c590b93d0df39e92d26b5d221b790fbf376f22fae5775d73407fa27bb48",
+    "actionDigest": "436bb1b01d25e525570c269ecec5bd2fffde1f8d31ffd000ecb4e4d37d43845e",
+    "policyDecisionDigest": "34e2727e0dae99d0d9a8260f75c02b5dfbbb6b8c745367f209f68f020ebd1a53"
+  }
+}
