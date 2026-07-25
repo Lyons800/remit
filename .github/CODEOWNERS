@@ -1,0 +1,13 @@
+* @Lyons800
+
+/docs/architecture/ @Lyons800
+/docs/sponsors/ @Lyons800
+/packages/domain/ @Lyons800
+/packages/protocol/ @Lyons800
+/packages/world-adapter/ @Lyons800
+/packages/hedera-x402-adapter/ @Lyons800
+/packages/hedera-settlement-adapter/ @Lyons800
+/services/payment-agent/ @Lyons800
+/services/x402-facilitator/ @Lyons800
+/services/settlement-worker/ @Lyons800
+/services/verifier/ @Lyons800
