@@ -1,23 +1,23 @@
 @import 'tailwindcss';
 
-/* shadcn/ui theme tokens (neutral base, green primary), Tailwind v4 */
+/* midday-style tokens: near-black, hairline borders, square corners */
 :root {
-  --background: #fdfdfb;
-  --foreground: #191b1a;
-  --card: #ffffff;
-  --card-foreground: #191b1a;
-  --muted: #f6f6f2;
-  --muted-foreground: #6e7472;
-  --border: #e3e4df;
-  --input: #d5d7d0;
-  --primary: #0d5c3f;
-  --primary-foreground: #ffffff;
-  --secondary: #f6f6f2;
-  --secondary-foreground: #191b1a;
-  --destructive: #a8321f;
-  --destructive-foreground: #ffffff;
-  --ring: #0d5c3f;
-  --radius: 0.5rem;
+  --background: #0c0c0c;
+  --foreground: #f2f1ef;
+  --card: #121212;
+  --card-foreground: #f2f1ef;
+  --muted: #1d1d1d;
+  --muted-foreground: #878787;
+  --border: #2c2c2c;
+  --input: #2c2c2c;
+  --primary: #f2f1ef;
+  --primary-foreground: #0c0c0c;
+  --secondary: #1d1d1d;
+  --secondary-foreground: #f2f1ef;
+  --destructive: #ff3638;
+  --destructive-foreground: #0c0c0c;
+  --ring: #f2f1ef;
+  --radius: 0px;
 }
 
 @theme inline {
@@ -36,22 +36,24 @@
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-ring: var(--ring);
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
+  --radius-lg: 0px;
+  --radius-md: 0px;
+  --radius-sm: 0px;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif;
 }
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+.microlabel {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
 }

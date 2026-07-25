@@ -1,9 +1,16 @@
 import type { Metadata } from 'next';
+import { Geist, Geist_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
 
 import { Sidebar } from '../components/sidebar';
 
 import './styles.css';
+
+const geistSans = Geist({ subsets: ['latin'], variable: '--font-geist-sans' });
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-geist-mono',
+});
 
 export const metadata: Metadata = {
   description:
@@ -17,13 +24,16 @@ export default function RootLayout({
   children,
 }: RootLayoutProperties): ReactNode {
   return (
-    <html lang="en">
-      <body>
+    <html
+      className={`${geistSans.variable} ${geistMono.variable}`}
+      lang="en"
+    >
+      <body style={{ fontFamily: 'var(--font-geist-sans), sans-serif' }}>
         <div className="mx-auto flex min-h-screen max-w-6xl">
           <Sidebar />
-          <main className="min-w-0 flex-1 px-4 py-6 md:px-8">
-            <p className="mb-6 rounded-md bg-amber-100 px-3 py-1.5 text-xs font-semibold tracking-wide text-amber-900 uppercase">
-              Synthetic demo data · Hedera Testnet only · no real funds
+          <main className="min-w-0 flex-1 border-l border-border px-4 py-6 md:px-8">
+            <p className="microlabel mb-6 border border-border px-3 py-1.5">
+              Synthetic demo data · Hedera testnet only · no real funds
             </p>
             {children}
           </main>
