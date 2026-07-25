@@ -15,6 +15,10 @@
     "clean": "rm -rf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "@invoiceguard/domain": "workspace:*",
+    "postgres": "catalog:"
+  },
   "devDependencies": {
     "typescript": "catalog:"
   }

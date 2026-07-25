@@ -23,17 +23,25 @@ current LTS line according to the
 
 ## Application framework candidates
 
-| Technology                   |               Verified current version | Status             | Intended use                                  |
-| ---------------------------- | -------------------------------------: | ------------------ | --------------------------------------------- |
-| Next.js                      |                                16.2.11 | installed          | Product web application                       |
-| React                        |                                 19.2.8 | installed          | Product UI                                    |
-| Hono                         |                                4.12.32 | installed          | Control API and x402 verifier HTTP services   |
-| Zod                          |                                  4.4.3 | installed          | Runtime validation at every external boundary |
-| `@hono/zod-openapi`          |                                  1.5.1 | candidate for PR 2 | OpenAPI contract generation                   |
-| PostgreSQL driver `postgres` |                                  3.4.9 | candidate for PR 3 | Database access below the repository layer    |
-| Drizzle ORM                  |                                 0.45.2 | candidate for PR 3 | Typed schema and migrations                   |
-| Pino                         |                                 10.3.1 | candidate for PR 3 | Structured logs with explicit redaction       |
-| OpenTelemetry                | version pinned during observability PR | not yet selected   | Cross-service traces and metrics              |
+| Technology                                                           |               Verified current version | Status             | Intended use                                          |
+| -------------------------------------------------------------------- | -------------------------------------: | ------------------ | ----------------------------------------------------- |
+| Next.js                                                              |                                16.2.11 | installed          | Product web application                               |
+| React                                                                |                                 19.2.8 | installed          | Product UI                                            |
+| Hono                                                                 |                                4.12.32 | installed          | Control API and x402 verifier HTTP services           |
+| Zod                                                                  |                                  4.4.3 | installed          | Runtime validation at every external boundary         |
+| `@hono/zod-openapi`                                                  |                                  1.5.1 | candidate for PR 2 | OpenAPI contract generation                           |
+| PostgreSQL driver [`postgres`](https://github.com/porsager/postgres) |                                  3.4.9 | installed          | Database access below the repository layer; Unlicense |
+| Drizzle ORM                                                          |                                 0.45.2 | candidate for PR 3 | Typed schema and migrations                           |
+| Pino                                                                 |                                 10.3.1 | candidate for PR 3 | Structured logs with explicit redaction               |
+| OpenTelemetry                                                        | version pinned during observability PR | not yet selected   | Cross-service traces and metrics                      |
+
+The persistence-contract work admitted `postgres@3.4.9` from its
+[first-party repository](https://github.com/porsager/postgres), under the
+Unlicense. It has no install script and stays below the repository boundary.
+Rollback removes the dependency and its lockfile entry together with the
+PostgreSQL repository implementation; it does not require weakening workspace
+supply-chain policy. Drizzle remains uninstalled because the reviewed migration
+and transaction surface does not need an ORM.
 
 ## Web3 and sponsor baseline
 

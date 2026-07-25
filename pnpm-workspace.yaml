@@ -17,6 +17,7 @@ catalog:
   eslint: 10.7.0
   hono: 4.12.32
   next: 16.2.11
+  postgres: 3.4.9
   prettier: 3.9.6
   react: 19.2.8
   react-dom: 19.2.8
