@@ -17,6 +17,7 @@ import {
   createMandateReservationLedger,
   createPaymentActionAggregate,
   createRequestingAgentExecutionFact,
+  hydratePaymentActionAggregate,
   invoiceRevisionEvents,
   invoiceRevisionStates,
   isTerminalInvoiceRevisionState,
@@ -642,6 +643,52 @@ describe('standing-mandate lifecycle', () => {
 });
 
 describe('persisted payment-action aggregate', () => {
+  it('rehydrates valid JSON and rejects mutated persisted records', () => {
+    const captured = initialAggregate();
+    const persisted = JSON.parse(JSON.stringify(captured)) as unknown;
+
+    expect(hydratePaymentActionAggregate(persisted)).toEqual({
+      ok: true,
+      value: captured,
+    });
+
+    const mutated = JSON.parse(JSON.stringify(captured)) as {
+      authorization: { actionCore: { supplierId: string } };
+    };
+    mutated.authorization.actionCore.supplierId =
+      '01983b93-5e8c-7000-8000-000000000099';
+    expect(hydratePaymentActionAggregate(mutated)).toMatchObject({
+      error: { code: 'POLICY_CORE_BINDING_MISMATCH' },
+      ok: false,
+    });
+  });
+
+  it('identifies verification quote effects by frozen action and policy', () => {
+    const classified = applyEvent(
+      initialAggregate(humanAuthorization),
+      { type: 'CLASSIFY' },
+      T1,
+    ).aggregate;
+    const first = applyEvent(classified, { type: 'QUOTE_VERIFICATION' }, T2);
+    const eventId = `invoiceguard:verification:quote:v1:${humanAuthorization.envelope.actionDigest}:${humanAuthorization.decision.evidencePolicy.digest}`;
+
+    expect(first.effects).toEqual([
+      {
+        actionDigest: humanAuthorization.envelope.actionDigest,
+        atomicGroupKey: first.atomicGroupKey,
+        evidencePolicyDigest: humanAuthorization.decision.evidencePolicy.digest,
+        eventId,
+        expiresAt: humanAuthorization.actionCore.expiresAt,
+        idempotencyKey: eventId,
+        serviceId: humanAuthorization.decision.evidencePolicy.serviceId,
+        serviceKeyId: humanAuthorization.decision.evidencePolicy.serviceKeyId,
+        serviceNetworkId:
+          humanAuthorization.decision.evidencePolicy.serviceNetworkId,
+        type: 'VERIFICATION_QUOTE_REQUEST',
+      },
+    ]);
+  });
+
   it('completes the mandate path with atomic reservation and consumption effects', () => {
     const authorized = authorizedMandate();
     expect(authorized.aggregate.state).toBe('AUTHORIZED');
