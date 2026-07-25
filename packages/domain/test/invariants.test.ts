@@ -20,6 +20,7 @@ import {
 } from '../src/index.js';
 
 const ACTION_DIGEST = 'a'.repeat(64);
+const APPROVAL_NOW = '2026-07-25T10:00:00.000Z';
 
 const approvalRequirement = {
   actionHumanQuorum: 2,
@@ -35,23 +36,40 @@ const approvals = [
   {
     actionDigest: ACTION_DIGEST,
     actionHumanPrincipal: 'human-1',
+    agentBackingStatus: 'CURRENT',
     agentTenantPrincipal: 'agent-1',
+    companyRoleStatus: 'CURRENT',
+    decision: 'APPROVE',
+    expiresAt: '2026-07-25T10:05:00.000Z',
+    humanDecisionStatus: 'VERIFIED',
     role: 'FINANCE_APPROVER',
     subjectId: 'subject-1',
+    verifiedAt: '2026-07-25T09:59:00.000Z',
   },
   {
     actionDigest: ACTION_DIGEST,
     actionHumanPrincipal: 'human-2',
+    agentBackingStatus: 'CURRENT',
     agentTenantPrincipal: 'agent-2',
+    companyRoleStatus: 'CURRENT',
+    decision: 'APPROVE',
+    expiresAt: '2026-07-25T10:05:00.000Z',
+    humanDecisionStatus: 'VERIFIED',
     role: 'TREASURY_APPROVER',
     subjectId: 'subject-2',
+    verifiedAt: '2026-07-25T09:59:00.000Z',
   },
 ] as const;
 
 describe('approval quorum', () => {
   it('accepts exact, independently distinct approvals', () => {
     expect(
-      validateApprovalQuorum(ACTION_DIGEST, approvalRequirement, approvals),
+      validateApprovalQuorum(
+        ACTION_DIGEST,
+        approvalRequirement,
+        approvals,
+        APPROVAL_NOW,
+      ),
     ).toEqual({ ok: true, value: approvals });
   });
 
@@ -78,7 +96,12 @@ describe('approval quorum', () => {
     ];
 
     expect(
-      validateApprovalQuorum(ACTION_DIGEST, requirement, polluted),
+      validateApprovalQuorum(
+        ACTION_DIGEST,
+        requirement,
+        polluted,
+        APPROVAL_NOW,
+      ),
     ).toMatchObject({
       error: { code: 'SUBJECT_NOT_DISTINCT' },
       ok: false,
@@ -87,10 +110,12 @@ describe('approval quorum', () => {
 
   it('rejects cross-action approvals and invalid requirements', () => {
     expect(
-      validateApprovalQuorum(ACTION_DIGEST, approvalRequirement, [
-        { ...approvals[0], actionDigest: 'b'.repeat(64) },
-        approvals[1],
-      ]),
+      validateApprovalQuorum(
+        ACTION_DIGEST,
+        approvalRequirement,
+        [{ ...approvals[0], actionDigest: 'b'.repeat(64) }, approvals[1]],
+        APPROVAL_NOW,
+      ),
     ).toMatchObject({
       error: { code: 'ACTION_DIGEST_MISMATCH' },
       ok: false,
@@ -101,6 +126,7 @@ describe('approval quorum', () => {
         ACTION_DIGEST,
         { ...approvalRequirement, actionHumanQuorum: -1 },
         approvals,
+        APPROVAL_NOW,
       ),
     ).toMatchObject({
       error: { code: 'APPROVAL_REQUIREMENT_INVALID' },
@@ -110,18 +136,101 @@ describe('approval quorum', () => {
 
   it('rejects evidence for a role the policy did not request', () => {
     expect(
-      validateApprovalQuorum(ACTION_DIGEST, approvalRequirement, [
-        ...approvals,
-        {
-          actionDigest: ACTION_DIGEST,
-          actionHumanPrincipal: 'human-3',
-          agentTenantPrincipal: 'agent-3',
-          role: 'OBSERVER',
-          subjectId: 'subject-3',
-        },
-      ]),
+      validateApprovalQuorum(
+        ACTION_DIGEST,
+        approvalRequirement,
+        [
+          ...approvals,
+          {
+            actionDigest: ACTION_DIGEST,
+            actionHumanPrincipal: 'human-3',
+            agentBackingStatus: 'CURRENT',
+            agentTenantPrincipal: 'agent-3',
+            companyRoleStatus: 'CURRENT',
+            decision: 'APPROVE',
+            expiresAt: '2026-07-25T10:05:00.000Z',
+            humanDecisionStatus: 'VERIFIED',
+            role: 'OBSERVER',
+            subjectId: 'subject-3',
+            verifiedAt: '2026-07-25T09:59:00.000Z',
+          },
+        ],
+        APPROVAL_NOW,
+      ),
     ).toMatchObject({
       error: { code: 'ROLE_UNEXPECTED' },
+      ok: false,
+    });
+  });
+
+  it('rejects malformed, stale, revoked, and unverified approval facts', () => {
+    for (const malformed of [
+      { ...approvals[0], actionDigest: 'not-a-digest' },
+      { ...approvals[0], actionHumanPrincipal: '' },
+      { ...approvals[0], agentTenantPrincipal: '' },
+      { ...approvals[0], role: '' },
+      { ...approvals[0], subjectId: '' },
+    ]) {
+      expect(
+        validateApprovalQuorum(
+          ACTION_DIGEST,
+          approvalRequirement,
+          [malformed, approvals[1]],
+          APPROVAL_NOW,
+        ),
+      ).toMatchObject({
+        error: { code: 'APPROVAL_FACT_INVALID' },
+        ok: false,
+      });
+    }
+    expect(
+      validateApprovalQuorum(
+        ACTION_DIGEST,
+        approvalRequirement,
+        [
+          {
+            ...approvals[0],
+            expiresAt: APPROVAL_NOW,
+          },
+          approvals[1],
+        ],
+        APPROVAL_NOW,
+      ),
+    ).toMatchObject({
+      error: { code: 'APPROVAL_STALE' },
+      ok: false,
+    });
+    expect(
+      validateApprovalQuorum(
+        ACTION_DIGEST,
+        approvalRequirement,
+        [{ ...approvals[0], companyRoleStatus: 'REVOKED' }, approvals[1]],
+        APPROVAL_NOW,
+      ),
+    ).toMatchObject({
+      error: { code: 'ROLE_REVOKED' },
+      ok: false,
+    });
+    expect(
+      validateApprovalQuorum(
+        ACTION_DIGEST,
+        approvalRequirement,
+        [{ ...approvals[0], agentBackingStatus: 'UNVERIFIED' }, approvals[1]],
+        APPROVAL_NOW,
+      ),
+    ).toMatchObject({
+      error: { code: 'AGENT_BACKING_UNVERIFIED' },
+      ok: false,
+    });
+    expect(
+      validateApprovalQuorum(
+        ACTION_DIGEST,
+        approvalRequirement,
+        [{ ...approvals[0], humanDecisionStatus: 'REPLAYED' }, approvals[1]],
+        APPROVAL_NOW,
+      ),
+    ).toMatchObject({
+      error: { code: 'REPLAY_DETECTED' },
       ok: false,
     });
   });
