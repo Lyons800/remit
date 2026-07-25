@@ -2,9 +2,11 @@
 
 Checked: 2026-07-25.
 
-Versions are exact in the lockfile. "Latest" is not a reason to upgrade a
-security-sensitive dependency during the build; every sponsor SDK upgrade must
-be reviewed against its first-party changelog and live contract tests.
+Installed versions are exact in the lockfile. Candidate versions are
+research-pinned but do not become dependencies until their owning spike passes.
+"Latest" is not a reason to upgrade a security-sensitive dependency during the
+build; every sponsor SDK upgrade must be reviewed against its first-party
+changelog and live contract tests.
 
 ## Runtime and workspace
 
@@ -21,49 +23,49 @@ current LTS line according to the
 
 ## Application framework candidates
 
-| Technology                   |               Verified current version | Intended use                                  |
-| ---------------------------- | -------------------------------------: | --------------------------------------------- |
-| Next.js                      |                                16.2.11 | Product web application                       |
-| React                        |                                 19.2.8 | Product UI                                    |
-| Hono                         |                                4.12.32 | Control API and x402 verifier HTTP services   |
-| Zod                          |                                  4.4.3 | Runtime validation at every external boundary |
-| `@hono/zod-openapi`          |                                  1.5.1 | OpenAPI contract generation                   |
-| PostgreSQL driver `postgres` |                                  3.4.9 | Database access below the repository layer    |
-| Drizzle ORM                  |                                 0.45.2 | Typed schema and migrations                   |
-| Pino                         |                                 10.3.1 | Structured logs with explicit redaction       |
-| OpenTelemetry                | version pinned during observability PR | Cross-service traces and metrics              |
+| Technology                   |               Verified current version | Status             | Intended use                                  |
+| ---------------------------- | -------------------------------------: | ------------------ | --------------------------------------------- |
+| Next.js                      |                                16.2.11 | installed          | Product web application                       |
+| React                        |                                 19.2.8 | installed          | Product UI                                    |
+| Hono                         |                                4.12.32 | installed          | Control API and x402 verifier HTTP services   |
+| Zod                          |                                  4.4.3 | installed          | Runtime validation at every external boundary |
+| `@hono/zod-openapi`          |                                  1.5.1 | candidate for PR 2 | OpenAPI contract generation                   |
+| PostgreSQL driver `postgres` |                                  3.4.9 | candidate for PR 3 | Database access below the repository layer    |
+| Drizzle ORM                  |                                 0.45.2 | candidate for PR 3 | Typed schema and migrations                   |
+| Pino                         |                                 10.3.1 | candidate for PR 3 | Structured logs with explicit redaction       |
+| OpenTelemetry                | version pinned during observability PR | not yet selected   | Cross-service traces and metrics              |
 
 ## Web3 and sponsor baseline
 
-| Package                       | Verified current version | Boundary                                    |
-| ----------------------------- | -----------------------: | ------------------------------------------- |
-| `@worldcoin/agentkit`         |                    0.2.0 | `packages/world-adapter` only               |
-| `@x402/core`                  |                   2.19.0 | x402 protocol boundary                      |
-| `@x402/hedera`                |                   2.19.0 | x402 buyer/facilitator runtime only         |
-| `@x402/hono`                  |                   2.19.0 | Verifier service boundary                   |
-| `@hiero-ledger/sdk`           |                   2.85.0 | x402 runtime, matching `@x402/hedera`       |
-| `@hashgraph/hedera-agent-kit` |                    4.0.0 | settlement planner runtime only             |
-| `@hiero-ledger/sdk`           |                   2.81.0 | settlement runtime, pinned Agent Kit peer   |
-| Viem                          |                   2.55.8 | EVM typed-data and address primitives       |
-| Wagmi                         |                    3.7.4 | Browser wallet integration only if required |
-| JOSE                          |                    6.2.4 | Company-role and verifier signed envelopes  |
-| 0G SDK                        |             not admitted | No package, SDK, credential, or deployment  |
+| Package                       | Verified current version | Status                   | Boundary                                    |
+| ----------------------------- | -----------------------: | ------------------------ | ------------------------------------------- |
+| `@worldcoin/agentkit`         |                    0.2.0 | pending World spike      | `packages/world-adapter` only               |
+| `@x402/core`                  |                   2.19.0 | pending x402 spike       | x402 protocol boundary                      |
+| `@x402/hedera`                |                   2.19.0 | pending x402 spike       | x402 buyer/facilitator runtime only         |
+| `@x402/hono`                  |                   2.19.0 | pending x402 spike       | Verifier service boundary                   |
+| `@hiero-ledger/sdk`           |                   2.85.0 | pending x402 spike       | x402 runtime, matching `@x402/hedera`       |
+| `@hashgraph/hedera-agent-kit` |                    4.0.0 | pending settlement spike | settlement planner runtime only             |
+| `@hiero-ledger/sdk`           |                   2.81.0 | pending settlement spike | settlement runtime, pinned Agent Kit peer   |
+| Viem                          |                   2.55.8 | candidate                | EVM typed-data and address primitives       |
+| Wagmi                         |                    3.7.4 | candidate                | Browser wallet integration only if required |
+| JOSE                          |                    6.2.4 | candidate                | Company-role and verifier signed envelopes  |
+| 0G SDK                        |             not admitted | rejected                 | No package, SDK, credential, or deployment  |
 
 Sponsor packages are not imported by the domain, protocol, persistence, or UI
 packages. The x402 and settlement SDK graphs live in separate processes and
 workspace packages. `@hashgraph/sdk` is not an alias for `@hiero-ledger/sdk`;
-CallGuard uses only the latter and never passes SDK class instances between
+InvoiceGuard uses only the latter and never passes SDK class instances between
 runtimes.
 
 ## Quality baseline
 
-| Tool       | Verified current version | Purpose                                                               |
-| ---------- | -----------------------: | --------------------------------------------------------------------- |
-| Vitest     |                   4.1.10 | Unit, property, contract, and integration tests                       |
-| fast-check |                    4.9.0 | Canonicalization, mutation, idempotency, and state-machine properties |
-| Playwright |                   1.62.0 | User and four-minute demo paths                                       |
-| ESLint     |                   10.7.0 | Newest release admitted by the 24-hour package quarantine             |
-| Prettier   |                    3.9.6 | Deterministic formatting                                              |
+| Tool       | Verified current version | Status         | Purpose                                                               |
+| ---------- | -----------------------: | -------------- | --------------------------------------------------------------------- |
+| Vitest     |                   4.1.10 | installed      | Unit, property, contract, and integration tests                       |
+| fast-check |                    4.9.0 | candidate PR 2 | Canonicalization, mutation, idempotency, and state-machine properties |
+| Playwright |                   1.62.0 | candidate PR 4 | User and four-minute demo paths                                       |
+| ESLint     |                   10.7.0 | installed      | Newest release admitted by the 24-hour package quarantine             |
+| Prettier   |                    3.9.6 | installed      | Deterministic formatting                                              |
 
 ## Dependency security
 
@@ -85,7 +87,7 @@ release-age exception. The exception must pin an exact version and record the
 official source.
 
 At foundation install, Turborepo 2.10.7 and ESLint 10.8.0 were less than 24
-hours old and were rejected by policy. CallGuard selected the newest mature
+hours old and were rejected by policy. InvoiceGuard selected the newest mature
 releases instead of creating a convenience exception.
 
 TypeScript 7.0.2 was also rejected after peer validation:
@@ -100,11 +102,11 @@ graph.
 
 ## Compatibility gate
 
-Before freezing this baseline:
+Before admitting each pending dependency:
 
 1. install the exact workspace with pnpm 11;
 2. compile all sponsor SDK imports under TypeScript 6.0.3 strict mode;
 3. run on Node 24 locally and in CI;
-4. build all Docker images;
+4. build the owning deployable image when containerization lands;
 5. run a minimal live call for each admitted sponsor adapter; and
 6. document any downgrade with an ADR instead of silently changing versions.

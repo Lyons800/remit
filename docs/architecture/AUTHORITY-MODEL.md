@@ -1,6 +1,7 @@
 # Authority model
 
-CallGuard deliberately separates facts that are often collapsed into "identity."
+InvoiceGuard deliberately separates facts that are often collapsed into
+"identity."
 
 ## Independent facts
 
@@ -34,7 +35,7 @@ The World identifier is treated as a sensitive stable pseudonym.
 
 The raw identifier is publicly queryable, pseudonymous AgentBook data and is
 linkable across wallets registered by the same human within AgentBook. The HMAC
-prevents CallGuard from creating another public join; it does not make the
+prevents InvoiceGuard from creating another public join; it does not make the
 source identifier secret on World Chain.
 
 ## Company role credential
@@ -51,7 +52,12 @@ agentTenantPrincipal
 roles
 credentialId
 scopeHash
-maximumAmountAtoms
+sourceAssetId
+maximumSourceAmountAtoms
+settlementNetworkId
+settlementAssetId
+maximumSettlementAmountAtoms
+mappingPolicyHash
 notBefore
 expiresAt
 policyAudience
@@ -71,7 +77,7 @@ must show:
   accepted.
 
 This credential is a demonstration of a company trust root, not a claim that
-CallGuard has independently verified employment.
+InvoiceGuard has independently verified employment.
 
 ## Exact-action human decision
 
@@ -118,11 +124,15 @@ organizationId
 supplierId
 supplierSnapshotDigest
 approvedBeneficiary
-assetId
-networkId
-maximumInvoiceAmountAtoms
-maximumPeriodAmountAtoms
+sourceAssetId
+maximumSourceInvoiceAmountAtoms
+settlementAssetId
+settlementNetworkId
+mappingPolicyHash
+maximumSettlementInvoiceAmountAtoms
+maximumSettlementPeriodAmountAtoms
 period
+verificationMode
 requiredEvidencePolicy
 purchaseOrderPolicy
 notBefore
@@ -133,9 +143,11 @@ mandateVersion
 
 The invoice agent and payment agent cannot create or broaden a mandate. The
 company governance flow issues it under separately authenticated roles and the
-configured approval policy. A beneficiary, asset, supplier snapshot, evidence
-requirement, cap, or validity change creates a new mandate and never inherits
-old payment actions.
+configured approval policy. Source caps are measured in source-asset atoms;
+execution and period caps are measured in settlement-asset atoms after the exact
+frozen mapping. A beneficiary, source asset, settlement asset or network,
+mapping rule, supplier snapshot, evidence requirement, cap, or validity change
+creates a new mandate and never inherits old payment actions.
 
 Unstructured document extraction cannot by itself qualify for a mandate. The
 policy requires an authenticated structured source or independently confirmed
@@ -158,8 +170,10 @@ AND either:
     OR required company-subject, AgentBook, and action-human quorums are present
 AND every required decision has a valid company role
 AND every used World proof, approval session, and agent challenge was atomically consumed once
-AND the configured verification envelope is valid and MATCH
-AND mandate or human decisions, verification, and agent execution bind the same digest and policy
+AND either:
+    frozen verification mode is NOT_REQUIRED
+    OR the configured verification envelope is valid and MATCH
+AND mandate or human decisions, verification mode or result, and agent execution bind the same digest and policy
 AND requested settlement is byte-for-byte within the authorized effect
 ```
 

@@ -1,8 +1,8 @@
 # InvoiceGuard
 
-InvoiceGuard is an agentic accounts-payable operations system built on
-CallGuard's exact-action authorization engine. It gives a finance team one place
-to receive, check, approve, pay, and reconcile supplier invoices.
+InvoiceGuard is an agentic accounts-payable operations system with an
+exact-action authorization engine. It gives a finance team one place to receive,
+check, approve, pay, and reconcile supplier invoices.
 
 The problem is concrete: paying even ten suppliers at our Lisbon padel club
 already means scattered invoices, copied bank details, slow approvals, and

@@ -9,7 +9,7 @@ Checked: 2026-07-25.
 AgentKit is the eligibility boundary for the autonomous invoice and payment
 agents on every policy lane. Without AgentKit, a company cannot establish the
 human backing and accountability class of an enrolled agent. On an exception,
-World AgentBook also lets CallGuard determine that two approval-agent wallets
+World AgentBook also lets InvoiceGuard determine that two approval-agent wallets
 are backed by the same anonymous World ID human and count them once.
 
 AgentKit does not prove that a person reviewed a payment when the agent signed
@@ -51,12 +51,13 @@ npx @worldcoin/agentkit-cli@0.2.0 register 0xAgentAddress
 npx @worldcoin/agentkit-cli@0.2.0 status 0xAgentAddress
 ```
 
-Registration requires the World App and a real World ID human. CallGuard needs
-three AgentBook humans for the complete refusal-and-quorum fixture. Registration
-is completed before the live demo and its transaction evidence is retained.
+Registration requires the World App and a real World ID human. InvoiceGuard
+needs three AgentBook humans for the complete refusal-and-quorum fixture.
+Registration is completed before the live demo and its transaction evidence is
+retained.
 
 AgentBook registration does not prove possession of the submitted wallet and an
-address can be re-registered with its next registration nonce. CallGuard
+address can be re-registered with its next registration nonce. InvoiceGuard
 therefore requires the wallet to sign an enrollment challenge before a company
 role is issued.
 
@@ -121,7 +122,7 @@ invoice to the exception or blocked path.
 4. The agent wallet signs and returns the AgentKit header.
 5. Parse the header and run the released AgentKit validation and signature
    verification.
-6. Add CallGuard's mandatory checks:
+6. Add InvoiceGuard's mandatory checks:
 
    ```text
    payload.uri === expectedApprovalUri
@@ -140,10 +141,10 @@ invoice to the exception or blocked path.
 9. Immediately before settlement, re-resolve AgentBook and recheck the role.
 
 The released validator checks the expected domain and URI host/port but does not
-enforce CallGuard's exact path, resource, method, or action semantics. The
+enforce InvoiceGuard's exact path, resource, method, or action semantics. The
 strict wrapper is consequently a security boundary, not optional hardening.
 AgentKit's reference nonce storage also exposes separate check/record
-operations, so the CallGuard database owns atomic consumption.
+operations, so the InvoiceGuard database owns atomic consumption.
 
 ## Action-time Human-in-the-Loop exception flow
 
@@ -178,14 +179,14 @@ facts and does not claim that they are joined.
 ## Availability and privacy behavior
 
 The reference AgentBook verifier returns `null` both for an unregistered wallet
-and for some RPC failures. CallGuard performs an independent World RPC health
+and for some RPC failures. InvoiceGuard performs an independent World RPC health
 check:
 
 - healthy lookup with no registration: authorization refusal;
 - unhealthy or indeterminate lookup: dependency unavailable, fail closed.
 
 The raw `humanId` is a public pseudonymous value on World Chain and wallets for
-the same person are linkable within AgentBook. CallGuard does not expose that
+the same person are linkable within AgentBook. InvoiceGuard does not expose that
 value or its company mapping in logs, UI, Hedera messages, or public evidence.
 Normal records store a tenant HMAC; public displays use an action-scoped local
 label.

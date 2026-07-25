@@ -7,7 +7,7 @@
 
 The rules allow three selected partners, but a third integration can dilute the
 World and Hedera story. 0G is coherent only if it replaces the existing
-beneficiary-check compute.
+supplier-evidence compute.
 
 ## Decision
 
@@ -43,7 +43,7 @@ Rejected on 2026-07-25:
 - its broker encryption key is not attestation-bound, so a malicious Router can
   substitute a key; and
 - the released TypeScript SDK verifies a signer but does not establish the exact
-  request/output binding CallGuard claims.
+  request/output binding InvoiceGuard claims.
 
 The project selects World and Hedera only. No 0G adapter package, SDK,
 credential, or deployment exists. Reconsideration requires every gate in

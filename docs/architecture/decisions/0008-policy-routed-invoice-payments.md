@@ -29,12 +29,20 @@ A pure deterministic policy routes each frozen action to exactly one outcome:
 - `HUMAN_APPROVAL`; or
 - `BLOCK`.
 
+The same policy sets `verificationMode` to exactly `NOT_REQUIRED` or `REQUIRED`.
+`REQUIRED` makes the paid evidence result a settlement precondition.
+`NOT_REQUIRED` is an explicit, digest-bound policy decision; it is not a
+network-error fallback. The material changed-beneficiary fixture requires
+verification, while a routine mandate may omit it when the mandate version says
+so.
+
 `STRAIGHT_THROUGH` may set the per-invoice human quorum to zero only when every
 field is contained by an unexpired, unrevoked standing mandate. The mandate
-fixes supplier, supplier snapshot, beneficiary, network, asset, invoice and
-period caps, source/evidence requirements, purchase-order policy, validity, and
-version. It is issued through a separate company-governance flow and cannot be
-created or broadened by an invoice or payment agent.
+fixes supplier, supplier snapshot, beneficiary, source asset and cap, settlement
+network and asset, mapping-policy hash, settlement invoice and period caps,
+source/evidence requirements, purchase-order policy, validity, and version. It
+is issued through a separate company-governance flow and cannot be created or
+broadened by an invoice or payment agent.
 
 Email, upload, and model-extracted fields remain untrusted candidate data.
 Unstructured extraction alone cannot enter the straight-through lane.
@@ -46,8 +54,8 @@ policy.
 facts in ADRs 0003 and 0007. `BLOCK` has no override on the existing action; a
 corrected input creates a new invoice revision and action.
 
-All routes retain exact-action hashing, current agent authority, configured
-verification, signing guard, one-use settlement, crash recovery, and
+All routes retain exact-action hashing, current agent authority, the frozen
+verification mode, signing guard, one-use settlement, crash recovery, and
 reconciliation. Approving one payment never updates the supplier master.
 
 ## Consequences

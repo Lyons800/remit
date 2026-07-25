@@ -27,8 +27,10 @@ The policy route is explicit: `STRAIGHT_THROUGH`, `HUMAN_APPROVAL`, or `BLOCK`.
 `STRAIGHT_THROUGH` may require zero per-invoice human decisions only under the
 standing-mandate constraints in ADR 0008.
 
-AI may extract proposed fields or produce the configured supplier-evidence
-result. It cannot sign, mutate policy, or directly authorize settlement.
+AI may extract candidate fields or recommend a route. It cannot produce a
+supplier-evidence result, sign, mutate policy, or directly authorize settlement.
+Only the configured deterministic service can issue the signed `MATCH`,
+`MISMATCH`, or `UNKNOWN` envelope.
 
 ## Consequences
 

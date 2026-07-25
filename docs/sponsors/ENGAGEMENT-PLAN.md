@@ -112,7 +112,7 @@ and a wrong-token negative test.
 ### Z01 - admission blocker
 
 > Our 2026-07-25 testnet review found no acknowledged decentralized private chat
-> provider that can support the beneficiary-check flow, and the current E2EE
+> provider that can support the supplier-evidence flow, and the current E2EE
 > implementation does not yet attest or authenticate the broker key and
 > response. Is there a released testnet surface that closes both gaps? If not,
 > we will not select 0G rather than claim unverifiable private compute.
