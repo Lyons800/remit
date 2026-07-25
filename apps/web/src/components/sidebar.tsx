@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { cn } from '../lib/utils';
 
 const items = [
-  { href: '/', label: 'Dashboard' },
+  { href: '/', label: 'Overview' },
   { href: '/invoices', label: 'Invoices' },
   { href: '/approvals/INV-2026-0912', label: 'Approvals', match: '/approvals' },
   { href: '/suppliers', label: 'Suppliers' },
@@ -18,12 +18,12 @@ const items = [
 export function Sidebar() {
   const pathname = usePathname();
   return (
-    <aside className="hidden w-52 shrink-0 border-r border-border py-6 pr-4 md:block">
-      <div className="mb-8 px-2">
-        <p className="text-sm font-bold">InvoiceGuard</p>
-        <p className="text-xs text-muted-foreground">Padel Peru, Lda</p>
+    <aside className="hidden w-48 shrink-0 py-6 pr-6 md:block">
+      <div className="mb-10 px-2">
+        <p className="text-sm font-semibold tracking-tight">InvoiceGuard</p>
+        <p className="microlabel mt-1">Padel Peru, Lda</p>
       </div>
-      <nav className="flex flex-col gap-1 text-sm">
+      <nav className="flex flex-col text-sm">
         {items.map((item) => {
           const active =
             'match' in item
@@ -32,8 +32,10 @@ export function Sidebar() {
           return (
             <Link
               className={cn(
-                'rounded-md px-2 py-1.5 font-medium hover:bg-muted',
-                active && 'bg-muted text-primary',
+                'border-l px-3 py-2 text-muted-foreground transition-colors hover:text-foreground',
+                active
+                  ? 'border-foreground text-foreground'
+                  : 'border-border',
               )}
               href={item.href}
               key={item.href}
@@ -43,10 +45,10 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <p className="mt-8 px-2 text-[11px] leading-relaxed text-muted-foreground">
-        Policy {`acme-policy-3`} active.
+      <p className="microlabel mt-10 px-3 leading-relaxed">
+        policy acme-policy-3
         <br />
-        All settlement on Hedera Testnet.
+        hedera testnet
       </p>
     </aside>
   );

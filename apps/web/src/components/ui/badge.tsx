@@ -3,16 +3,17 @@ import type { HTMLAttributes } from 'react';
 
 import { cn } from '../../lib/utils';
 
+/* midday-style: square, bordered, mono microtype, monochrome */
 const badgeVariants = cva(
-  'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap',
+  'inline-flex items-center border px-2 py-0.5 text-[11px] font-medium tracking-wide whitespace-nowrap uppercase',
   {
     defaultVariants: { variant: 'default' },
     variants: {
       variant: {
-        default: 'bg-primary/10 text-primary',
-        destructive: 'bg-destructive/10 text-destructive',
-        outline: 'border border-input text-muted-foreground',
-        warning: 'bg-amber-100 text-amber-900',
+        default: 'border-border text-foreground',
+        destructive: 'border-destructive/50 text-destructive',
+        outline: 'border-border text-muted-foreground',
+        warning: 'border-border text-muted-foreground',
       },
     },
   },
@@ -25,6 +26,7 @@ export function Badge({ className, variant, ...properties }: BadgeProperties) {
   return (
     <span
       className={cn(badgeVariants({ className, variant }))}
+      style={{ fontFamily: 'var(--font-geist-mono), monospace' }}
       {...properties}
     />
   );
