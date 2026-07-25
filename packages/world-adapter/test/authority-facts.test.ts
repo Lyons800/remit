@@ -20,6 +20,7 @@ import {
   deriveAgentTenantPrincipalAliases,
   refreshWorldApprovalFact,
   refreshWorldRequestingAgentExecutionFact,
+  type ScopedWorldPrincipal,
   type VerifiedWorldApprovalEvidence,
   type VerifiedWorldExecutorEvidence,
 } from '../src/index.js';
@@ -29,16 +30,22 @@ const REFRESHED_AT = '2026-07-25T10:20:00.000Z';
 const EXPIRES_AT = '2026-07-25T10:50:00.000Z';
 const SHORTER_EXPIRY = '2026-07-25T10:45:00.000Z';
 
+function scopedPrincipal(character: string): ScopedWorldPrincipal {
+  return `hmac-sha256:${character.repeat(43)}`;
+}
+
 function approvalEvidence(
   index: number,
   role: string,
   overrides: Partial<VerifiedWorldApprovalEvidence> = {},
 ): VerifiedWorldApprovalEvidence {
   return {
-    actionHumanPrincipal: `action-human-${index}`,
+    actionHumanPrincipal: scopedPrincipal(String(index)),
     agentBackingRecordId: `agent-backing-${index}`,
     agentKitChallengeId: `agentkit-challenge-${index}`,
-    agentTenantPrincipal: `agent-principal-${index}`,
+    agentTenantPrincipal: scopedPrincipal(
+      String.fromCodePoint('A'.charCodeAt(0) + index),
+    ),
     approvalId: `approval-${index}`,
     approvalSessionId: `approval-session-${index}`,
     consumptionClaimId: `approval-consumption-${index}`,
@@ -58,11 +65,11 @@ function executorEvidence(
   overrides: Partial<VerifiedWorldExecutorEvidence> = {},
 ): VerifiedWorldExecutorEvidence {
   return {
-    actionHumanPrincipal: 'requesting-human-1',
+    actionHumanPrincipal: scopedPrincipal('X'),
     agentBackingRecordId: 'requesting-agent-backing-1',
     agentId: 'payment-agent-1',
     agentKitChallengeId: 'requesting-agentkit-challenge-1',
-    agentTenantPrincipal: 'requesting-agent-principal-1',
+    agentTenantPrincipal: scopedPrincipal('Y'),
     expiresAt: EXPIRES_AT,
     factId: 'requesting-agent-fact-1',
     roleCredentialId: 'requesting-agent-role-credential-1',
@@ -141,6 +148,14 @@ describe('World to AP authority facts', () => {
         }),
       ),
     ).toThrow(/cannot outlive the action/u);
+    expect(() =>
+      createWorldApprovalFact(
+        humanAuthorization,
+        approvalEvidence(1, 'FINANCE_APPROVER', {
+          actionHumanPrincipal: 'hmac-sha256:short',
+        }),
+      ),
+    ).toThrow(/must be a scoped World HMAC principal/u);
   });
 
   it('refreshes status without substituting provenance or extending validity', () => {
