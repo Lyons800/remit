@@ -8,14 +8,14 @@ Checked: 2026-07-25.
 
 Hedera proves two separate financial transitions:
 
-1. a low-balance agent autonomously purchases the configured beneficiary check
-   through x402; and
+1. a low-balance agent autonomously purchases the configured supplier-evidence
+   check through x402; and
 2. a constrained worker executes the exact approved Testnet transfer once.
 
 The check is released only after the first transaction reaches consensus. The
 second transaction is signed only after deterministic authorization and a
-successful HCS approval precommit. CallGuard never claims the two transactions
-are atomic.
+successful HCS authorization precommit. CallGuard never claims the two
+transactions are atomic.
 
 ## Dependency and process contract
 
@@ -47,7 +47,7 @@ Hedera SDK object crosses a process boundary.
 The verifier endpoint is:
 
 ```text
-POST /v1/beneficiary-checks/{actionDigest}
+POST /v1/supplier-evidence-checks/{actionDigest}
 ```
 
 1. The service recomputes the body digest and matches it to the route.
@@ -75,6 +75,17 @@ POST /v1/beneficiary-checks/{actionDigest}
 Version 2.19 requires wiring the released payer-signature verifier and preflight
 callback. A live smoke test is a gate, not an assumption.
 
+## Supplier-evidence result
+
+The paid service checks the configured evidence bundle for one action. In the
+synthetic fixture, `MATCH` means the service found an unexpired record whose
+supplier identity hash, proposed beneficiary fingerprint, evidence root, and
+action digest all match the request. `MISMATCH` means a declared field differs.
+Missing, malformed, stale, or unavailable evidence returns `UNKNOWN`.
+
+The result does not prove legal account ownership, invoice truth, tax
+compliance, or the correctness of any source outside that declared policy.
+
 ## Settlement
 
 Use one custom Agent Kit `RETURN_BYTES` tool:
@@ -91,11 +102,14 @@ The deterministic signing guard decodes the returned transaction and requires:
 
 - `hedera:testnet`;
 - `TransferTransaction` only;
-- exact treasury payer, beneficiary, tinybar amount, and zero-sum transfers;
+- exact treasury payer, beneficiary, action asset, integer atom amount, and
+  zero-sum transfers;
+- HBAR or one explicitly allowlisted HTS fungible test token after its live
+  transfer spike passes;
 - no token, contract, schedule, allowance, or additional operation;
 - exact `cg:exec:v1:<digest>` memo;
 - current signed `MATCH` attestation;
-- successful HCS approval precommit;
+- successful HCS authorization precommit;
 - unexpired and unconsumed action; and
 - transaction bytes and ID matching the durable execution claim.
 
@@ -108,7 +122,8 @@ builds a replacement transaction.
 
 Do not use the optional Agent Kit audit hook as the integrity boundary.
 
-- `approval.v1`: explicit HCS transaction before signing the company transfer;
+- `authorization.v1`: explicit HCS transaction before signing the company
+  transfer; its hash binds either the standing mandate or exception quorum, and
   receipt `SUCCESS` is required.
 - `execution.v1`: postcommit event after the transfer; retried at least once
   with one deterministic event ID.
@@ -119,9 +134,10 @@ references:
 
 ```json
 {
-  "type": "approval.v1",
+  "type": "authorization.v1",
   "eventId": "sha256:...",
   "actionDigest": "sha256:...",
+  "authorizationEvidenceHash": "sha256:...",
   "attestationHash": "sha256:...",
   "x402TransactionId": "0.0.x@...",
   "policyHash": "sha256:...",
@@ -135,7 +151,7 @@ Use dedicated ECDSA Testnet accounts:
 
 1. low-balance x402 buyer;
 2. capped facilitator fee payer;
-3. beneficiary-check service receiver;
+3. supplier-evidence service receiver;
 4. settlement treasury;
 5. audit writer plus HCS topic submit key; and
 6. separate application service-attestation key.
@@ -150,9 +166,10 @@ keyless. The settlement signer accepts only validated frozen bytes.
 - altered digest, memo, network, asset, receiver, amount, fee payer, or body
   fails;
 - crash after x402 submit reconciles the same transaction;
-- HCS approval outage prevents the company transfer;
+- HCS authorization outage prevents the company transfer;
 - postcommit outage yields `audit-degraded` and recovers one event;
 - modified Agent Kit bytes fail the deterministic signing guard;
+- wrong HBAR/HTS asset, token ID, or atom count fails before signing;
 - two workers racing the same digest produce one execution claim;
 - ambiguous submit creates no replacement transaction ID;
 - replayed action returns existing evidence and produces no second transfer.
@@ -165,7 +182,8 @@ release only after a consensus receipt, and disclose that invalid payer
 signatures may be discovered during settlement.
 
 If Agent Kit v4 is not green, use the same direct Hiero SDK planning contract
-and remove the Agent Kit claim. There is no fail-open fallback for HCS approval.
+and remove the Agent Kit claim. There is no fail-open fallback for HCS
+authorization.
 
 ## Judge evidence
 
@@ -173,11 +191,17 @@ and remove the Agent Kit claim. There is no fail-open fallback for HCS approval.
 - x402 transaction ID, facilitator transaction ID, transfer list, memo, receipt,
   and Mirror/HashScan link;
 - signed digest-bound `MATCH` attestation;
-- HCS approval sequence, running hash, payer, and consensus time;
+- HCS authorization sequence, running hash, payer, and consensus time;
 - decoded final frozen transaction and bytes hash;
 - final receipt, Mirror transfer, and HCS execution event;
 - replay attempt proving no second transfer; and
 - one evidence manifest tied to the exact repository/deployment SHA.
+
+The source invoice currency and demonstrated settlement asset are always shown
+separately. HBAR is never presented as a EUR payment. A synthetic
+EUR-denominated HTS token may be used only after the token-transfer guard and
+Agent Kit planning path pass live review; it remains a no-value Testnet fixture,
+not a bank payment or backed stablecoin.
 
 ## First-party sources
 

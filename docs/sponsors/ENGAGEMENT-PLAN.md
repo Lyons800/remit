@@ -55,6 +55,18 @@ negative test.
 Evidence to bring: one exact action with delegate evidence, HITL proof metadata,
 and the deliberately bounded product claim.
 
+### W05 - standing-mandate agent boundary
+
+> Our routine path lets a company-enrolled payment agent act without per-invoice
+> HITL only when deterministic policy proves exact containment by a separately
+> governed standing mandate. We still re-resolve AgentBook, verify the company
+> role, and require the agent's digest-bound signature immediately before
+> settlement. Is that the AgentKit accountability boundary you would expect for
+> autonomous payments, with HITL reserved for policy exceptions?
+
+Evidence to bring: one routine action admitted by a current mandate and the same
+action refused after beneficiary or cap mutation.
+
 ## Hedera questions
 
 ### H01 - x402 2.19 upgrade
@@ -77,10 +89,23 @@ successful Testnet receipt.
 
 ### H03 - HCS and judge evidence
 
-> We use an explicit HCS `approval.v1` receipt as a fail-closed precommit and
-> retry `execution.v1` after settlement with a stable event ID. Which receipt
-> and Mirror fields would you most want judges to see in the four-minute
-> evidence view?
+> We use an explicit HCS `authorization.v1` receipt as a fail-closed precommit
+> for either a standing mandate or exception quorum and retry `execution.v1`
+> after settlement with a stable event ID. Which receipt and Mirror fields would
+> you most want judges to see in the four-minute evidence view?
+
+### H04 - exact fiat-denominated Testnet fixture
+
+> Our source invoice is denominated in EUR, so we will not relabel a small HBAR
+> transfer as that invoice payment. For an exact no-value Testnet
+> representation, would you recommend an ordinary allowlisted HTS fungible demo
+> token, Stablecoin Studio sandbox token, or an HBAR-denominated fixture? We
+> need Agent Kit to return the planned token-transfer bytes and our
+> deterministic guard to validate the token ID, accounts, atom amount, and memo
+> before signing.
+
+Evidence to bring: decoded frozen bytes for one exact allowlisted token transfer
+and a wrong-token negative test.
 
 ## 0G question
 
@@ -102,9 +127,11 @@ This question validates the no-go decision; it is not permission to use mainnet.
 | W02 | pending   | World booth/Discord  | pending         | pending | pending        | pending            |
 | W03 | pending   | World booth/Discord  | pending         | pending | pending        | pending            |
 | W04 | pending   | World booth/Discord  | pending         | pending | pending        | pending            |
+| W05 | pending   | World booth/Discord  | pending         | pending | pending        | pending            |
 | H01 | pending   | Hedera booth/Discord | pending         | pending | pending        | pending            |
 | H02 | pending   | Hedera booth/Discord | pending         | pending | pending        | pending            |
 | H03 | pending   | Hedera booth/Discord | pending         | pending | pending        | pending            |
+| H04 | pending   | Hedera booth/Discord | pending         | pending | pending        | pending            |
 | Z01 | pending   | 0G booth/Discord     | pending         | pending | pending        | pending            |
 
 Classify an answer as `first-party documented`, `first-party informal`,

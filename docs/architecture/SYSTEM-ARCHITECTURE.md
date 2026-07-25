@@ -324,7 +324,7 @@ The x402 facilitator's `/verify` result is not proof of payment. The verifier
 releases its signed response only after `/settle` produces a Hedera consensus
 receipt with `SUCCESS`. The x402 payment and the later company settlement are
 separate transactions; CallGuard joins them with the action digest, service
-attestation, HCS approval precommit, and durable one-use state.
+attestation, HCS authorization precommit, and durable one-use state.
 
 The service result means only that the configured supplier-evidence policy
 matched its declared inputs. It does not prove beneficiary ownership, invoice
@@ -450,7 +450,7 @@ HCS has explicit asymmetric failure semantics:
 | Hedera x402 buyer           | Signs the verification-service debit                  | Low balance and per-operation cap                      |
 | Hedera x402 facilitator     | Adds the fee-payer signature and submits x402 payment | Separate capped fee-payer account                      |
 | Hedera settlement account   | Executes approved Testnet payment                     | Separate key, allowlist, amount cap, gateway only      |
-| Hedera audit writer         | Writes hashed HCS approval and execution events       | Separate low-balance key and topic submit key          |
+| Hedera audit writer         | Writes HCS authorization and execution event hashes   | Separate low-balance key and topic submit key          |
 
 Production key custody is outside the hackathon claim. Testnet keys are still
 treated as secrets and are never committed or exposed to the browser.

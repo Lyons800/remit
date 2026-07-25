@@ -6,13 +6,18 @@ Checked: 2026-07-25.
 
 ## Why World is load-bearing
 
-Without AgentKit, two wallets look like two approval delegates. World AgentBook
-lets CallGuard determine that two registered agent wallets are backed by the
-same anonymous World ID human and count them once.
+AgentKit is the eligibility boundary for the autonomous invoice and payment
+agents on every policy lane. Without AgentKit, a company cannot establish the
+human backing and accountability class of an enrolled agent. On an exception,
+World AgentBook also lets CallGuard determine that two approval-agent wallets
+are backed by the same anonymous World ID human and count them once.
 
 AgentKit does not prove that a person reviewed a payment when the agent signed
-it. World Human-in-the-Loop provides that separate, action-time fact. Neither
-surface establishes a company role or grants treasury authority.
+it. World Human-in-the-Loop provides that separate fact when deterministic
+policy routes an invoice to human approval. Routine invoices fully contained by
+a standing mandate do not manufacture per-invoice approval ceremony. Neither
+World surface establishes a company role, creates a mandate, or grants treasury
+authority.
 
 The decisive demo fixture is:
 
@@ -83,6 +88,23 @@ After proof of wallet possession:
 
 World human backing and the company role remain independently required.
 
+## Straight-through agent flow
+
+A routine invoice may omit per-invoice Human-in-the-Loop only after
+deterministic policy proves exact containment by a current standing mandate. The
+payment agent still:
+
+1. proves possession of its enrolled identity wallet;
+2. resolves to a current AgentBook human backing;
+3. presents a current company role scoped to the organization, supplier,
+   mandate, asset, amount, and action;
+4. signs a short-lived challenge containing the exact action digest; and
+5. has its AgentBook mapping, role, mandate, caps, and action rechecked before
+   settlement.
+
+The agent cannot issue or broaden its own mandate. Leaving a mandate routes the
+invoice to the exception or blocked path.
+
 ## Exact delegate flow
 
 1. Store the immutable canonical action and recompute its SHA-256 digest.
@@ -123,7 +145,7 @@ strict wrapper is consequently a security boundary, not optional hardening.
 AgentKit's reference nonce storage also exposes separate check/record
 operations, so the CallGuard database owns atomic consumption.
 
-## Action-time Human-in-the-Loop flow
+## Action-time Human-in-the-Loop exception flow
 
 1. Create one approval session bound server-side to:
 
@@ -177,6 +199,8 @@ label.
 - every Human-in-the-Loop proof binds the expected action, signal, subject,
   decision, and expiry;
 - reused or cross-action World nullifiers fail;
+- a routine invoice inside a current standing mandate uses no per-invoice HITL;
+- a beneficiary, amount, asset, evidence, or cap change exits that mandate;
 - `A1 + A2` remain one quorum principal;
 - two different delegates cannot count when the same action human is reused;
 - distinct delegate and action-human classes reach quorum only when both roles
@@ -195,9 +219,11 @@ label.
 - one-character action mutation and challenge replay failures;
 - redacted evidence record tied to the same build SHA as the deployment.
 
-The product claim is “a fresh verified human approved this exact action for a
-separately human-backed, company-authorized delegate.” InvoiceGuard does not
-claim that World cryptographically joins the two humans.
+For an exception, the product claim is “a fresh verified human approved this
+exact action for a separately human-backed, company-authorized delegate.”
+InvoiceGuard does not claim that World cryptographically joins the two humans.
+For straight-through payment, the claim is narrower: a currently human-backed,
+company-authorized agent acted inside a separately governed standing mandate.
 
 ## First-party sources
 
