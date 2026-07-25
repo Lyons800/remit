@@ -15,6 +15,13 @@
     "clean": "rm -rf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "@hiero-ledger/sdk": "2.85.0",
+    "@invoiceguard/domain": "workspace:*",
+    "@invoiceguard/protocol": "workspace:*",
+    "@x402/core": "2.19.0",
+    "@x402/hedera": "2.19.0"
+  },
   "devDependencies": {
     "typescript": "catalog:"
   }
