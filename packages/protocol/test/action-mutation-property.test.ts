@@ -146,6 +146,16 @@ const mutations = [
     }),
   },
   {
+    label: 'invoice revision',
+    mutate: (core) => ({
+      ...core,
+      sourceInvoice: {
+        ...core.sourceInvoice,
+        invoiceRevisionId: '019f939b-fe5e-7e92-b72e-8d4531958c39',
+      },
+    }),
+  },
+  {
     label: 'obligation',
     mutate: (core) => ({
       ...core,

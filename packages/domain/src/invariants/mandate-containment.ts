@@ -115,6 +115,16 @@ function beneficiaryMatchesMandate(
   );
 }
 
+function sourceRequirementSatisfied(
+  mandate: StandingMandateV1,
+  reasonCodes: readonly string[],
+): boolean {
+  const authenticated = reasonCodes.includes('SOURCE_AUTHENTICATED_STRUCTURED');
+  return mandate.sourceRequirement.mode === 'AUTHENTICATED_STRUCTURED_ONLY'
+    ? authenticated
+    : authenticated || reasonCodes.includes('FIELDS_INDEPENDENTLY_CONFIRMED');
+}
+
 export function validateMandateContainment(
   authorizationInput: unknown,
   mandateAggregateInput: unknown,
@@ -226,6 +236,7 @@ export function validateMandateContainment(
     action.settlement.networkId !== mandate.settlementNetworkId ||
     action.settlement.beneficiary !== mandate.settlementBeneficiary ||
     action.settlement.mappingPolicyHash !== mandate.mappingPolicyHash ||
+    !sourceRequirementSatisfied(mandate, decision.reasonCodes) ||
     decision.verificationMode !== mandate.verificationMode ||
     canonicalizeJson(decision.evidencePolicy) !==
       canonicalizeJson(mandate.requiredEvidencePolicy) ||

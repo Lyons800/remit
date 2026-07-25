@@ -170,7 +170,9 @@ actorReference
 schemaVersion
 invoiceId
 invoiceRevision
+invoiceRevisionId
 supersedesInvoiceRevisionId
+obligationId
 organizationId
 supplierId
 supplierSnapshotDigest
@@ -239,11 +241,13 @@ actionId
 organizationId
 requestType
 supplierId
+supplierSnapshotDigest
 beneficiary {
   approved
   proposed
 }
 sourceInvoice {
+  invoiceRevisionId
   obligationId
   digest
   amountAtoms
@@ -271,8 +275,9 @@ createdAt
 - V1 uses request type `SUPPLIER_INVOICE_PAYMENT`.
 - Source and settlement amounts are integer atoms with separate explicit asset
   identifiers.
-- `sourceInvoice.digest` binds the canonical invoice revision, including its
-  source-currency amount.
+- `sourceInvoice.invoiceRevisionId`, `sourceInvoice.obligationId`, and
+  `sourceInvoice.digest` bind the exact canonical revision, its stable payable
+  obligation, and its source-currency amount.
 - `mappingPolicyHash` binds the deterministic source-to-settlement mapping. It
   is never inferred from a market price or model output.
 - Policy evaluation is non-circular. InvoiceGuard first hashes the action core

@@ -57,6 +57,14 @@ export const standingMandateCoreV1Schema = z
     settlementBeneficiary: caip10Schema,
     settlementNetworkId: caip2Schema,
     sourceAssetId: assetIdSchema,
+    sourceRequirement: z
+      .object({
+        mode: z.enum([
+          'AUTHENTICATED_STRUCTURED_ONLY',
+          'AUTHENTICATED_OR_INDEPENDENTLY_CONFIRMED',
+        ]),
+      })
+      .strict(),
     supplierId: uuidV7Schema,
     supplierSnapshotDigest: sha256DigestSchema,
     verificationMode: verificationModeSchema,

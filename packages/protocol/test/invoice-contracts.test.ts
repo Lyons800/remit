@@ -160,6 +160,9 @@ function validMandate() {
     settlementBeneficiary: 'hedera:296:0.0.1001',
     settlementNetworkId: 'hedera:296',
     sourceAssetId: 'iso4217:EUR',
+    sourceRequirement: {
+      mode: 'AUTHENTICATED_OR_INDEPENDENTLY_CONFIRMED',
+    },
     supplierId: ID.supplier,
     supplierSnapshotDigest: DIGEST,
     verificationMode: 'NOT_REQUIRED',

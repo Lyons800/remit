@@ -151,6 +151,7 @@ mappingPolicyHash
 maximumSettlementInvoiceAmountAtoms
 maximumSettlementPeriodAmountAtoms
 period
+sourceRequirement
 verificationMode
 requiredEvidencePolicy
 purchaseOrderPolicy
