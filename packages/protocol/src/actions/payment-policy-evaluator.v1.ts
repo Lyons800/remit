@@ -251,6 +251,7 @@ export function evaluatePaymentPolicy(
       policy: config.policy,
       purchaseOrder: input.purchaseOrder,
       reasonCodes: blocked,
+      requiredExecutor: config.executorAuthority,
       requiredAuthority: {
         actionHumanQuorum: 0,
         agentBookQuorum: 0,
@@ -277,6 +278,7 @@ export function evaluatePaymentPolicy(
       policy: config.policy,
       purchaseOrder: input.purchaseOrder,
       reasonCodes: straightThroughReasons(input),
+      requiredExecutor: config.executorAuthority,
       requiredAuthority: {
         actionHumanQuorum: 0,
         agentBookQuorum: 0,
@@ -311,6 +313,7 @@ export function evaluatePaymentPolicy(
     policy: config.policy,
     purchaseOrder: input.purchaseOrder,
     reasonCodes: asciiSort(reasons),
+    requiredExecutor: config.executorAuthority,
     requiredAuthority: config.humanAuthority,
     route: 'HUMAN_APPROVAL',
     schemaVersion: 1,

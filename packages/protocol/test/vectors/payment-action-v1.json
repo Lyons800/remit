@@ -41,6 +41,19 @@
   },
   "policyEvaluation": {
     "config": {
+      "executorAuthority": {
+        "agentBookRegistry": "world-agentbook:eip155:480",
+        "audience": "invoiceguard:settlement",
+        "grant": {
+          "digest": "7777777777777777777777777777777777777777777777777777777777777777",
+          "id": "payment-executor-grant",
+          "version": 1
+        },
+        "requiredRole": "PAYMENT_EXECUTOR",
+        "requiredScope": "payments:execute",
+        "subjectBinding": "AGENT_ID",
+        "tenantBinding": "ACTION_ORGANIZATION"
+      },
       "humanAuthority": {
         "actionHumanQuorum": 2,
         "agentBookQuorum": 2,
@@ -59,6 +72,9 @@
       "humanEvidencePolicy": {
         "digest": "9999999999999999999999999999999999999999999999999999999999999999",
         "id": "changed-beneficiary-v1",
+        "serviceId": "supplier-verifier-v1",
+        "serviceKeyId": "supplier-verifier-key-1",
+        "serviceNetworkId": "hedera:296",
         "version": 1
       },
       "humanVerificationMode": "REQUIRED",
@@ -84,6 +100,9 @@
         "evidencePolicy": {
           "digest": "9999999999999999999999999999999999999999999999999999999999999999",
           "id": "routine-supplier-v1",
+          "serviceId": "supplier-verifier-v1",
+          "serviceKeyId": "supplier-verifier-key-1",
+          "serviceNetworkId": "hedera:296",
           "version": 1
         },
         "exactContainment": true,
@@ -114,7 +133,7 @@
   },
   "expected": {
     "actionCoreDigest": "4f34166bdca2dd2ea06e727e03db737c99c22e7084e486e2c3f2670bac8bb1ed",
-    "actionDigest": "34049542f12cc57d0c54a24fd99112de313c22028cac018e4707ccde8f5ed477",
-    "policyDecisionDigest": "10abbdd5b4cebbfb354310915dc4e7f4bbed0441458d57de7dfd31f7d8ac3543"
+    "actionDigest": "84b2125bfc69aa1766ad2ed060dc793e2b824ae710c5da6f6abd89b24c8a3c52",
+    "policyDecisionDigest": "e6931089c12208503eb42e06abcb1f0d4e68b102c760478a7df412783ea27f34"
   }
 }
