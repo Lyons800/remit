@@ -1,4 +1,5 @@
 export * from './errors.js';
+export * from './facts/payment-facts.js';
 export * from './payment-context.js';
 export * from './result.js';
 export * from './invariants/approval-quorum.js';

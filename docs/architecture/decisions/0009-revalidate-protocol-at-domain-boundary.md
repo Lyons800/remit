@@ -30,16 +30,26 @@ Policy evaluation cannot predate action creation, and authorization cannot
 precede the frozen evaluation time. A mandate version cannot authorize an action
 created before that version's `notBefore`, even if every other field matches.
 
-The payment reducer carries the verified authorization bundle as part of its
-aggregate. Events cannot choose the route, verification mode or expiry. Mandate
-authorization requires an exact active reservation keyed by the action digest
-and referenced mandate version. Human authorization requires the current
-adapter-verified facts themselves; it does not accept a computed quorum boolean.
-Audit and settlement transitions likewise require exact action-bound receipts
-instead of validity flags. Evidence-result, consensus, service-payment and
-settlement receipt objects are adapter-verified application-layer facts produced
-only after the adapter validates the sponsor response; raw SDK or HTTP payloads
-never enter the domain reducer.
+The payment reducer carries the verified authorization bundle and every
+state-dependent prerequisite record as part of its aggregate. Events cannot
+choose the route, verification mode or expiry. Mandate authorization derives the
+exact claim, reserves it from the supplied current ledger, persists the
+`RESERVED` basis, and returns the required atomic ledger write. Human
+authorization persists the exact current adapter-verified approval facts rather
+than a computed quorum boolean. Both routes persist the requesting-agent
+execution fact and revalidate current role and AgentBook authority before
+freezing settlement.
+
+Audit and settlement transitions require exact action-bound records rather than
+validity flags. The frozen attempt binds attempt ID, deterministic idempotency
+key, action and effect digest, transaction ID, signed bytes hash, network,
+adapter, status, and times. Retry compares a candidate with that aggregate-held
+record. Receipt and one-use consumption records must bind the same attempt,
+transaction, bytes, effect, network, action, obligation, invoice revision,
+nonce, and idempotency key. Evidence-result, consensus, service-payment,
+authority and settlement objects are adapter-verified application-layer facts
+produced only after the adapter validates the sponsor response; raw SDK or HTTP
+payloads never enter the domain reducer.
 
 Sponsor cryptography remains outside the domain. World approval adapters emit a
 separate verified-fact contract whose action, status, validity, role and
@@ -48,6 +58,8 @@ distinctness semantics are checked by the domain.
 ## Consequences
 
 - Deserialized records cannot enter an authorization transition on shape alone.
+- Hydration cannot claim an advanced payment state without all prerequisite
+  records and monotonic transition metadata.
 - Mutation of a supplier snapshot, evidence policy, purchase-order result,
   route, expiry, or settlement beneficiary changes a digest or fails
   containment.

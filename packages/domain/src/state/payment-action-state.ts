@@ -1,27 +1,61 @@
 import {
+  canonicalizeJson,
+  hashPolicyDecision,
   verifyAuthorizationBundle,
   type AuthorizationBundleV1,
 } from '@invoiceguard/protocol/hashing';
 
 import {
+  parseAdapterVerifiedApprovalFact,
   validateApprovalQuorum,
   type AdapterVerifiedApprovalFact,
+  type ApprovalBinding,
 } from '../invariants/approval-quorum.js';
 import { validateMandateContainment } from '../invariants/mandate-containment.js';
 import {
+  releaseMandateReservation,
+  reserveMandateCapacity,
+  settleMandateReservation,
   validateActiveMandateReservation,
+  type MandateReservationClaim,
   type MandateReservationLedger,
 } from '../invariants/mandate.js';
+import {
+  actionFactBinding,
+  deriveSettlementEffectDigest,
+  deriveSettlementIdempotencyKey,
+  parseAdapterVerifiedAuthorizationAudit,
+  parseAdapterVerifiedCancellationAudit,
+  parseAdapterVerifiedEvidenceResult,
+  parseAdapterVerifiedSettlementReceipt,
+  parseAdapterVerifiedSettlementUncertainty,
+  parseAdapterVerifiedVerificationPayment,
+  parseAtomicSettlementConsumptionClaim,
+  parseFrozenSettlementAttempt,
+  parseRequestingAgentExecutionFact,
+  sameActionFactBinding,
+  type ActionFactBinding,
+  type AdapterVerifiedAuthorizationAudit,
+  type AdapterVerifiedCancellationAudit,
+  type AdapterVerifiedEvidenceResult,
+  type AdapterVerifiedSettlementReceipt,
+  type AdapterVerifiedSettlementUncertainty,
+  type AdapterVerifiedVerificationPayment,
+  type AtomicSettlementConsumptionClaim,
+  type FrozenSettlementAttempt,
+  type RequestingAgentExecutionFact,
+} from '../facts/payment-facts.js';
+import {
+  hasExactKeys,
+  hasValidAdapterRecordDigest,
+  hashAdapterRecord,
+} from '../facts/adapter-record.js';
 import type {
   StandingMandateAggregate,
   TrustedTransitionContext,
 } from '../payment-context.js';
 import { accept, refuse, type DomainResult } from '../result.js';
-import {
-  isNonEmptyBoundedString,
-  isRecord,
-  isSha256Digest,
-} from '../values/validation.js';
+import { isRecord, isSha256Digest } from '../values/validation.js';
 import { isCanonicalUtcInstant } from './temporal.js';
 
 export const paymentActionStates = [
@@ -48,38 +82,82 @@ export const paymentActionStates = [
 
 export type PaymentActionState = (typeof paymentActionStates)[number];
 
+export type HumanAuthorizationBasisCore = Readonly<{
+  approvals: readonly AdapterVerifiedApprovalFact[];
+  authorizedAt: string;
+  decisionDigest: string;
+  kind: 'HUMAN_APPROVAL';
+  requestingAgent: RequestingAgentExecutionFact;
+}>;
+export type HumanAuthorizationBasis = Readonly<
+  HumanAuthorizationBasisCore & { basisDigest: string }
+>;
+
+export type MandateAuthorizationBasisCore = Readonly<{
+  authorizedAt: string;
+  kind: 'MANDATE';
+  mandate: StandingMandateAggregate;
+  requestingAgent: RequestingAgentExecutionFact;
+  reservationClaim: MandateReservationClaim;
+  reservedLedger: MandateReservationLedger;
+}>;
+export type MandateAuthorizationBasis = Readonly<
+  MandateAuthorizationBasisCore & { basisDigest: string }
+>;
+
+export type PaymentAuthorizationBasis =
+  HumanAuthorizationBasis | MandateAuthorizationBasis;
+
+export type PaymentAggregateMetadata = Readonly<{
+  lastEventType: PaymentActionEventType | null;
+  lastTransitionAt: string;
+  previousState: PaymentActionState | null;
+  transitionCount: number;
+  version: number;
+}>;
+
+export type PaymentTerminalRecordCore = Readonly<{
+  eventType:
+    | 'CANCEL'
+    | 'EXPIRE'
+    | 'RECONCILE_EXCEPTION'
+    | 'RECONCILE_SUCCESS'
+    | 'REJECT_APPROVALS'
+    | 'REJECT_AUTHORIZATION'
+    | 'REJECT_POLICY_BLOCK'
+    | 'REJECT_VERIFICATION'
+    | 'SUPERSEDE';
+  kind: 'PAYMENT_TERMINAL';
+  outcome:
+    | 'CANCELLED'
+    | 'EXPIRED'
+    | 'RECONCILED'
+    | 'RECONCILIATION_EXCEPTION'
+    | 'REJECTED'
+    | 'SUPERSEDED';
+  previousState: PaymentActionState;
+  recordedAt: string;
+}>;
+export type PaymentTerminalRecord = Readonly<
+  PaymentTerminalRecordCore & { recordDigest: string }
+>;
+
 export type PaymentActionAggregate = Readonly<{
   authorization: AuthorizationBundleV1;
+  authorizationAudit: AdapterVerifiedAuthorizationAudit | null;
+  authorizationBasis: PaymentAuthorizationBasis | null;
+  cancellationAudit: AdapterVerifiedCancellationAudit | null;
+  consumptionClaim: AtomicSettlementConsumptionClaim | null;
+  evidenceResult: AdapterVerifiedEvidenceResult | null;
+  executionApprovals: readonly AdapterVerifiedApprovalFact[] | null;
+  executionAuthority: RequestingAgentExecutionFact | null;
+  metadata: PaymentAggregateMetadata;
+  settlementAttempt: FrozenSettlementAttempt | null;
+  settlementReceipt: AdapterVerifiedSettlementReceipt | null;
+  settlementUncertainty: AdapterVerifiedSettlementUncertainty | null;
   state: PaymentActionState;
-}>;
-
-export type AdapterVerifiedConsensusCommit = Readonly<{
-  actionDigest: string;
-  status: 'CONSENSUS';
-}>;
-
-export type AdapterVerifiedServicePayment = Readonly<{
-  actionDigest: string;
-  status: 'CONSENSUS';
-}>;
-
-export type AdapterVerifiedSettlementReceipt = Readonly<{
-  actionDigest: string;
-  status: 'SUCCESS';
-  transactionId: string;
-}>;
-
-export type AdapterVerifiedEvidenceResult = Readonly<{
-  actionDigest: string;
-  expiresAt: string;
-  result: 'MATCH' | 'MISMATCH' | 'UNKNOWN';
-  status: 'VERIFIED';
-}>;
-
-export type FrozenTransactionRetryFact = Readonly<{
-  actionDigest: string;
-  frozenTransactionHash: string;
-  retryTransactionHash: string;
+  terminal: PaymentTerminalRecord | null;
+  verificationPayment: AdapterVerifiedVerificationPayment | null;
 }>;
 
 export type PaymentActionEvent =
@@ -88,7 +166,7 @@ export type PaymentActionEvent =
   | Readonly<{ type: 'SATISFY_EVIDENCE_NOT_REQUIRED' }>
   | Readonly<{ type: 'QUOTE_VERIFICATION' }>
   | Readonly<{
-      servicePayment: AdapterVerifiedServicePayment;
+      payment: AdapterVerifiedVerificationPayment;
       type: 'RECORD_VERIFICATION_PAYMENT';
     }>
   | Readonly<{
@@ -101,46 +179,72 @@ export type PaymentActionEvent =
     }>
   | Readonly<{
       mandate: StandingMandateAggregate;
+      requestingAgent: RequestingAgentExecutionFact;
       reservationLedger: MandateReservationLedger;
       type: 'AUTHORIZE_MANDATE';
     }>
   | Readonly<{ type: 'AWAIT_APPROVALS' }>
   | Readonly<{
       approvals: readonly AdapterVerifiedApprovalFact[];
+      requestingAgent: RequestingAgentExecutionFact;
       type: 'AUTHORIZE_APPROVALS';
     }>
   | Readonly<{ type: 'REJECT_APPROVALS' }>
   | Readonly<{
-      authorizationCommit: AdapterVerifiedConsensusCommit;
+      reservationLedger: MandateReservationLedger | null;
+      type: 'REJECT_AUTHORIZATION';
+    }>
+  | Readonly<{
+      authorizationAudit: AdapterVerifiedAuthorizationAudit;
       type: 'COMMIT_AUDIT';
     }>
   | Readonly<{ type: 'START_AUTHORIZATION_RECOVERY' }>
   | Readonly<{
-      authorizationCommit: AdapterVerifiedConsensusCommit;
+      authorizationAudit: AdapterVerifiedAuthorizationAudit;
       type: 'RECOVER_AUDIT';
     }>
-  | Readonly<{ type: 'QUEUE_SETTLEMENT' }>
   | Readonly<{
+      approvals: readonly AdapterVerifiedApprovalFact[] | null;
+      attempt: FrozenSettlementAttempt;
+      mandate: StandingMandateAggregate | null;
+      requestingAgent: RequestingAgentExecutionFact;
+      reservationLedger: MandateReservationLedger | null;
+      type: 'QUEUE_SETTLEMENT';
+    }>
+  | Readonly<{
+      consumptionClaim: AtomicSettlementConsumptionClaim;
       receipt: AdapterVerifiedSettlementReceipt;
+      reservationLedger: MandateReservationLedger | null;
       type: 'SETTLE_CONSENSUS';
     }>
-  | Readonly<{ type: 'START_SETTLEMENT_RECOVERY' }>
   | Readonly<{
+      type: 'START_SETTLEMENT_RECOVERY';
+      uncertainty: AdapterVerifiedSettlementUncertainty;
+    }>
+  | Readonly<{
+      consumptionClaim: AtomicSettlementConsumptionClaim;
       receipt: AdapterVerifiedSettlementReceipt;
+      reservationLedger: MandateReservationLedger | null;
       type: 'RECOVER_SETTLEMENT';
     }>
   | Readonly<{
-      recovery: FrozenTransactionRetryFact;
+      candidate: FrozenSettlementAttempt;
       type: 'RETRY_SAME_TRANSACTION';
     }>
   | Readonly<{ type: 'START_RECONCILIATION' }>
   | Readonly<{ type: 'RECONCILE_SUCCESS' }>
   | Readonly<{ type: 'RECONCILE_EXCEPTION' }>
-  | Readonly<{ type: 'EXPIRE' }>
-  | Readonly<{ type: 'SUPERSEDE' }>
   | Readonly<{
-      cancellationCommit: AdapterVerifiedConsensusCommit;
-      effectStatus: 'NOT_SIGNED';
+      reservationLedger: MandateReservationLedger | null;
+      type: 'EXPIRE';
+    }>
+  | Readonly<{
+      reservationLedger: MandateReservationLedger | null;
+      type: 'SUPERSEDE';
+    }>
+  | Readonly<{
+      cancellationAudit: AdapterVerifiedCancellationAudit;
+      reservationLedger: MandateReservationLedger | null;
       type: 'CANCEL';
     }>;
 
@@ -158,6 +262,7 @@ export const paymentActionEventTypes = [
   'AWAIT_APPROVALS',
   'AUTHORIZE_APPROVALS',
   'REJECT_APPROVALS',
+  'REJECT_AUTHORIZATION',
   'COMMIT_AUDIT',
   'START_AUTHORIZATION_RECOVERY',
   'RECOVER_AUDIT',
@@ -173,6 +278,41 @@ export const paymentActionEventTypes = [
   'SUPERSEDE',
   'CANCEL',
 ] as const satisfies readonly PaymentActionEventType[];
+
+export type MandateReservationWriteEffect = Readonly<{
+  atomicGroupKey: string;
+  claim: MandateReservationClaim;
+  expectedLedger: MandateReservationLedger;
+  nextLedger: MandateReservationLedger;
+  operation: 'RELEASE' | 'RESERVE' | 'SETTLE';
+  type: 'MANDATE_RESERVATION_WRITE';
+}>;
+
+export type SettlementConsumptionWriteEffect = Readonly<{
+  atomicGroupKey: string;
+  claim: AtomicSettlementConsumptionClaim;
+  receipt: AdapterVerifiedSettlementReceipt;
+  type: 'SETTLEMENT_CONSUMPTION_WRITE';
+}>;
+
+export type VerificationQuoteRequestEffect = Readonly<{
+  actionDigest: string;
+  atomicGroupKey: string;
+  evidencePolicyDigest: string;
+  expiresAt: string;
+  type: 'VERIFICATION_QUOTE_REQUEST';
+}>;
+
+export type PaymentDomainEffect =
+  | MandateReservationWriteEffect
+  | SettlementConsumptionWriteEffect
+  | VerificationQuoteRequestEffect;
+
+export type PaymentActionTransition = Readonly<{
+  aggregate: PaymentActionAggregate;
+  atomicGroupKey: string;
+  effects: readonly PaymentDomainEffect[];
+}>;
 
 const terminalStates: ReadonlySet<PaymentActionState> = new Set([
   'RECONCILED',
@@ -196,11 +336,13 @@ const transitions: Readonly<
   AUTHORIZATION_RECOVERY: {
     EXPIRE: 'EXPIRED',
     RECOVER_AUDIT: 'AUDIT_COMMITTED',
+    REJECT_AUTHORIZATION: 'REJECTED',
     SUPERSEDE: 'SUPERSEDED',
   },
   AUTHORIZED: {
     COMMIT_AUDIT: 'AUDIT_COMMITTED',
     EXPIRE: 'EXPIRED',
+    REJECT_AUTHORIZATION: 'REJECTED',
     START_AUTHORIZATION_RECOVERY: 'AUTHORIZATION_RECOVERY',
     SUPERSEDE: 'SUPERSEDED',
   },
@@ -262,65 +404,84 @@ const transitions: Readonly<
   },
 };
 
+const AGGREGATE_KEYS = [
+  'authorization',
+  'authorizationAudit',
+  'authorizationBasis',
+  'cancellationAudit',
+  'consumptionClaim',
+  'evidenceResult',
+  'executionApprovals',
+  'executionAuthority',
+  'metadata',
+  'settlementAttempt',
+  'settlementReceipt',
+  'settlementUncertainty',
+  'state',
+  'terminal',
+  'verificationPayment',
+] as const;
+const METADATA_KEYS = [
+  'lastEventType',
+  'lastTransitionAt',
+  'previousState',
+  'transitionCount',
+  'version',
+] as const;
+const HUMAN_BASIS_KEYS = [
+  'approvals',
+  'authorizedAt',
+  'basisDigest',
+  'decisionDigest',
+  'kind',
+  'requestingAgent',
+] as const;
+const MANDATE_BASIS_KEYS = [
+  'authorizedAt',
+  'basisDigest',
+  'kind',
+  'mandate',
+  'requestingAgent',
+  'reservationClaim',
+  'reservedLedger',
+] as const;
+const TERMINAL_KEYS = [
+  'eventType',
+  'kind',
+  'outcome',
+  'previousState',
+  'recordDigest',
+  'recordedAt',
+] as const;
 const NO_PAYLOAD_EVENTS: ReadonlySet<PaymentActionEventType> = new Set([
+  'AWAIT_APPROVALS',
   'CLASSIFY',
+  'RECONCILE_EXCEPTION',
+  'RECONCILE_SUCCESS',
+  'REJECT_APPROVALS',
   'REJECT_POLICY_BLOCK',
   'SATISFY_EVIDENCE_NOT_REQUIRED',
-  'QUOTE_VERIFICATION',
-  'AWAIT_APPROVALS',
-  'REJECT_APPROVALS',
   'START_AUTHORIZATION_RECOVERY',
-  'QUEUE_SETTLEMENT',
-  'START_SETTLEMENT_RECOVERY',
   'START_RECONCILIATION',
-  'RECONCILE_SUCCESS',
-  'RECONCILE_EXCEPTION',
-  'EXPIRE',
-  'SUPERSEDE',
 ]);
-
-const PRE_EXPIRY_EVENTS: ReadonlySet<PaymentActionEventType> = new Set([
-  'AUTHORIZE_MANDATE',
+const LIVE_ACTION_EVENTS: ReadonlySet<PaymentActionEventType> = new Set([
+  'ACCEPT_VERIFICATION',
   'AUTHORIZE_APPROVALS',
+  'AUTHORIZE_MANDATE',
+  'AWAIT_APPROVALS',
+  'CLASSIFY',
   'COMMIT_AUDIT',
-  'RECOVER_AUDIT',
   'QUEUE_SETTLEMENT',
+  'QUOTE_VERIFICATION',
+  'RECORD_VERIFICATION_PAYMENT',
+  'RECOVER_AUDIT',
+  'REJECT_APPROVALS',
+  'REJECT_AUTHORIZATION',
+  'REJECT_POLICY_BLOCK',
+  'REJECT_VERIFICATION',
+  'SATISFY_EVIDENCE_NOT_REQUIRED',
+  'START_AUTHORIZATION_RECOVERY',
 ]);
-
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const actual = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
-  return (
-    actual.length === sortedExpected.length &&
-    actual.every((key, index) => key === sortedExpected[index])
-  );
-}
-
-function verifyAggregate(input: unknown): DomainResult<PaymentActionAggregate> {
-  if (
-    !isRecord(input) ||
-    !hasExactKeys(input, ['authorization', 'state']) ||
-    !paymentActionStates.includes(input.state as PaymentActionState)
-  ) {
-    return refuse('POLICY_CORE_BINDING_MISMATCH');
-  }
-
-  try {
-    return accept(
-      Object.freeze({
-        authorization: verifyAuthorizationBundle(
-          input.authorization as AuthorizationBundleV1,
-        ),
-        state: input.state as PaymentActionState,
-      }),
-    );
-  } catch {
-    return refuse('POLICY_CORE_BINDING_MISMATCH');
-  }
-}
 
 function parseContext(input: unknown): DomainResult<TrustedTransitionContext> {
   if (
@@ -330,7 +491,6 @@ function parseContext(input: unknown): DomainResult<TrustedTransitionContext> {
   ) {
     return refuse('ACTION_TIME_INVALID');
   }
-
   return accept(Object.freeze({ now: input.now as string }));
 }
 
@@ -345,262 +505,1287 @@ function parseEventType(input: unknown): PaymentActionEventType | null {
   return input.type as PaymentActionEventType;
 }
 
-function hasExactActionStatus(
-  input: unknown,
-  actionDigest: string,
-  status: string,
-): boolean {
-  return (
-    isRecord(input) &&
-    hasExactKeys(input, ['actionDigest', 'status']) &&
-    input.actionDigest === actionDigest &&
-    input.status === status
-  );
+function approvalBinding(
+  authorization: AuthorizationBundleV1,
+  minimumVerifiedAt: string,
+): ApprovalBinding {
+  return Object.freeze({
+    ...actionFactBinding(authorization),
+    minimumVerifiedAt,
+  });
 }
 
-function validateVerification(
+function exactBinding(
+  authorization: AuthorizationBundleV1,
+  actual: ActionFactBinding,
+): boolean {
+  return sameActionFactBinding(actionFactBinding(authorization), actual);
+}
+
+function parseMetadata(
+  input: unknown,
+  authorization: AuthorizationBundleV1,
+  state: PaymentActionState,
+): PaymentAggregateMetadata | null {
+  if (
+    !isRecord(input) ||
+    !hasExactKeys(input, METADATA_KEYS) ||
+    !Number.isSafeInteger(input.version) ||
+    !Number.isSafeInteger(input.transitionCount) ||
+    (input.version as number) <= 0 ||
+    (input.transitionCount as number) < 0 ||
+    input.version !== (input.transitionCount as number) + 1 ||
+    !isCanonicalUtcInstant(
+      typeof input.lastTransitionAt === 'string' ? input.lastTransitionAt : '',
+    ) ||
+    (input.lastTransitionAt as string) < authorization.actionCore.createdAt
+  ) {
+    return null;
+  }
+
+  if (input.transitionCount === 0) {
+    if (
+      state !== 'CAPTURED' ||
+      input.version !== 1 ||
+      input.previousState !== null ||
+      input.lastEventType !== null ||
+      input.lastTransitionAt !== authorization.actionCore.createdAt
+    ) {
+      return null;
+    }
+  } else {
+    if (
+      typeof input.previousState !== 'string' ||
+      !paymentActionStates.includes(
+        input.previousState as PaymentActionState,
+      ) ||
+      typeof input.lastEventType !== 'string' ||
+      !paymentActionEventTypes.includes(
+        input.lastEventType as PaymentActionEventType,
+      ) ||
+      transitions[input.previousState as PaymentActionState][
+        input.lastEventType as PaymentActionEventType
+      ] !== state
+    ) {
+      return null;
+    }
+  }
+
+  return Object.freeze({
+    lastEventType: input.lastEventType as PaymentActionEventType | null,
+    lastTransitionAt: input.lastTransitionAt as string,
+    previousState: input.previousState as PaymentActionState | null,
+    transitionCount: input.transitionCount as number,
+    version: input.version as number,
+  });
+}
+
+function validateRequestingAgent(
   input: unknown,
   authorization: AuthorizationBundleV1,
   now: string,
-): DomainResult<'MATCH' | 'MISMATCH' | 'UNKNOWN'> {
+  minimumVerifiedAt: string,
+): DomainResult<RequestingAgentExecutionFact> {
+  const fact = parseRequestingAgentExecutionFact(input);
+  if (fact === null) {
+    return refuse('REQUESTING_AGENT_FACT_INVALID');
+  }
+  if (
+    !exactBinding(authorization, fact) ||
+    fact.effectDigest !== deriveSettlementEffectDigest(authorization)
+  ) {
+    return refuse('ACTION_DIGEST_MISMATCH');
+  }
+  if (fact.companyRoleStatus === 'REVOKED') {
+    return refuse('ROLE_REVOKED');
+  }
+  if (fact.companyRoleStatus === 'EXPIRED') {
+    return refuse('ROLE_EXPIRED');
+  }
+  if (fact.companyRoleStatus !== 'CURRENT') {
+    return refuse('ROLE_UNVERIFIED');
+  }
+  if (fact.agentBookStatus !== 'CURRENT') {
+    return refuse('AGENT_BACKING_UNVERIFIED');
+  }
+  if (
+    fact.verifiedAt < minimumVerifiedAt ||
+    fact.verifiedAt > now ||
+    now >= fact.expiresAt ||
+    fact.expiresAt > authorization.actionCore.expiresAt
+  ) {
+    return refuse('REQUESTING_AGENT_STALE');
+  }
+  return accept(fact);
+}
+
+function sameRequestingAgentIdentity(
+  original: RequestingAgentExecutionFact,
+  current: RequestingAgentExecutionFact,
+): boolean {
+  return (
+    original.agentId === current.agentId &&
+    original.agentTenantPrincipal === current.agentTenantPrincipal &&
+    original.actionHumanPrincipal === current.actionHumanPrincipal &&
+    original.role === current.role &&
+    original.roleCredentialId === current.roleCredentialId &&
+    original.agentBackingRecordId === current.agentBackingRecordId
+  );
+}
+
+function createHumanBasis(
+  authorization: AuthorizationBundleV1,
+  approvals: readonly AdapterVerifiedApprovalFact[],
+  requestingAgent: RequestingAgentExecutionFact,
+  authorizedAt: string,
+): HumanAuthorizationBasis {
+  const core = Object.freeze({
+    approvals,
+    authorizedAt,
+    decisionDigest: hashPolicyDecision(authorization.decision),
+    kind: 'HUMAN_APPROVAL' as const,
+    requestingAgent,
+  });
+  return Object.freeze({
+    ...core,
+    basisDigest: hashAdapterRecord('HUMAN_AUTHORIZATION_BASIS', core),
+  });
+}
+
+function createMandateBasis(
+  mandate: StandingMandateAggregate,
+  requestingAgent: RequestingAgentExecutionFact,
+  reservationClaim: MandateReservationClaim,
+  reservedLedger: MandateReservationLedger,
+  authorizedAt: string,
+): MandateAuthorizationBasis {
+  const core = Object.freeze({
+    authorizedAt,
+    kind: 'MANDATE' as const,
+    mandate,
+    requestingAgent,
+    reservationClaim,
+    reservedLedger,
+  });
+  return Object.freeze({
+    ...core,
+    basisDigest: hashAdapterRecord('MANDATE_AUTHORIZATION_BASIS', core),
+  });
+}
+
+function parseAuthorizationBasis(
+  input: unknown,
+  authorization: AuthorizationBundleV1,
+): DomainResult<PaymentAuthorizationBasis> {
   if (
     !isRecord(input) ||
-    !hasExactKeys(input, ['actionDigest', 'expiresAt', 'result', 'status']) ||
-    input.actionDigest !== authorization.envelope.actionDigest ||
-    input.status !== 'VERIFIED' ||
-    (input.result !== 'MATCH' &&
-      input.result !== 'MISMATCH' &&
-      input.result !== 'UNKNOWN')
+    !isCanonicalUtcInstant(input.authorizedAt as string)
   ) {
-    return input !== null &&
-      isRecord(input) &&
-      input.actionDigest !== authorization.envelope.actionDigest
-      ? refuse('ACTION_DIGEST_MISMATCH')
-      : refuse('VERIFICATION_MISMATCH');
+    return refuse('AUTHORIZATION_BASIS_INVALID');
+  }
+  const requestingAgent = parseRequestingAgentExecutionFact(
+    input.requestingAgent,
+  );
+  if (
+    requestingAgent === null ||
+    !exactBinding(authorization, requestingAgent) ||
+    requestingAgent.effectDigest !== deriveSettlementEffectDigest(authorization)
+  ) {
+    return refuse('AUTHORIZATION_BASIS_INVALID');
+  }
+
+  if (input.kind === 'HUMAN_APPROVAL') {
+    if (
+      !hasExactKeys(input, HUMAN_BASIS_KEYS) ||
+      !isSha256Digest(input.basisDigest) ||
+      input.decisionDigest !== hashPolicyDecision(authorization.decision) ||
+      !Array.isArray(input.approvals)
+    ) {
+      return refuse('AUTHORIZATION_BASIS_INVALID');
+    }
+    const { basisDigest, ...core } = input;
+    if (basisDigest !== hashAdapterRecord('HUMAN_AUTHORIZATION_BASIS', core)) {
+      return refuse('AUTHORIZATION_BASIS_INVALID');
+    }
+    const approvals = validateApprovalQuorum(
+      approvalBinding(authorization, authorization.decision.evaluatedAt),
+      authorization.decision.requiredAuthority,
+      input.approvals,
+      input.authorizedAt as string,
+    );
+    if (!approvals.ok || authorization.decision.route !== 'HUMAN_APPROVAL') {
+      return refuse('AUTHORIZATION_BASIS_INVALID');
+    }
+    return accept(
+      Object.freeze({
+        approvals: approvals.value,
+        authorizedAt: input.authorizedAt as string,
+        basisDigest,
+        decisionDigest: input.decisionDigest as string,
+        kind: input.kind,
+        requestingAgent,
+      }),
+    );
   }
 
   if (
-    !isCanonicalUtcInstant(
-      typeof input.expiresAt === 'string' ? input.expiresAt : '',
-    ) ||
-    now >= (input.expiresAt as string) ||
-    (input.expiresAt as string) > authorization.actionCore.expiresAt
+    input.kind !== 'MANDATE' ||
+    !hasExactKeys(input, MANDATE_BASIS_KEYS) ||
+    !isSha256Digest(input.basisDigest)
   ) {
-    return refuse('VERIFICATION_EXPIRED');
+    return refuse('AUTHORIZATION_BASIS_INVALID');
   }
-
-  return accept(input.result);
+  const { basisDigest, ...core } = input;
+  if (basisDigest !== hashAdapterRecord('MANDATE_AUTHORIZATION_BASIS', core)) {
+    return refuse('AUTHORIZATION_BASIS_INVALID');
+  }
+  const containment = validateMandateContainment(
+    authorization,
+    input.mandate,
+    input.authorizedAt as string,
+  );
+  if (
+    !containment.ok ||
+    canonicalizeJson(containment.value) !==
+      canonicalizeJson(input.reservationClaim)
+  ) {
+    return refuse('AUTHORIZATION_BASIS_INVALID');
+  }
+  const reserved = validateActiveMandateReservation(
+    input.reservedLedger,
+    containment.value,
+  );
+  if (!reserved.ok) {
+    return refuse('AUTHORIZATION_BASIS_INVALID');
+  }
+  return accept(
+    Object.freeze({
+      authorizedAt: input.authorizedAt as string,
+      basisDigest,
+      kind: input.kind,
+      mandate: input.mandate as StandingMandateAggregate,
+      requestingAgent,
+      reservationClaim: containment.value,
+      reservedLedger: input.reservedLedger as MandateReservationLedger,
+    }),
+  );
 }
 
-function validateCommit(
+function parseTerminalRecord(
   input: unknown,
-  actionDigest: string,
-): DomainResult<true> {
-  return hasExactActionStatus(input, actionDigest, 'CONSENSUS')
-    ? accept(true)
-    : refuse('HCS_AUTHORIZATION_REQUIRED');
-}
-
-function validateSettlementReceipt(
-  input: unknown,
-  actionDigest: string,
-): DomainResult<true> {
+  state: PaymentActionState,
+  metadata: PaymentAggregateMetadata,
+): PaymentTerminalRecord | null {
   if (
     !isRecord(input) ||
-    !hasExactKeys(input, ['actionDigest', 'status', 'transactionId']) ||
-    input.actionDigest !== actionDigest ||
-    input.status !== 'SUCCESS' ||
-    !isNonEmptyBoundedString(input.transactionId)
+    !hasExactKeys(input, TERMINAL_KEYS) ||
+    !hasValidAdapterRecordDigest(input, 'PAYMENT_TERMINAL') ||
+    input.kind !== 'PAYMENT_TERMINAL' ||
+    input.outcome !== state ||
+    input.eventType !== metadata.lastEventType ||
+    input.previousState !== metadata.previousState ||
+    input.recordedAt !== metadata.lastTransitionAt
+  ) {
+    return null;
+  }
+  return Object.freeze({ ...input }) as PaymentTerminalRecord;
+}
+
+function createTerminalRecord(
+  eventType: PaymentTerminalRecordCore['eventType'],
+  outcome: PaymentTerminalRecordCore['outcome'],
+  previousState: PaymentActionState,
+  recordedAt: string,
+): PaymentTerminalRecord {
+  const core = Object.freeze({
+    eventType,
+    kind: 'PAYMENT_TERMINAL' as const,
+    outcome,
+    previousState,
+    recordedAt,
+  });
+  return Object.freeze({
+    ...core,
+    recordDigest: hashAdapterRecord('PAYMENT_TERMINAL', core),
+  });
+}
+
+function parseApprovalFacts(
+  input: unknown,
+): readonly AdapterVerifiedApprovalFact[] | null {
+  if (!Array.isArray(input) || input.length > 255) {
+    return null;
+  }
+  const facts: AdapterVerifiedApprovalFact[] = [];
+  for (const candidate of input) {
+    const fact = parseAdapterVerifiedApprovalFact(candidate);
+    if (fact === null) {
+      return null;
+    }
+    facts.push(fact);
+  }
+  return Object.freeze(facts);
+}
+
+type ParsedAggregateFacts = Omit<
+  PaymentActionAggregate,
+  'authorization' | 'metadata' | 'state'
+>;
+
+function parseAggregateFacts(
+  input: Record<string, unknown>,
+  authorization: AuthorizationBundleV1,
+): ParsedAggregateFacts | null {
+  const verificationPayment =
+    input.verificationPayment === null
+      ? null
+      : parseAdapterVerifiedVerificationPayment(input.verificationPayment);
+  const evidenceResult =
+    input.evidenceResult === null
+      ? null
+      : parseAdapterVerifiedEvidenceResult(input.evidenceResult);
+  const authorizationBasis =
+    input.authorizationBasis === null
+      ? null
+      : parseAuthorizationBasis(input.authorizationBasis, authorization);
+  const authorizationAudit =
+    input.authorizationAudit === null
+      ? null
+      : parseAdapterVerifiedAuthorizationAudit(input.authorizationAudit);
+  const cancellationAudit =
+    input.cancellationAudit === null
+      ? null
+      : parseAdapterVerifiedCancellationAudit(input.cancellationAudit);
+  const settlementAttempt =
+    input.settlementAttempt === null
+      ? null
+      : parseFrozenSettlementAttempt(input.settlementAttempt);
+  const settlementUncertainty =
+    input.settlementUncertainty === null
+      ? null
+      : parseAdapterVerifiedSettlementUncertainty(input.settlementUncertainty);
+  const settlementReceipt =
+    input.settlementReceipt === null
+      ? null
+      : parseAdapterVerifiedSettlementReceipt(input.settlementReceipt);
+  const consumptionClaim =
+    input.consumptionClaim === null
+      ? null
+      : parseAtomicSettlementConsumptionClaim(input.consumptionClaim);
+  const executionAuthority =
+    input.executionAuthority === null
+      ? null
+      : parseRequestingAgentExecutionFact(input.executionAuthority);
+  const executionApprovals =
+    input.executionApprovals === null
+      ? null
+      : parseApprovalFacts(input.executionApprovals);
+
+  if (
+    (input.verificationPayment !== null && verificationPayment === null) ||
+    (input.evidenceResult !== null && evidenceResult === null) ||
+    (input.authorizationBasis !== null && !authorizationBasis?.ok) ||
+    (input.authorizationAudit !== null && authorizationAudit === null) ||
+    (input.cancellationAudit !== null && cancellationAudit === null) ||
+    (input.settlementAttempt !== null && settlementAttempt === null) ||
+    (input.settlementUncertainty !== null && settlementUncertainty === null) ||
+    (input.settlementReceipt !== null && settlementReceipt === null) ||
+    (input.consumptionClaim !== null && consumptionClaim === null) ||
+    (input.executionAuthority !== null && executionAuthority === null) ||
+    (input.executionApprovals !== null && executionApprovals === null)
+  ) {
+    return null;
+  }
+  const parsedAuthorizationBasis =
+    authorizationBasis !== null && authorizationBasis.ok
+      ? authorizationBasis.value
+      : null;
+
+  return Object.freeze({
+    authorizationAudit,
+    authorizationBasis: parsedAuthorizationBasis,
+    cancellationAudit,
+    consumptionClaim,
+    evidenceResult,
+    executionApprovals,
+    executionAuthority,
+    settlementAttempt,
+    settlementReceipt,
+    settlementUncertainty,
+    terminal: null,
+    verificationPayment,
+  });
+}
+
+function factsBindAuthorization(
+  authorization: AuthorizationBundleV1,
+  facts: ParsedAggregateFacts,
+): boolean {
+  const candidates: ActionFactBinding[] = [];
+  for (const candidate of [
+    facts.verificationPayment,
+    facts.evidenceResult,
+    facts.authorizationAudit,
+    facts.cancellationAudit,
+    facts.settlementAttempt,
+    facts.settlementUncertainty,
+    facts.settlementReceipt,
+    facts.consumptionClaim,
+    facts.executionAuthority,
+  ]) {
+    if (candidate !== null) {
+      candidates.push(candidate);
+    }
+  }
+  candidates.push(...(facts.executionApprovals ?? []));
+  return candidates.every((candidate) =>
+    exactBinding(authorization, candidate),
+  );
+}
+
+function evidenceFactsValid(
+  authorization: AuthorizationBundleV1,
+  facts: ParsedAggregateFacts,
+  stage: 'NONE' | 'PAID' | 'SATISFIED' | 'REJECTED',
+): boolean {
+  const required = authorization.decision.verificationMode === 'REQUIRED';
+  if (!required) {
+    return facts.verificationPayment === null && facts.evidenceResult === null;
+  }
+  if (stage === 'NONE') {
+    return facts.verificationPayment === null && facts.evidenceResult === null;
+  }
+  if (facts.verificationPayment === null) {
+    return false;
+  }
+  if (
+    facts.verificationPayment.evidencePolicyDigest !==
+      authorization.decision.evidencePolicy.digest ||
+    facts.verificationPayment.paidAt >= authorization.actionCore.expiresAt
+  ) {
+    return false;
+  }
+  if (stage === 'PAID') {
+    return facts.evidenceResult === null;
+  }
+  if (
+    facts.evidenceResult === null ||
+    facts.evidenceResult.evidencePolicyDigest !==
+      authorization.decision.evidencePolicy.digest ||
+    facts.evidenceResult.evidenceRoot !==
+      authorization.actionCore.evidenceRoot ||
+    facts.evidenceResult.servicePaymentId !==
+      facts.verificationPayment.servicePaymentId ||
+    facts.evidenceResult.serviceRequestDigest !==
+      facts.verificationPayment.serviceRequestDigest ||
+    facts.evidenceResult.verifiedAt < facts.verificationPayment.paidAt ||
+    facts.evidenceResult.expiresAt > authorization.actionCore.expiresAt
+  ) {
+    return false;
+  }
+  return stage === 'SATISFIED'
+    ? facts.evidenceResult.result === 'MATCH'
+    : facts.evidenceResult.result !== 'MATCH';
+}
+
+function authorizationFactsValid(
+  authorization: AuthorizationBundleV1,
+  facts: ParsedAggregateFacts,
+  requireAudit: boolean,
+): boolean {
+  if (facts.authorizationBasis === null) {
+    return false;
+  }
+  if (
+    facts.authorizationAudit !== null &&
+    (facts.authorizationAudit.authorizationBasisDigest !==
+      facts.authorizationBasis.basisDigest ||
+      facts.authorizationAudit.committedAt <
+        facts.authorizationBasis.authorizedAt)
+  ) {
+    return false;
+  }
+  if (requireAudit && facts.authorizationAudit === null) {
+    return false;
+  }
+  return (
+    facts.authorizationBasis.requestingAgent.effectDigest ===
+    deriveSettlementEffectDigest(authorization)
+  );
+}
+
+function executionFactsValid(
+  authorization: AuthorizationBundleV1,
+  facts: ParsedAggregateFacts,
+): boolean {
+  const basis = facts.authorizationBasis;
+  const attempt = facts.settlementAttempt;
+  const current = facts.executionAuthority;
+  if (basis === null || attempt === null || current === null) {
+    return false;
+  }
+  if (
+    !sameRequestingAgentIdentity(basis.requestingAgent, current) ||
+    current.companyRoleStatus !== 'CURRENT' ||
+    current.agentBookStatus !== 'CURRENT' ||
+    current.effectDigest !== attempt.effectDigest ||
+    attempt.effectDigest !== deriveSettlementEffectDigest(authorization) ||
+    attempt.idempotencyKey !== deriveSettlementIdempotencyKey(authorization) ||
+    attempt.networkId !== authorization.actionCore.settlement.networkId ||
+    attempt.expiresAt !== authorization.actionCore.expiresAt ||
+    current.verifiedAt > attempt.createdAt ||
+    attempt.createdAt >= attempt.expiresAt ||
+    current.expiresAt <= attempt.createdAt
+  ) {
+    return false;
+  }
+  if (basis.kind === 'MANDATE') {
+    return facts.executionApprovals === null;
+  }
+  if (facts.executionApprovals === null) {
+    return false;
+  }
+  const approvals = validateApprovalQuorum(
+    approvalBinding(
+      authorization,
+      facts.authorizationAudit?.committedAt ?? basis.authorizedAt,
+    ),
+    authorization.decision.requiredAuthority,
+    facts.executionApprovals,
+    attempt.createdAt,
+  );
+  return (
+    approvals.ok && sameApprovalIdentities(basis.approvals, approvals.value)
+  );
+}
+
+function settlementFactsValid(
+  facts: ParsedAggregateFacts,
+  requireReceipt: boolean,
+): boolean {
+  const attempt = facts.settlementAttempt;
+  if (attempt === null) {
+    return false;
+  }
+  if (!requireReceipt) {
+    return facts.settlementReceipt === null && facts.consumptionClaim === null;
+  }
+  const receipt = facts.settlementReceipt;
+  const claim = facts.consumptionClaim;
+  return (
+    receipt !== null &&
+    claim !== null &&
+    receipt.attemptId === attempt.attemptId &&
+    receipt.idempotencyKey === attempt.idempotencyKey &&
+    receipt.effectDigest === attempt.effectDigest &&
+    receipt.transactionId === attempt.transactionId &&
+    receipt.signedBytesHash === attempt.signedBytesHash &&
+    receipt.networkId === attempt.networkId &&
+    claim.attemptId === attempt.attemptId &&
+    claim.idempotencyKey === attempt.idempotencyKey &&
+    claim.receiptId === receipt.receiptId &&
+    claim.consumedAt >= receipt.settledAt
+  );
+}
+
+function noAuthorizationFacts(facts: ParsedAggregateFacts): boolean {
+  return (
+    facts.authorizationBasis === null &&
+    facts.authorizationAudit === null &&
+    facts.cancellationAudit === null &&
+    facts.executionAuthority === null &&
+    facts.executionApprovals === null &&
+    facts.settlementAttempt === null &&
+    facts.settlementUncertainty === null &&
+    facts.settlementReceipt === null &&
+    facts.consumptionClaim === null
+  );
+}
+
+function validateFactsForState(
+  state: PaymentActionState,
+  authorization: AuthorizationBundleV1,
+  facts: ParsedAggregateFacts,
+  rejectedEvidence = false,
+): boolean {
+  if (
+    (state === 'CAPTURED' ||
+      state === 'CLASSIFIED' ||
+      state === 'VERIFICATION_QUOTED') &&
+    !evidenceFactsValid(authorization, facts, 'NONE')
+  ) {
+    return false;
+  }
+  if (
+    state === 'VERIFICATION_PAID' &&
+    !evidenceFactsValid(authorization, facts, 'PAID')
+  ) {
+    return false;
+  }
+  const afterEvidence = new Set<PaymentActionState>([
+    'EVIDENCE_SATISFIED',
+    'AWAITING_APPROVALS',
+    'AUTHORIZED',
+    'AUTHORIZATION_RECOVERY',
+    'AUDIT_COMMITTED',
+    'SETTLEMENT_PENDING',
+    'SETTLEMENT_RECOVERY',
+    'SETTLED',
+    'RECONCILING',
+    'RECONCILED',
+    'RECONCILIATION_EXCEPTION',
+  ]);
+  if (
+    afterEvidence.has(state) &&
+    !evidenceFactsValid(
+      authorization,
+      facts,
+      rejectedEvidence ? 'REJECTED' : 'SATISFIED',
+    )
+  ) {
+    return false;
+  }
+
+  const beforeAuthorization = new Set<PaymentActionState>([
+    'CAPTURED',
+    'CLASSIFIED',
+    'VERIFICATION_QUOTED',
+    'VERIFICATION_PAID',
+    'EVIDENCE_SATISFIED',
+    'AWAITING_APPROVALS',
+  ]);
+  if (beforeAuthorization.has(state) && !noAuthorizationFacts(facts)) {
+    return false;
+  }
+
+  const authorizedStates = new Set<PaymentActionState>([
+    'AUTHORIZED',
+    'AUTHORIZATION_RECOVERY',
+    'AUDIT_COMMITTED',
+    'SETTLEMENT_PENDING',
+    'SETTLEMENT_RECOVERY',
+    'SETTLED',
+    'RECONCILING',
+    'RECONCILED',
+    'RECONCILIATION_EXCEPTION',
+  ]);
+  if (
+    authorizedStates.has(state) &&
+    !authorizationFactsValid(
+      authorization,
+      facts,
+      state !== 'AUTHORIZED' && state !== 'AUTHORIZATION_RECOVERY',
+    )
+  ) {
+    return false;
+  }
+  if (
+    (state === 'AUTHORIZED' || state === 'AUTHORIZATION_RECOVERY') &&
+    (facts.executionAuthority !== null ||
+      facts.executionApprovals !== null ||
+      facts.settlementAttempt !== null ||
+      facts.settlementUncertainty !== null ||
+      facts.settlementReceipt !== null ||
+      facts.consumptionClaim !== null)
+  ) {
+    return false;
+  }
+  if (
+    state === 'AUDIT_COMMITTED' &&
+    (facts.executionAuthority !== null ||
+      facts.executionApprovals !== null ||
+      facts.settlementAttempt !== null ||
+      facts.settlementUncertainty !== null ||
+      facts.settlementReceipt !== null ||
+      facts.consumptionClaim !== null)
+  ) {
+    return false;
+  }
+
+  const attemptedStates = new Set<PaymentActionState>([
+    'SETTLEMENT_PENDING',
+    'SETTLEMENT_RECOVERY',
+    'SETTLED',
+    'RECONCILING',
+    'RECONCILED',
+    'RECONCILIATION_EXCEPTION',
+  ]);
+  if (
+    attemptedStates.has(state) &&
+    (!executionFactsValid(authorization, facts) ||
+      !settlementFactsValid(
+        facts,
+        state === 'SETTLED' ||
+          state === 'RECONCILING' ||
+          state === 'RECONCILED' ||
+          state === 'RECONCILIATION_EXCEPTION',
+      ))
+  ) {
+    return false;
+  }
+  if (
+    state === 'SETTLEMENT_RECOVERY' &&
+    (facts.settlementUncertainty === null ||
+      facts.settlementUncertainty.attemptId !==
+        facts.settlementAttempt?.attemptId)
+  ) {
+    return false;
+  }
+  if (
+    state === 'SETTLEMENT_PENDING' &&
+    facts.settlementUncertainty !== null &&
+    facts.settlementUncertainty.attemptId !== facts.settlementAttempt?.attemptId
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function verifyTerminalState(
+  aggregate: PaymentActionAggregate,
+  facts: ParsedAggregateFacts,
+): boolean {
+  const terminal = aggregate.terminal;
+  const previous = aggregate.metadata.previousState;
+  if (terminal === null || previous === null) {
+    return false;
+  }
+  if (aggregate.state === 'REJECTED') {
+    if (terminal.eventType === 'REJECT_VERIFICATION') {
+      return (
+        previous === 'VERIFICATION_PAID' &&
+        evidenceFactsValid(aggregate.authorization, facts, 'REJECTED') &&
+        noAuthorizationFacts(facts)
+      );
+    }
+    if (terminal.eventType === 'REJECT_POLICY_BLOCK') {
+      return (
+        previous === 'CLASSIFIED' &&
+        aggregate.authorization.decision.route === 'BLOCK' &&
+        evidenceFactsValid(aggregate.authorization, facts, 'NONE') &&
+        noAuthorizationFacts(facts)
+      );
+    }
+    if (terminal.eventType === 'REJECT_AUTHORIZATION') {
+      return (
+        (previous === 'AUTHORIZED' || previous === 'AUTHORIZATION_RECOVERY') &&
+        validateFactsForState(previous, aggregate.authorization, facts)
+      );
+    }
+    return (
+      terminal.eventType === 'REJECT_APPROVALS' &&
+      previous === 'AWAITING_APPROVALS' &&
+      validateFactsForState(previous, aggregate.authorization, facts)
+    );
+  }
+  if (aggregate.state === 'CANCELLED') {
+    return (
+      terminal.eventType === 'CANCEL' &&
+      previous === 'AUDIT_COMMITTED' &&
+      facts.cancellationAudit !== null &&
+      facts.authorizationAudit !== null &&
+      facts.cancellationAudit.authorizationAuditId ===
+        facts.authorizationAudit.auditId &&
+      facts.cancellationAudit.committedAt === terminal.recordedAt &&
+      validateFactsForState(previous, aggregate.authorization, facts)
+    );
+  }
+  if (
+    aggregate.state === 'RECONCILED' ||
+    aggregate.state === 'RECONCILIATION_EXCEPTION'
+  ) {
+    return validateFactsForState('RECONCILING', aggregate.authorization, facts);
+  }
+  return validateFactsForState(previous, aggregate.authorization, facts);
+}
+
+function verifyAggregate(input: unknown): DomainResult<PaymentActionAggregate> {
+  if (
+    !isRecord(input) ||
+    !hasExactKeys(input, AGGREGATE_KEYS) ||
+    !paymentActionStates.includes(input.state as PaymentActionState)
+  ) {
+    return refuse('POLICY_CORE_BINDING_MISMATCH');
+  }
+
+  try {
+    const authorization = verifyAuthorizationBundle(
+      input.authorization as AuthorizationBundleV1,
+    );
+    const state = input.state as PaymentActionState;
+    const metadata = parseMetadata(input.metadata, authorization, state);
+    const facts = parseAggregateFacts(input, authorization);
+    if (
+      metadata === null ||
+      facts === null ||
+      !factsBindAuthorization(authorization, facts)
+    ) {
+      return refuse('POLICY_CORE_BINDING_MISMATCH');
+    }
+    const terminal =
+      input.terminal === null
+        ? null
+        : parseTerminalRecord(input.terminal, state, metadata);
+    if (
+      (input.terminal !== null && terminal === null) ||
+      facts.terminal !== null
+    ) {
+      return refuse('POLICY_CORE_BINDING_MISMATCH');
+    }
+    const aggregate = Object.freeze({
+      ...facts,
+      authorization,
+      metadata,
+      state,
+      terminal,
+    });
+    const valid = terminalStates.has(state)
+      ? verifyTerminalState(aggregate, facts)
+      : terminal === null &&
+        facts.cancellationAudit === null &&
+        validateFactsForState(state, authorization, facts);
+    return valid ? accept(aggregate) : refuse('POLICY_CORE_BINDING_MISMATCH');
+  } catch {
+    return refuse('POLICY_CORE_BINDING_MISMATCH');
+  }
+}
+
+export function createPaymentActionAggregate(
+  authorizationInput: unknown,
+): DomainResult<PaymentActionAggregate> {
+  try {
+    const authorization = verifyAuthorizationBundle(
+      authorizationInput as AuthorizationBundleV1,
+    );
+    return accept(
+      Object.freeze({
+        authorization,
+        authorizationAudit: null,
+        authorizationBasis: null,
+        cancellationAudit: null,
+        consumptionClaim: null,
+        evidenceResult: null,
+        executionApprovals: null,
+        executionAuthority: null,
+        metadata: Object.freeze({
+          lastEventType: null,
+          lastTransitionAt: authorization.actionCore.createdAt,
+          previousState: null,
+          transitionCount: 0,
+          version: 1,
+        }),
+        settlementAttempt: null,
+        settlementReceipt: null,
+        settlementUncertainty: null,
+        state: 'CAPTURED',
+        terminal: null,
+        verificationPayment: null,
+      }),
+    );
+  } catch {
+    return refuse('POLICY_CORE_BINDING_MISMATCH');
+  }
+}
+
+function nextMetadata(
+  aggregate: PaymentActionAggregate,
+  eventType: PaymentActionEventType,
+  now: string,
+): PaymentAggregateMetadata {
+  return Object.freeze({
+    lastEventType: eventType,
+    lastTransitionAt: now,
+    previousState: aggregate.state,
+    transitionCount: aggregate.metadata.transitionCount + 1,
+    version: aggregate.metadata.version + 1,
+  });
+}
+
+function atomicGroupKey(
+  aggregate: PaymentActionAggregate,
+  nextVersion = aggregate.metadata.version + 1,
+): string {
+  return `payment:${aggregate.authorization.envelope.actionDigest}:v${nextVersion}`;
+}
+
+function transitionResult(
+  aggregate: PaymentActionAggregate,
+  next: PaymentActionState,
+  eventType: PaymentActionEventType,
+  now: string,
+  patch: Partial<PaymentActionAggregate> = {},
+  effects: readonly PaymentDomainEffect[] = [],
+  terminalEvent?: PaymentTerminalRecordCore['eventType'],
+): DomainResult<PaymentActionTransition> {
+  const metadata = nextMetadata(aggregate, eventType, now);
+  const nextAggregate = Object.freeze({
+    ...aggregate,
+    ...patch,
+    metadata,
+    state: next,
+    terminal:
+      terminalEvent === undefined
+        ? aggregate.terminal
+        : createTerminalRecord(
+            terminalEvent,
+            next as PaymentTerminalRecordCore['outcome'],
+            aggregate.state,
+            now,
+          ),
+  });
+  const verified = verifyAggregate(nextAggregate);
+  if (!verified.ok) {
+    return verified;
+  }
+  return accept(
+    Object.freeze({
+      aggregate: verified.value,
+      atomicGroupKey: atomicGroupKey(aggregate),
+      effects: Object.freeze(effects),
+    }),
+  );
+}
+
+function sameApprovalIdentities(
+  original: readonly AdapterVerifiedApprovalFact[],
+  current: readonly AdapterVerifiedApprovalFact[],
+): boolean {
+  const identity = (approval: AdapterVerifiedApprovalFact) => ({
+    actionHumanPrincipal: approval.actionHumanPrincipal,
+    agentBackingRecordId: approval.agentBackingRecordId,
+    agentTenantPrincipal: approval.agentTenantPrincipal,
+    approvalId: approval.approvalId,
+    consumptionClaimId: approval.consumptionClaimId,
+    decisionId: approval.decisionId,
+    role: approval.role,
+    roleCredentialId: approval.roleCredentialId,
+    subjectId: approval.subjectId,
+  });
+  return (
+    canonicalizeJson(original.map(identity).sort(sortByApprovalId)) ===
+    canonicalizeJson(current.map(identity).sort(sortByApprovalId))
+  );
+}
+
+function sortByApprovalId(
+  left: Readonly<{ approvalId: string }>,
+  right: Readonly<{ approvalId: string }>,
+): number {
+  return left.approvalId < right.approvalId
+    ? -1
+    : left.approvalId > right.approvalId
+      ? 1
+      : 0;
+}
+
+function validateAttempt(
+  input: unknown,
+  authorization: AuthorizationBundleV1,
+  now: string,
+  minimumCreatedAt: string,
+): DomainResult<FrozenSettlementAttempt> {
+  const attempt = parseFrozenSettlementAttempt(input);
+  if (
+    attempt === null ||
+    !exactBinding(authorization, attempt) ||
+    attempt.effectDigest !== deriveSettlementEffectDigest(authorization) ||
+    attempt.idempotencyKey !== deriveSettlementIdempotencyKey(authorization) ||
+    attempt.networkId !== authorization.actionCore.settlement.networkId ||
+    attempt.expiresAt !== authorization.actionCore.expiresAt ||
+    attempt.createdAt < minimumCreatedAt ||
+    attempt.createdAt > now ||
+    now >= attempt.expiresAt
+  ) {
+    return refuse('SETTLEMENT_ATTEMPT_MISMATCH');
+  }
+  return accept(attempt);
+}
+
+function validateReceiptAndClaim(
+  receiptInput: unknown,
+  claimInput: unknown,
+  aggregate: PaymentActionAggregate,
+  now: string,
+): DomainResult<
+  Readonly<{
+    claim: AtomicSettlementConsumptionClaim;
+    receipt: AdapterVerifiedSettlementReceipt;
+  }>
+> {
+  const attempt = aggregate.settlementAttempt;
+  const receipt = parseAdapterVerifiedSettlementReceipt(receiptInput);
+  const claim = parseAtomicSettlementConsumptionClaim(claimInput);
+  if (
+    attempt === null ||
+    receipt === null ||
+    claim === null ||
+    !exactBinding(aggregate.authorization, receipt) ||
+    !exactBinding(aggregate.authorization, claim) ||
+    receipt.attemptId !== attempt.attemptId ||
+    receipt.effectDigest !== attempt.effectDigest ||
+    receipt.idempotencyKey !== attempt.idempotencyKey ||
+    receipt.networkId !== attempt.networkId ||
+    receipt.signedBytesHash !== attempt.signedBytesHash ||
+    receipt.transactionId !== attempt.transactionId ||
+    receipt.settledAt < attempt.createdAt ||
+    receipt.settledAt > now ||
+    claim.attemptId !== attempt.attemptId ||
+    claim.idempotencyKey !== attempt.idempotencyKey ||
+    claim.receiptId !== receipt.receiptId ||
+    claim.consumedAt < receipt.settledAt ||
+    claim.consumedAt > now
   ) {
     return refuse('SETTLEMENT_TRANSACTION_MISMATCH');
   }
-  return accept(true);
+  return accept(Object.freeze({ claim, receipt }));
 }
 
-function validateEventGuard(
-  authorization: AuthorizationBundleV1,
+function reservationEffect(
+  aggregate: PaymentActionAggregate,
+  operation: MandateReservationWriteEffect['operation'],
+  expectedLedger: MandateReservationLedger,
+  nextLedger: MandateReservationLedger,
+  claim: MandateReservationClaim,
+): MandateReservationWriteEffect {
+  return Object.freeze({
+    atomicGroupKey: atomicGroupKey(aggregate),
+    claim,
+    expectedLedger,
+    nextLedger,
+    operation,
+    type: 'MANDATE_RESERVATION_WRITE',
+  });
+}
+
+function releaseReservationForTerminal(
+  aggregate: PaymentActionAggregate,
+  ledgerInput: unknown,
+): DomainResult<readonly PaymentDomainEffect[]> {
+  const basis = aggregate.authorizationBasis;
+  if (basis === null || basis.kind === 'HUMAN_APPROVAL') {
+    return ledgerInput === null
+      ? accept(Object.freeze([]))
+      : refuse('MANDATE_RESERVATION_CONFLICT');
+  }
+  const released = releaseMandateReservation(
+    ledgerInput,
+    basis.reservationClaim,
+  );
+  if (!released.ok) {
+    return released;
+  }
+  return accept(
+    Object.freeze([
+      reservationEffect(
+        aggregate,
+        'RELEASE',
+        ledgerInput as MandateReservationLedger,
+        released.value.ledger,
+        basis.reservationClaim,
+      ),
+    ]),
+  );
+}
+
+function validateAudit(
+  input: unknown,
+  aggregate: PaymentActionAggregate,
+  now: string,
+): DomainResult<AdapterVerifiedAuthorizationAudit> {
+  const audit = parseAdapterVerifiedAuthorizationAudit(input);
+  const basis = aggregate.authorizationBasis;
+  if (
+    audit === null ||
+    basis === null ||
+    !exactBinding(aggregate.authorization, audit) ||
+    audit.authorizationBasisDigest !== basis.basisDigest ||
+    audit.committedAt < basis.authorizedAt ||
+    audit.committedAt > now ||
+    audit.committedAt >= aggregate.authorization.actionCore.expiresAt
+  ) {
+    return refuse('HCS_AUTHORIZATION_REQUIRED');
+  }
+  return accept(audit);
+}
+
+function handleQueue(
+  aggregate: PaymentActionAggregate,
   event: Record<string, unknown>,
-  eventType: PaymentActionEventType,
-  context: TrustedTransitionContext,
-): DomainResult<true> {
-  const actionDigest = authorization.envelope.actionDigest;
-  const decision = authorization.decision;
-
-  if (NO_PAYLOAD_EVENTS.has(eventType) && !hasExactKeys(event, ['type'])) {
-    return refuse('INVALID_STATE_TRANSITION');
-  }
-
-  if (PRE_EXPIRY_EVENTS.has(eventType) && context.now < decision.evaluatedAt) {
-    return refuse('ACTION_TIME_INVALID');
-  }
-
+  now: string,
+): DomainResult<PaymentActionTransition> {
   if (
-    PRE_EXPIRY_EVENTS.has(eventType) &&
-    context.now >= authorization.actionCore.expiresAt
+    !hasExactKeys(event, [
+      'approvals',
+      'attempt',
+      'mandate',
+      'requestingAgent',
+      'reservationLedger',
+      'type',
+    ])
   ) {
-    return refuse('ACTION_EXPIRED');
+    return refuse('SETTLEMENT_ATTEMPT_MISMATCH');
   }
-
+  const basis = aggregate.authorizationBasis;
+  const audit = aggregate.authorizationAudit;
+  if (basis === null || audit === null) {
+    return refuse('AUTHORIZATION_BASIS_INVALID');
+  }
+  const requestingAgent = validateRequestingAgent(
+    event.requestingAgent,
+    aggregate.authorization,
+    now,
+    audit.committedAt,
+  );
   if (
-    eventType === 'EXPIRE' &&
-    context.now < authorization.actionCore.expiresAt
+    !requestingAgent.ok ||
+    !sameRequestingAgentIdentity(
+      basis.requestingAgent,
+      requestingAgent.ok ? requestingAgent.value : basis.requestingAgent,
+    )
   ) {
-    return refuse('ACTION_NOT_EXPIRED');
+    return requestingAgent.ok
+      ? refuse('REQUESTING_AGENT_IDENTITY_CHANGED')
+      : requestingAgent;
   }
-
-  if (eventType === 'REJECT_POLICY_BLOCK' && decision.route !== 'BLOCK') {
-    return refuse('POLICY_ROUTE_MISMATCH');
+  const attempt = validateAttempt(
+    event.attempt,
+    aggregate.authorization,
+    now,
+    aggregate.metadata.lastTransitionAt,
+  );
+  if (!attempt.ok) {
+    return attempt;
   }
-
   if (
-    eventType === 'SATISFY_EVIDENCE_NOT_REQUIRED' &&
-    (decision.verificationMode !== 'NOT_REQUIRED' || decision.route === 'BLOCK')
+    requestingAgent.value.effectDigest !== attempt.value.effectDigest ||
+    requestingAgent.value.verifiedAt > attempt.value.createdAt
   ) {
-    return refuse('VERIFICATION_MODE_MISMATCH');
+    return refuse('REQUESTING_AGENT_FACT_INVALID');
   }
 
-  if (
-    eventType === 'QUOTE_VERIFICATION' &&
-    decision.verificationMode !== 'REQUIRED'
-  ) {
-    return refuse('VERIFICATION_REQUIRED');
-  }
-
-  if (eventType === 'RECORD_VERIFICATION_PAYMENT') {
-    if (
-      decision.verificationMode !== 'REQUIRED' ||
-      !hasExactKeys(event, ['servicePayment', 'type']) ||
-      !hasExactActionStatus(event.servicePayment, actionDigest, 'CONSENSUS')
-    ) {
-      return refuse('ACTION_DIGEST_MISMATCH');
+  let executionApprovals: readonly AdapterVerifiedApprovalFact[] | null = null;
+  if (basis.kind === 'HUMAN_APPROVAL') {
+    if (event.mandate !== null || event.reservationLedger !== null) {
+      return refuse('POLICY_ROUTE_MISMATCH');
     }
-  }
-
-  if (
-    eventType === 'ACCEPT_VERIFICATION' ||
-    eventType === 'REJECT_VERIFICATION'
-  ) {
-    if (
-      decision.verificationMode !== 'REQUIRED' ||
-      !hasExactKeys(event, ['type', 'verification'])
-    ) {
-      return refuse('VERIFICATION_MISMATCH');
-    }
-    const verification = validateVerification(
-      event.verification,
-      authorization,
-      context.now,
+    const approvals = validateApprovalQuorum(
+      approvalBinding(aggregate.authorization, audit.committedAt),
+      aggregate.authorization.decision.requiredAuthority,
+      event.approvals,
+      attempt.value.createdAt,
     );
-    if (!verification.ok) {
-      return verification;
+    if (!approvals.ok) {
+      return approvals;
     }
-    if (eventType === 'ACCEPT_VERIFICATION' && verification.value !== 'MATCH') {
-      return verification.value === 'MISMATCH'
-        ? refuse('VERIFICATION_MISMATCH')
-        : refuse('VERIFICATION_UNKNOWN');
+    if (!sameApprovalIdentities(basis.approvals, approvals.value)) {
+      return refuse('APPROVAL_IDENTITY_CHANGED');
     }
-    if (eventType === 'REJECT_VERIFICATION' && verification.value === 'MATCH') {
-      return refuse('VERIFICATION_MODE_MISMATCH');
-    }
-  }
-
-  if (eventType === 'AUTHORIZE_MANDATE') {
-    if (!hasExactKeys(event, ['mandate', 'reservationLedger', 'type'])) {
-      return refuse('MANDATE_CONTAINMENT_FAILED');
+    executionApprovals = approvals.value;
+  } else {
+    if (event.approvals !== null) {
+      return refuse('POLICY_ROUTE_MISMATCH');
     }
     const containment = validateMandateContainment(
-      authorization,
+      aggregate.authorization,
       event.mandate,
-      context.now,
+      now,
     );
-    if (!containment.ok) {
-      return containment;
+    if (
+      !containment.ok ||
+      canonicalizeJson(containment.value) !==
+        canonicalizeJson(basis.reservationClaim)
+    ) {
+      return containment.ok
+        ? refuse('MANDATE_CONTAINMENT_FAILED')
+        : containment;
     }
     const reservation = validateActiveMandateReservation(
       event.reservationLedger,
-      containment.value,
+      basis.reservationClaim,
     );
     if (!reservation.ok) {
       return reservation;
     }
   }
 
-  if (eventType === 'AWAIT_APPROVALS' && decision.route !== 'HUMAN_APPROVAL') {
-    return refuse('POLICY_ROUTE_MISMATCH');
-  }
+  return transitionResult(
+    aggregate,
+    'SETTLEMENT_PENDING',
+    'QUEUE_SETTLEMENT',
+    now,
+    {
+      executionApprovals,
+      executionAuthority: requestingAgent.value,
+      settlementAttempt: attempt.value,
+    },
+  );
+}
 
-  if (eventType === 'REJECT_APPROVALS' && decision.route !== 'HUMAN_APPROVAL') {
-    return refuse('POLICY_ROUTE_MISMATCH');
+function handleSettlement(
+  aggregate: PaymentActionAggregate,
+  event: Record<string, unknown>,
+  eventType: 'RECOVER_SETTLEMENT' | 'SETTLE_CONSENSUS',
+  now: string,
+): DomainResult<PaymentActionTransition> {
+  if (
+    !hasExactKeys(event, [
+      'consumptionClaim',
+      'receipt',
+      'reservationLedger',
+      'type',
+    ])
+  ) {
+    return refuse('SETTLEMENT_TRANSACTION_MISMATCH');
   }
-
-  if (eventType === 'AUTHORIZE_APPROVALS') {
-    if (
-      !hasExactKeys(event, ['approvals', 'type']) ||
-      decision.route !== 'HUMAN_APPROVAL'
-    ) {
-      return refuse('APPROVAL_FACT_INVALID');
-    }
-    const approvals = validateApprovalQuorum(
-      actionDigest,
-      decision.requiredAuthority,
-      event.approvals,
-      context.now,
+  const settled = validateReceiptAndClaim(
+    event.receipt,
+    event.consumptionClaim,
+    aggregate,
+    now,
+  );
+  if (!settled.ok) {
+    return settled;
+  }
+  const effects: PaymentDomainEffect[] = [
+    Object.freeze({
+      atomicGroupKey: atomicGroupKey(aggregate),
+      claim: settled.value.claim,
+      receipt: settled.value.receipt,
+      type: 'SETTLEMENT_CONSUMPTION_WRITE',
+    }),
+  ];
+  const basis = aggregate.authorizationBasis;
+  if (basis?.kind === 'MANDATE') {
+    const reservation = settleMandateReservation(
+      event.reservationLedger,
+      basis.reservationClaim,
     );
-    if (!approvals.ok) {
-      return approvals;
+    if (!reservation.ok) {
+      return reservation;
     }
+    effects.push(
+      reservationEffect(
+        aggregate,
+        'SETTLE',
+        event.reservationLedger as MandateReservationLedger,
+        reservation.value.ledger,
+        basis.reservationClaim,
+      ),
+    );
+  } else if (event.reservationLedger !== null) {
+    return refuse('MANDATE_RESERVATION_CONFLICT');
   }
-
-  if (eventType === 'COMMIT_AUDIT' || eventType === 'RECOVER_AUDIT') {
-    if (!hasExactKeys(event, ['authorizationCommit', 'type'])) {
-      return refuse('HCS_AUTHORIZATION_REQUIRED');
-    }
-    const commit = validateCommit(event.authorizationCommit, actionDigest);
-    if (!commit.ok) {
-      return commit;
-    }
-  }
-
-  if (eventType === 'SETTLE_CONSENSUS' || eventType === 'RECOVER_SETTLEMENT') {
-    if (!hasExactKeys(event, ['receipt', 'type'])) {
-      return refuse('SETTLEMENT_TRANSACTION_MISMATCH');
-    }
-    const receipt = validateSettlementReceipt(event.receipt, actionDigest);
-    if (!receipt.ok) {
-      return receipt;
-    }
-  }
-
-  if (eventType === 'RETRY_SAME_TRANSACTION') {
-    if (
-      !hasExactKeys(event, ['recovery', 'type']) ||
-      !isRecord(event.recovery) ||
-      !hasExactKeys(event.recovery, [
-        'actionDigest',
-        'frozenTransactionHash',
-        'retryTransactionHash',
-      ]) ||
-      event.recovery.actionDigest !== actionDigest ||
-      !isSha256Digest(event.recovery.frozenTransactionHash) ||
-      !isSha256Digest(event.recovery.retryTransactionHash) ||
-      event.recovery.frozenTransactionHash !==
-        event.recovery.retryTransactionHash
-    ) {
-      return refuse('SETTLEMENT_TRANSACTION_MISMATCH');
-    }
-  }
-
-  if (eventType === 'CANCEL') {
-    if (
-      !hasExactKeys(event, ['cancellationCommit', 'effectStatus', 'type']) ||
-      event.effectStatus !== 'NOT_SIGNED' ||
-      !hasExactActionStatus(event.cancellationCommit, actionDigest, 'CONSENSUS')
-    ) {
-      return refuse('ACTION_CANCEL_TOO_LATE');
-    }
-  }
-
-  return accept(true);
+  return transitionResult(
+    aggregate,
+    'SETTLED',
+    eventType,
+    now,
+    {
+      consumptionClaim: settled.value.claim,
+      settlementReceipt: settled.value.receipt,
+    },
+    effects,
+  );
 }
 
 export function isTerminalPaymentActionState(
@@ -613,13 +1798,12 @@ export function transitionPaymentAction(
   aggregateInput: unknown,
   eventInput: unknown,
   contextInput: unknown,
-): DomainResult<PaymentActionAggregate> {
+): DomainResult<PaymentActionTransition> {
   const aggregateResult = verifyAggregate(aggregateInput);
   if (!aggregateResult.ok) {
     return aggregateResult;
   }
   const aggregate = aggregateResult.value;
-
   if (isTerminalPaymentActionState(aggregate.state)) {
     return refuse('TERMINAL_STATE');
   }
@@ -628,7 +1812,6 @@ export function transitionPaymentAction(
   if (eventType === null || !isRecord(eventInput)) {
     return refuse('INVALID_STATE_TRANSITION');
   }
-
   const next = transitions[aggregate.state][eventType];
   if (next === undefined) {
     return refuse('INVALID_STATE_TRANSITION');
@@ -638,18 +1821,406 @@ export function transitionPaymentAction(
   if (!contextResult.ok) {
     return contextResult;
   }
-
-  const guard = validateEventGuard(
-    aggregate.authorization,
-    eventInput,
-    eventType,
-    contextResult.value,
-  );
-  if (!guard.ok) {
-    return guard;
+  const now = contextResult.value.now;
+  if (now < aggregate.metadata.lastTransitionAt) {
+    return refuse('ACTION_TIME_INVALID');
+  }
+  if (NO_PAYLOAD_EVENTS.has(eventType) && !hasExactKeys(eventInput, ['type'])) {
+    return refuse('INVALID_STATE_TRANSITION');
+  }
+  if (
+    LIVE_ACTION_EVENTS.has(eventType) &&
+    now < aggregate.authorization.decision.evaluatedAt
+  ) {
+    return refuse('ACTION_TIME_INVALID');
+  }
+  if (
+    LIVE_ACTION_EVENTS.has(eventType) &&
+    now >= aggregate.authorization.actionCore.expiresAt
+  ) {
+    return refuse('ACTION_EXPIRED');
   }
 
-  return accept(Object.freeze({ ...aggregate, state: next }));
+  if (eventType === 'CLASSIFY') {
+    return transitionResult(aggregate, next, eventType, now);
+  }
+  if (eventType === 'REJECT_POLICY_BLOCK') {
+    if (aggregate.authorization.decision.route !== 'BLOCK') {
+      return refuse('POLICY_ROUTE_MISMATCH');
+    }
+    return transitionResult(aggregate, next, eventType, now, {}, [], eventType);
+  }
+  if (eventType === 'SATISFY_EVIDENCE_NOT_REQUIRED') {
+    if (
+      aggregate.authorization.decision.verificationMode !== 'NOT_REQUIRED' ||
+      aggregate.authorization.decision.route === 'BLOCK'
+    ) {
+      return refuse('VERIFICATION_MODE_MISMATCH');
+    }
+    return transitionResult(aggregate, next, eventType, now);
+  }
+  if (eventType === 'QUOTE_VERIFICATION') {
+    if (aggregate.authorization.decision.verificationMode !== 'REQUIRED') {
+      return refuse('VERIFICATION_REQUIRED');
+    }
+    const group = atomicGroupKey(aggregate);
+    return transitionResult(aggregate, next, eventType, now, {}, [
+      Object.freeze({
+        actionDigest: aggregate.authorization.envelope.actionDigest,
+        atomicGroupKey: group,
+        evidencePolicyDigest:
+          aggregate.authorization.decision.evidencePolicy.digest,
+        expiresAt: aggregate.authorization.actionCore.expiresAt,
+        type: 'VERIFICATION_QUOTE_REQUEST',
+      }),
+    ]);
+  }
+  if (eventType === 'RECORD_VERIFICATION_PAYMENT') {
+    if (!hasExactKeys(eventInput, ['payment', 'type'])) {
+      return refuse('VERIFICATION_PAYMENT_INVALID');
+    }
+    const payment = parseAdapterVerifiedVerificationPayment(eventInput.payment);
+    if (
+      payment === null ||
+      !exactBinding(aggregate.authorization, payment) ||
+      payment.evidencePolicyDigest !==
+        aggregate.authorization.decision.evidencePolicy.digest ||
+      payment.paidAt < aggregate.metadata.lastTransitionAt ||
+      payment.paidAt > now ||
+      payment.paidAt >= aggregate.authorization.actionCore.expiresAt
+    ) {
+      return refuse('VERIFICATION_PAYMENT_INVALID');
+    }
+    return transitionResult(aggregate, next, eventType, now, {
+      verificationPayment: payment,
+    });
+  }
+  if (
+    eventType === 'ACCEPT_VERIFICATION' ||
+    eventType === 'REJECT_VERIFICATION'
+  ) {
+    if (!hasExactKeys(eventInput, ['type', 'verification'])) {
+      return refuse('VERIFICATION_MISMATCH');
+    }
+    const payment = aggregate.verificationPayment;
+    const evidence = parseAdapterVerifiedEvidenceResult(
+      eventInput.verification,
+    );
+    if (
+      payment === null ||
+      evidence === null ||
+      !exactBinding(aggregate.authorization, evidence) ||
+      evidence.evidencePolicyDigest !==
+        aggregate.authorization.decision.evidencePolicy.digest ||
+      evidence.evidenceRoot !==
+        aggregate.authorization.actionCore.evidenceRoot ||
+      evidence.servicePaymentId !== payment.servicePaymentId ||
+      evidence.serviceRequestDigest !== payment.serviceRequestDigest ||
+      evidence.verifiedAt < payment.paidAt ||
+      evidence.verifiedAt > now
+    ) {
+      return refuse('VERIFICATION_MISMATCH');
+    }
+    if (
+      now >= evidence.expiresAt ||
+      evidence.expiresAt > aggregate.authorization.actionCore.expiresAt
+    ) {
+      return refuse('VERIFICATION_EXPIRED');
+    }
+    if (eventType === 'ACCEPT_VERIFICATION') {
+      if (evidence.result !== 'MATCH') {
+        return evidence.result === 'UNKNOWN'
+          ? refuse('VERIFICATION_UNKNOWN')
+          : refuse('VERIFICATION_MISMATCH');
+      }
+      return transitionResult(aggregate, next, eventType, now, {
+        evidenceResult: evidence,
+      });
+    }
+    if (evidence.result === 'MATCH') {
+      return refuse('VERIFICATION_MODE_MISMATCH');
+    }
+    return transitionResult(
+      aggregate,
+      next,
+      eventType,
+      now,
+      { evidenceResult: evidence },
+      [],
+      eventType,
+    );
+  }
+  if (eventType === 'AWAIT_APPROVALS') {
+    return aggregate.authorization.decision.route === 'HUMAN_APPROVAL'
+      ? transitionResult(aggregate, next, eventType, now)
+      : refuse('POLICY_ROUTE_MISMATCH');
+  }
+  if (eventType === 'REJECT_APPROVALS') {
+    if (aggregate.authorization.decision.route !== 'HUMAN_APPROVAL') {
+      return refuse('POLICY_ROUTE_MISMATCH');
+    }
+    return transitionResult(aggregate, next, eventType, now, {}, [], eventType);
+  }
+  if (eventType === 'REJECT_AUTHORIZATION') {
+    if (!hasExactKeys(eventInput, ['reservationLedger', 'type'])) {
+      return refuse('INVALID_STATE_TRANSITION');
+    }
+    const effects = releaseReservationForTerminal(
+      aggregate,
+      eventInput.reservationLedger,
+    );
+    return effects.ok
+      ? transitionResult(
+          aggregate,
+          next,
+          eventType,
+          now,
+          {},
+          effects.value,
+          eventType,
+        )
+      : effects;
+  }
+  if (eventType === 'AUTHORIZE_APPROVALS') {
+    if (
+      !hasExactKeys(eventInput, ['approvals', 'requestingAgent', 'type']) ||
+      aggregate.authorization.decision.route !== 'HUMAN_APPROVAL'
+    ) {
+      return refuse('APPROVAL_FACT_INVALID');
+    }
+    const approvals = validateApprovalQuorum(
+      approvalBinding(
+        aggregate.authorization,
+        aggregate.authorization.decision.evaluatedAt,
+      ),
+      aggregate.authorization.decision.requiredAuthority,
+      eventInput.approvals,
+      now,
+    );
+    if (!approvals.ok) {
+      return approvals;
+    }
+    const requestingAgent = validateRequestingAgent(
+      eventInput.requestingAgent,
+      aggregate.authorization,
+      now,
+      aggregate.authorization.decision.evaluatedAt,
+    );
+    if (!requestingAgent.ok) {
+      return requestingAgent;
+    }
+    return transitionResult(aggregate, next, eventType, now, {
+      authorizationBasis: createHumanBasis(
+        aggregate.authorization,
+        approvals.value,
+        requestingAgent.value,
+        now,
+      ),
+    });
+  }
+  if (eventType === 'AUTHORIZE_MANDATE') {
+    if (
+      !hasExactKeys(eventInput, [
+        'mandate',
+        'requestingAgent',
+        'reservationLedger',
+        'type',
+      ])
+    ) {
+      return refuse('MANDATE_CONTAINMENT_FAILED');
+    }
+    const containment = validateMandateContainment(
+      aggregate.authorization,
+      eventInput.mandate,
+      now,
+    );
+    if (!containment.ok) {
+      return containment;
+    }
+    const requestingAgent = validateRequestingAgent(
+      eventInput.requestingAgent,
+      aggregate.authorization,
+      now,
+      aggregate.authorization.decision.evaluatedAt,
+    );
+    if (!requestingAgent.ok) {
+      return requestingAgent;
+    }
+    const reserved = reserveMandateCapacity(
+      eventInput.reservationLedger,
+      containment.value,
+    );
+    if (!reserved.ok) {
+      return reserved;
+    }
+    const basis = createMandateBasis(
+      eventInput.mandate as StandingMandateAggregate,
+      requestingAgent.value,
+      containment.value,
+      reserved.value.ledger,
+      now,
+    );
+    return transitionResult(
+      aggregate,
+      next,
+      eventType,
+      now,
+      { authorizationBasis: basis },
+      [
+        reservationEffect(
+          aggregate,
+          'RESERVE',
+          eventInput.reservationLedger as MandateReservationLedger,
+          reserved.value.ledger,
+          containment.value,
+        ),
+      ],
+    );
+  }
+  if (eventType === 'START_AUTHORIZATION_RECOVERY') {
+    return transitionResult(aggregate, next, eventType, now);
+  }
+  if (eventType === 'COMMIT_AUDIT' || eventType === 'RECOVER_AUDIT') {
+    if (!hasExactKeys(eventInput, ['authorizationAudit', 'type'])) {
+      return refuse('HCS_AUTHORIZATION_REQUIRED');
+    }
+    const audit = validateAudit(eventInput.authorizationAudit, aggregate, now);
+    return audit.ok
+      ? transitionResult(aggregate, next, eventType, now, {
+          authorizationAudit: audit.value,
+        })
+      : audit;
+  }
+  if (eventType === 'QUEUE_SETTLEMENT') {
+    return handleQueue(aggregate, eventInput, now);
+  }
+  if (eventType === 'SETTLE_CONSENSUS' || eventType === 'RECOVER_SETTLEMENT') {
+    return handleSettlement(aggregate, eventInput, eventType, now);
+  }
+  if (eventType === 'START_SETTLEMENT_RECOVERY') {
+    if (!hasExactKeys(eventInput, ['type', 'uncertainty'])) {
+      return refuse('SETTLEMENT_TRANSACTION_MISMATCH');
+    }
+    const uncertainty = parseAdapterVerifiedSettlementUncertainty(
+      eventInput.uncertainty,
+    );
+    const attempt = aggregate.settlementAttempt;
+    if (
+      uncertainty === null ||
+      attempt === null ||
+      !exactBinding(aggregate.authorization, uncertainty) ||
+      uncertainty.attemptId !== attempt.attemptId ||
+      uncertainty.effectDigest !== attempt.effectDigest ||
+      uncertainty.idempotencyKey !== attempt.idempotencyKey ||
+      uncertainty.networkId !== attempt.networkId ||
+      uncertainty.signedBytesHash !== attempt.signedBytesHash ||
+      uncertainty.transactionId !== attempt.transactionId ||
+      uncertainty.observedAt < attempt.createdAt ||
+      uncertainty.observedAt > now
+    ) {
+      return refuse('SETTLEMENT_TRANSACTION_MISMATCH');
+    }
+    return transitionResult(aggregate, next, eventType, now, {
+      settlementUncertainty: uncertainty,
+    });
+  }
+  if (eventType === 'RETRY_SAME_TRANSACTION') {
+    if (!hasExactKeys(eventInput, ['candidate', 'type'])) {
+      return refuse('SETTLEMENT_TRANSACTION_MISMATCH');
+    }
+    const candidate = parseFrozenSettlementAttempt(eventInput.candidate);
+    if (
+      candidate === null ||
+      aggregate.settlementAttempt === null ||
+      canonicalizeJson(candidate) !==
+        canonicalizeJson(aggregate.settlementAttempt)
+    ) {
+      return refuse('SETTLEMENT_TRANSACTION_MISMATCH');
+    }
+    return transitionResult(aggregate, next, eventType, now);
+  }
+  if (eventType === 'START_RECONCILIATION') {
+    return transitionResult(aggregate, next, eventType, now);
+  }
+  if (
+    eventType === 'RECONCILE_SUCCESS' ||
+    eventType === 'RECONCILE_EXCEPTION'
+  ) {
+    return transitionResult(aggregate, next, eventType, now, {}, [], eventType);
+  }
+  if (eventType === 'EXPIRE' || eventType === 'SUPERSEDE') {
+    if (!hasExactKeys(eventInput, ['reservationLedger', 'type'])) {
+      return refuse('INVALID_STATE_TRANSITION');
+    }
+    if (
+      eventType === 'EXPIRE' &&
+      now < aggregate.authorization.actionCore.expiresAt
+    ) {
+      return refuse('ACTION_NOT_EXPIRED');
+    }
+    if (
+      eventType === 'SUPERSEDE' &&
+      now >= aggregate.authorization.actionCore.expiresAt
+    ) {
+      return refuse('ACTION_EXPIRED');
+    }
+    const effects = releaseReservationForTerminal(
+      aggregate,
+      eventInput.reservationLedger,
+    );
+    return effects.ok
+      ? transitionResult(
+          aggregate,
+          next,
+          eventType,
+          now,
+          {},
+          effects.value,
+          eventType,
+        )
+      : effects;
+  }
+  if (eventType === 'CANCEL') {
+    if (
+      !hasExactKeys(eventInput, [
+        'cancellationAudit',
+        'reservationLedger',
+        'type',
+      ])
+    ) {
+      return refuse('ACTION_CANCEL_TOO_LATE');
+    }
+    const cancellation = parseAdapterVerifiedCancellationAudit(
+      eventInput.cancellationAudit,
+    );
+    if (
+      cancellation === null ||
+      aggregate.authorizationAudit === null ||
+      !exactBinding(aggregate.authorization, cancellation) ||
+      cancellation.authorizationAuditId !==
+        aggregate.authorizationAudit.auditId ||
+      cancellation.committedAt !== now
+    ) {
+      return refuse('ACTION_CANCEL_TOO_LATE');
+    }
+    const effects = releaseReservationForTerminal(
+      aggregate,
+      eventInput.reservationLedger,
+    );
+    return effects.ok
+      ? transitionResult(
+          aggregate,
+          next,
+          eventType,
+          now,
+          { cancellationAudit: cancellation },
+          effects.value,
+          eventType,
+        )
+      : effects;
+  }
+
+  return refuse('INVALID_STATE_TRANSITION');
 }
 
 export function routeForEvidenceTransition(

@@ -2,7 +2,9 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import {
+  createAdapterVerifiedApprovalFact,
   createMandateReservationLedger,
+  createPaymentHistoryProjection,
   deriveMandateReservationTotals,
   releaseMandateReservation,
   reserveMandateCapacity,
@@ -12,15 +14,27 @@ import {
   validateDigestBindings,
   validateInvoiceActionBinding,
   validateInvoiceRevisionLineage,
+  validateMandateVersionBinding,
   validateNewPaymentActionEligibility,
   validatePaymentHistory,
   validateSettlementClaim,
+  type AdapterVerifiedApprovalFact,
+  type AdapterVerifiedApprovalFactCore,
   type MandateReservationClaim,
   type MandateReservationLedger,
 } from '../src/index.js';
 
 const ACTION_DIGEST = 'a'.repeat(64);
 const APPROVAL_NOW = '2026-07-25T10:00:00.000Z';
+const APPROVAL_BINDING = {
+  actionDigest: ACTION_DIGEST,
+  actionId: 'action-1',
+  invoiceRevisionId: 'invoice-revision-1',
+  minimumVerifiedAt: '2026-07-25T09:58:00.000Z',
+  nonce: '0123456789abcdef0123456789abcdef',
+  obligationId: 'obligation-1',
+  organizationId: 'organization-1',
+} as const;
 
 const approvalRequirement = {
   actionHumanQuorum: 2,
@@ -33,39 +47,72 @@ const approvalRequirement = {
 } as const;
 
 const approvals = [
-  {
+  createAdapterVerifiedApprovalFact({
     actionDigest: ACTION_DIGEST,
     actionHumanPrincipal: 'human-1',
+    actionId: APPROVAL_BINDING.actionId,
+    adapterId: 'world-adapter',
+    agentBackingRecordId: 'agent-backing-1',
     agentBackingStatus: 'CURRENT',
     agentTenantPrincipal: 'agent-1',
+    approvalId: 'approval-1',
     companyRoleStatus: 'CURRENT',
+    consumptionClaimId: 'approval-consumption-1',
     decision: 'APPROVE',
+    decisionId: 'decision-1',
     expiresAt: '2026-07-25T10:05:00.000Z',
     humanDecisionStatus: 'VERIFIED',
+    invoiceRevisionId: APPROVAL_BINDING.invoiceRevisionId,
+    kind: 'APPROVAL_FACT',
+    nonce: APPROVAL_BINDING.nonce,
+    obligationId: APPROVAL_BINDING.obligationId,
+    organizationId: APPROVAL_BINDING.organizationId,
     role: 'FINANCE_APPROVER',
+    roleCredentialId: 'role-credential-1',
     subjectId: 'subject-1',
     verifiedAt: '2026-07-25T09:59:00.000Z',
-  },
-  {
+  }),
+  createAdapterVerifiedApprovalFact({
     actionDigest: ACTION_DIGEST,
     actionHumanPrincipal: 'human-2',
+    actionId: APPROVAL_BINDING.actionId,
+    adapterId: 'world-adapter',
+    agentBackingRecordId: 'agent-backing-2',
     agentBackingStatus: 'CURRENT',
     agentTenantPrincipal: 'agent-2',
+    approvalId: 'approval-2',
     companyRoleStatus: 'CURRENT',
+    consumptionClaimId: 'approval-consumption-2',
     decision: 'APPROVE',
+    decisionId: 'decision-2',
     expiresAt: '2026-07-25T10:05:00.000Z',
     humanDecisionStatus: 'VERIFIED',
+    invoiceRevisionId: APPROVAL_BINDING.invoiceRevisionId,
+    kind: 'APPROVAL_FACT',
+    nonce: APPROVAL_BINDING.nonce,
+    obligationId: APPROVAL_BINDING.obligationId,
+    organizationId: APPROVAL_BINDING.organizationId,
     role: 'TREASURY_APPROVER',
+    roleCredentialId: 'role-credential-2',
     subjectId: 'subject-2',
     verifiedAt: '2026-07-25T09:59:00.000Z',
-  },
+  }),
 ] as const;
+
+function mutateApproval(
+  fact: AdapterVerifiedApprovalFact,
+  overrides: Partial<AdapterVerifiedApprovalFactCore>,
+): AdapterVerifiedApprovalFact {
+  const { recordDigest, ...core } = fact;
+  void recordDigest;
+  return createAdapterVerifiedApprovalFact({ ...core, ...overrides });
+}
 
 describe('approval quorum', () => {
   it('accepts exact, independently distinct approvals', () => {
     expect(
       validateApprovalQuorum(
-        ACTION_DIGEST,
+        APPROVAL_BINDING,
         approvalRequirement,
         approvals,
         APPROVAL_NOW,
@@ -87,23 +134,27 @@ describe('approval quorum', () => {
       approvals[0],
       approvals[0],
       approvals[1],
-      {
-        ...approvals[1],
+      mutateApproval(approvals[1], {
+        approvalId: 'approval-3',
         actionHumanPrincipal: 'human-3',
+        agentBackingRecordId: 'agent-backing-3',
         agentTenantPrincipal: 'agent-3',
+        consumptionClaimId: 'approval-consumption-3',
+        decisionId: 'decision-3',
+        roleCredentialId: 'role-credential-3',
         subjectId: 'subject-3',
-      },
+      }),
     ];
 
     expect(
       validateApprovalQuorum(
-        ACTION_DIGEST,
+        APPROVAL_BINDING,
         requirement,
         polluted,
         APPROVAL_NOW,
       ),
     ).toMatchObject({
-      error: { code: 'SUBJECT_NOT_DISTINCT' },
+      error: { code: 'REPLAY_DETECTED' },
       ok: false,
     });
   });
@@ -111,9 +162,14 @@ describe('approval quorum', () => {
   it('rejects cross-action approvals and invalid requirements', () => {
     expect(
       validateApprovalQuorum(
-        ACTION_DIGEST,
+        APPROVAL_BINDING,
         approvalRequirement,
-        [{ ...approvals[0], actionDigest: 'b'.repeat(64) }, approvals[1]],
+        [
+          mutateApproval(approvals[0], {
+            actionDigest: 'b'.repeat(64),
+          }),
+          approvals[1],
+        ],
         APPROVAL_NOW,
       ),
     ).toMatchObject({
@@ -123,7 +179,7 @@ describe('approval quorum', () => {
 
     expect(
       validateApprovalQuorum(
-        ACTION_DIGEST,
+        APPROVAL_BINDING,
         { ...approvalRequirement, actionHumanQuorum: -1 },
         approvals,
         APPROVAL_NOW,
@@ -137,23 +193,35 @@ describe('approval quorum', () => {
   it('rejects evidence for a role the policy did not request', () => {
     expect(
       validateApprovalQuorum(
-        ACTION_DIGEST,
+        APPROVAL_BINDING,
         approvalRequirement,
         [
           ...approvals,
-          {
+          createAdapterVerifiedApprovalFact({
             actionDigest: ACTION_DIGEST,
             actionHumanPrincipal: 'human-3',
+            actionId: APPROVAL_BINDING.actionId,
+            adapterId: 'world-adapter',
+            agentBackingRecordId: 'agent-backing-3',
             agentBackingStatus: 'CURRENT',
             agentTenantPrincipal: 'agent-3',
+            approvalId: 'approval-3',
             companyRoleStatus: 'CURRENT',
+            consumptionClaimId: 'approval-consumption-3',
             decision: 'APPROVE',
+            decisionId: 'decision-3',
             expiresAt: '2026-07-25T10:05:00.000Z',
             humanDecisionStatus: 'VERIFIED',
+            invoiceRevisionId: APPROVAL_BINDING.invoiceRevisionId,
+            kind: 'APPROVAL_FACT',
+            nonce: APPROVAL_BINDING.nonce,
+            obligationId: APPROVAL_BINDING.obligationId,
+            organizationId: APPROVAL_BINDING.organizationId,
             role: 'OBSERVER',
+            roleCredentialId: 'role-credential-3',
             subjectId: 'subject-3',
             verifiedAt: '2026-07-25T09:59:00.000Z',
-          },
+          }),
         ],
         APPROVAL_NOW,
       ),
@@ -173,7 +241,7 @@ describe('approval quorum', () => {
     ]) {
       expect(
         validateApprovalQuorum(
-          ACTION_DIGEST,
+          APPROVAL_BINDING,
           approvalRequirement,
           [malformed, approvals[1]],
           APPROVAL_NOW,
@@ -185,13 +253,12 @@ describe('approval quorum', () => {
     }
     expect(
       validateApprovalQuorum(
-        ACTION_DIGEST,
+        APPROVAL_BINDING,
         approvalRequirement,
         [
-          {
-            ...approvals[0],
+          mutateApproval(approvals[0], {
             expiresAt: APPROVAL_NOW,
-          },
+          }),
           approvals[1],
         ],
         APPROVAL_NOW,
@@ -202,9 +269,14 @@ describe('approval quorum', () => {
     });
     expect(
       validateApprovalQuorum(
-        ACTION_DIGEST,
+        APPROVAL_BINDING,
         approvalRequirement,
-        [{ ...approvals[0], companyRoleStatus: 'REVOKED' }, approvals[1]],
+        [
+          mutateApproval(approvals[0], {
+            companyRoleStatus: 'REVOKED',
+          }),
+          approvals[1],
+        ],
         APPROVAL_NOW,
       ),
     ).toMatchObject({
@@ -213,9 +285,14 @@ describe('approval quorum', () => {
     });
     expect(
       validateApprovalQuorum(
-        ACTION_DIGEST,
+        APPROVAL_BINDING,
         approvalRequirement,
-        [{ ...approvals[0], agentBackingStatus: 'UNVERIFIED' }, approvals[1]],
+        [
+          mutateApproval(approvals[0], {
+            agentBackingStatus: 'UNVERIFIED',
+          }),
+          approvals[1],
+        ],
         APPROVAL_NOW,
       ),
     ).toMatchObject({
@@ -224,9 +301,14 @@ describe('approval quorum', () => {
     });
     expect(
       validateApprovalQuorum(
-        ACTION_DIGEST,
+        APPROVAL_BINDING,
         approvalRequirement,
-        [{ ...approvals[0], humanDecisionStatus: 'REPLAYED' }, approvals[1]],
+        [
+          mutateApproval(approvals[0], {
+            humanDecisionStatus: 'REPLAYED',
+          }),
+          approvals[1],
+        ],
         APPROVAL_NOW,
       ),
     ).toMatchObject({
@@ -238,7 +320,7 @@ describe('approval quorum', () => {
   it('caps adapter-verified facts and role requirements', () => {
     expect(
       validateApprovalQuorum(
-        ACTION_DIGEST,
+        APPROVAL_BINDING,
         approvalRequirement,
         Array.from({ length: 256 }, () => approvals[0]),
         APPROVAL_NOW,
@@ -250,7 +332,7 @@ describe('approval quorum', () => {
 
     expect(
       validateApprovalQuorum(
-        ACTION_DIGEST,
+        APPROVAL_BINDING,
         {
           ...approvalRequirement,
           roles: Array.from({ length: 256 }, (_, index) => ({
@@ -263,6 +345,20 @@ describe('approval quorum', () => {
       ),
     ).toMatchObject({
       error: { code: 'APPROVAL_REQUIREMENT_INVALID' },
+      ok: false,
+    });
+  });
+
+  it('rejects approvals verified before the frozen policy evaluation', () => {
+    expect(
+      validateApprovalQuorum(
+        { ...APPROVAL_BINDING, minimumVerifiedAt: APPROVAL_NOW },
+        approvalRequirement,
+        approvals,
+        APPROVAL_NOW,
+      ),
+    ).toMatchObject({
+      error: { code: 'APPROVAL_FACT_INVALID' },
       ok: false,
     });
   });
@@ -365,44 +461,91 @@ describe('invoice and obligation invariants', () => {
   });
 
   it('separates history validation from new-action and settlement claims', () => {
+    const binding = {
+      actionDigest: ACTION_DIGEST,
+      actionId: 'action-1',
+      idempotencyKey: `invoiceguard:settlement:v1:${ACTION_DIGEST}`,
+      invoiceRevisionId: 'invoice-revision-1',
+      nonce: APPROVAL_BINDING.nonce,
+      obligationId: 'obligation-1',
+      organizationId: 'organization-1',
+    } as const;
+    const projection = (
+      overrides: Partial<
+        Parameters<typeof createPaymentHistoryProjection>[0]
+      > = {},
+    ) =>
+      createPaymentHistoryProjection({
+        ...binding,
+        adapterId: 'postgres-payment-history',
+        consumedIdempotencyKeys: [],
+        kind: 'PAYMENT_HISTORY_PROJECTION',
+        nonTerminalActionIds: [],
+        projectionId: 'payment-history-1',
+        settledActionIds: [],
+        settledReceiptIds: [],
+        verifiedAt: APPROVAL_NOW,
+        ...overrides,
+      });
+
     expect(
-      validatePaymentHistory({
-        nonTerminalActionCountForObligation: 1,
-        settlementCountForAction: 1,
-        settlementCountForObligation: 1,
-      }).ok,
+      validatePaymentHistory(
+        binding,
+        projection({
+          consumedIdempotencyKeys: [binding.idempotencyKey],
+          nonTerminalActionIds: [binding.actionId],
+          settledActionIds: [binding.actionId],
+          settledReceiptIds: ['receipt-1'],
+        }),
+      ).ok,
     ).toBe(true);
 
     expect(
-      validateNewPaymentActionEligibility({
-        nonTerminalActionCountForObligation: 0,
-        settlementCountForAction: 0,
-        settlementCountForObligation: 1,
-      }),
+      validateNewPaymentActionEligibility(
+        binding,
+        projection({
+          settledActionIds: ['action-previous'],
+          settledReceiptIds: ['receipt-previous'],
+        }),
+      ),
     ).toMatchObject({
       error: { code: 'OBLIGATION_ALREADY_SETTLED' },
       ok: false,
     });
 
     expect(
-      validateSettlementClaim({
-        nonTerminalActionCountForObligation: 1,
-        settlementCountForAction: 1,
-        settlementCountForObligation: 1,
-      }),
+      validateSettlementClaim(
+        binding,
+        projection({
+          consumedIdempotencyKeys: [binding.idempotencyKey],
+          nonTerminalActionIds: [binding.actionId],
+          settledActionIds: [binding.actionId],
+          settledReceiptIds: ['receipt-1'],
+        }),
+      ),
     ).toMatchObject({
       error: { code: 'ACTION_ALREADY_CONSUMED' },
       ok: false,
     });
 
+    const valid = projection();
     expect(
-      validatePaymentHistory({
-        nonTerminalActionCountForObligation: 1.5,
-        settlementCountForAction: 0,
-        settlementCountForObligation: 0,
+      validatePaymentHistory(binding, {
+        ...valid,
+        nonTerminalActionIds: ['action-1', 'action-1'],
       }),
     ).toMatchObject({
       error: { code: 'PAYMENT_HISTORY_INVALID' },
+      ok: false,
+    });
+
+    expect(
+      validatePaymentHistory(
+        { ...binding, obligationId: 'other-obligation' },
+        valid,
+      ),
+    ).toMatchObject({
+      error: { code: 'PAYMENT_HISTORY_BINDING_MISMATCH' },
       ok: false,
     });
   });
@@ -445,6 +588,28 @@ describe('standing-mandate capacity', () => {
     }
     return result.value;
   }
+
+  it('rejects a different digest for the same mandate version identity', () => {
+    const existing = {
+      mandateDigest: 'a'.repeat(64),
+      mandateId: 'mandate-1',
+      mandateVersion: 3,
+      organizationId: 'organization-1',
+    } as const;
+    expect(validateMandateVersionBinding([existing], existing)).toEqual({
+      ok: true,
+      value: existing,
+    });
+    expect(
+      validateMandateVersionBinding([existing], {
+        ...existing,
+        mandateDigest: 'b'.repeat(64),
+      }),
+    ).toMatchObject({
+      error: { code: 'MANDATE_VERSION_DIGEST_CONFLICT' },
+      ok: false,
+    });
+  });
 
   it('makes exact reserve and terminal retries idempotent', () => {
     const reservationClaim = claim('1'.repeat(64), '25');
