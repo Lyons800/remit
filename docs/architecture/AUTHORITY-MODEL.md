@@ -127,6 +127,15 @@ short-lived challenge containing the action digest. The gateway verifies the
 signature, exact URI, resource, statement, method, chain, nonce, expiry, and
 current AgentBook mapping.
 
+The frozen policy also names the required executor role, scope, audience,
+tenant-binding rule, subject-binding rule, and immutable grant ID, version and
+digest. An adapter-verified execution fact records those fields, the current
+grant status, the AgentBook registry and backing record, and its verification
+window. Hydration proves that a retained fact was valid at the transition that
+used it; it does not turn historical evidence into perpetual authority. Audit
+commit, settlement freeze, and retry each re-resolve the backing and grant and
+must match the frozen policy and original requesting-agent identity exactly.
+
 AgentKit proves that the wallet is registered to a World ID human. It does not
 prove that the backing human reviewed this payment at signing time; the
 Human-in-the-Loop decisions provide that separate fact.
@@ -184,7 +193,8 @@ An action may proceed only when:
 ```text
 action is unexpired and unconsumed
 AND action digest recomputes exactly
-AND the requesting agent is enrolled, currently human-backed, and company-authorized
+AND the requesting agent is enrolled, currently human-backed, and authorized
+    by the frozen role, grant version, scope, audience, subject and tenant
 AND either:
     action is fully contained by a current standing mandate with zero per-invoice approvals
     OR required company-subject, AgentBook, and action-human quorums are present
