@@ -86,6 +86,7 @@ export type RequestingAgentExecutionFactCore = Readonly<
     agentBookRegistry: string;
     agentBookStatus: 'CURRENT' | 'CHANGED' | 'REVOKED' | 'UNVERIFIED';
     agentId: string;
+    agentKitChallengeId: string;
     agentTenantPrincipal: string;
     audience: string;
     companyRoleStatus: 'CURRENT' | 'EXPIRED' | 'REVOKED' | 'UNVERIFIED';
@@ -100,6 +101,7 @@ export type RequestingAgentExecutionFactCore = Readonly<
     role: string;
     roleCredentialId: string;
     scope: string;
+    signedProofDigest: string;
     subjectId: string;
     tenantId: string;
     verifiedAt: string;
@@ -217,6 +219,32 @@ export type AdapterVerifiedSettlementReceipt = Readonly<
   AdapterVerifiedSettlementReceiptCore & { recordDigest: string }
 >;
 
+export type AdapterVerifiedExecutionAuditCore = Readonly<
+  ActionFactBinding & {
+    adapterId: string;
+    auditId: string;
+    authorizationAuditId: string;
+    committedAt: string;
+    eventId: string;
+    attemptId: string;
+    kind: 'EXECUTION_AUDIT';
+    networkId: string;
+    receiptId: string;
+    receiptRecordDigest: string;
+    settlementTransactionId: string;
+    signedBytesHash: string;
+    status: 'CONSENSUS';
+    topicId: string;
+    transactionId: string;
+    writerAccountId: string;
+    writerId: string;
+    writerKeyId: string;
+  }
+>;
+export type AdapterVerifiedExecutionAudit = Readonly<
+  AdapterVerifiedExecutionAuditCore & { recordDigest: string }
+>;
+
 export type AtomicSettlementConsumptionClaimCore = Readonly<
   ActionFactBinding & {
     adapterId: string;
@@ -294,6 +322,7 @@ const REQUESTING_AGENT_KEYS = [
   'agentBookRegistry',
   'agentBookStatus',
   'agentId',
+  'agentKitChallengeId',
   'agentTenantPrincipal',
   'audience',
   'companyRoleStatus',
@@ -308,6 +337,7 @@ const REQUESTING_AGENT_KEYS = [
   'role',
   'roleCredentialId',
   'scope',
+  'signedProofDigest',
   'subjectId',
   'tenantId',
   'verifiedAt',
@@ -394,6 +424,27 @@ const RECEIPT_KEYS = [
   'sourceNodeId',
   'status',
   'transactionId',
+] as const;
+const EXECUTION_AUDIT_KEYS = [
+  ...ACTION_BINDING_KEYS,
+  'adapterId',
+  'auditId',
+  'authorizationAuditId',
+  'committedAt',
+  'eventId',
+  'attemptId',
+  'kind',
+  'networkId',
+  'receiptId',
+  'receiptRecordDigest',
+  'settlementTransactionId',
+  'signedBytesHash',
+  'status',
+  'topicId',
+  'transactionId',
+  'writerAccountId',
+  'writerId',
+  'writerKeyId',
 ] as const;
 const CONSUMPTION_KEYS = [
   ...ACTION_BINDING_KEYS,
@@ -597,6 +648,7 @@ const validateRequestingAgentCore = (value: Record<string, unknown>): boolean =>
     value.grantStatus === 'UNVERIFIED') &&
   isSha256Digest(value.effectDigest) &&
   isSha256Digest(value.grantDigest) &&
+  isSha256Digest(value.signedProofDigest) &&
   isPositiveSafeInteger(value.grantVersion) &&
   validInstant(value.verifiedAt) &&
   validInstant(value.expiresAt) &&
@@ -607,6 +659,7 @@ const validateRequestingAgentCore = (value: Record<string, unknown>): boolean =>
     'agentBackingRecordId',
     'agentBookRegistry',
     'agentId',
+    'agentKitChallengeId',
     'agentTenantPrincipal',
     'audience',
     'factId',
@@ -721,6 +774,29 @@ const validateReceiptCore = (value: Record<string, unknown>): boolean =>
     'transactionId',
   ]);
 
+const validateExecutionAuditCore = (value: Record<string, unknown>): boolean =>
+  isActionBinding(value) &&
+  value.kind === 'EXECUTION_AUDIT' &&
+  value.status === 'CONSENSUS' &&
+  isSha256Digest(value.receiptRecordDigest) &&
+  isSha256Digest(value.signedBytesHash) &&
+  validInstant(value.committedAt) &&
+  validStringFields(value, [
+    'adapterId',
+    'auditId',
+    'authorizationAuditId',
+    'eventId',
+    'attemptId',
+    'networkId',
+    'receiptId',
+    'settlementTransactionId',
+    'topicId',
+    'transactionId',
+    'writerAccountId',
+    'writerId',
+    'writerKeyId',
+  ]);
+
 const validateConsumptionCore = (value: Record<string, unknown>): boolean =>
   isActionBinding(value) &&
   value.kind === 'ATOMIC_SETTLEMENT_CONSUMPTION' &&
@@ -778,6 +854,12 @@ export function deriveSettlementIdempotencyKey(
   authorizationInput: unknown,
 ): string {
   return `invoiceguard:settlement:v1:${actionFactBinding(authorizationInput).actionDigest}`;
+}
+
+export function deriveExecutionAuditEventId(
+  attempt: FrozenSettlementAttempt,
+): string {
+  return `invoiceguard:hcs:execution:v1:${attempt.actionDigest}:${attempt.attemptId}`;
 }
 
 export function createAdapterVerifiedVerificationPayment(
@@ -1132,6 +1214,58 @@ export function parseAdapterVerifiedSettlementReceipt(
     'SETTLEMENT_RECEIPT',
     RECEIPT_KEYS,
     validateReceiptCore,
+  );
+}
+
+export function createAdapterVerifiedExecutionAudit(
+  authorization: AuthorizationBundleV1,
+  authorizationAudit: AdapterVerifiedAuthorizationAudit,
+  attempt: FrozenSettlementAttempt,
+  receipt: AdapterVerifiedSettlementReceipt,
+  details: Omit<
+    AdapterVerifiedExecutionAuditCore,
+    | keyof ActionFactBinding
+    | 'authorizationAuditId'
+    | 'eventId'
+    | 'attemptId'
+    | 'kind'
+    | 'networkId'
+    | 'receiptId'
+    | 'receiptRecordDigest'
+    | 'settlementTransactionId'
+    | 'signedBytesHash'
+    | 'status'
+  >,
+): AdapterVerifiedExecutionAudit {
+  return createFact(
+    {
+      ...actionFactBinding(authorization),
+      ...details,
+      authorizationAuditId: authorizationAudit.auditId,
+      eventId: deriveExecutionAuditEventId(attempt),
+      attemptId: attempt.attemptId,
+      kind: 'EXECUTION_AUDIT',
+      networkId: attempt.networkId,
+      receiptId: receipt.receiptId,
+      receiptRecordDigest: receipt.recordDigest,
+      settlementTransactionId: attempt.transactionId,
+      signedBytesHash: attempt.signedBytesHash,
+      status: 'CONSENSUS',
+    },
+    'EXECUTION_AUDIT',
+    EXECUTION_AUDIT_KEYS,
+    validateExecutionAuditCore,
+  );
+}
+
+export function parseAdapterVerifiedExecutionAudit(
+  input: unknown,
+): AdapterVerifiedExecutionAudit | null {
+  return parseFact(
+    input,
+    'EXECUTION_AUDIT',
+    EXECUTION_AUDIT_KEYS,
+    validateExecutionAuditCore,
   );
 }
 

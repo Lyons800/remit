@@ -36,7 +36,9 @@ export type AdapterVerifiedApprovalFactCore = Readonly<{
   agentBackingRecordId: string;
   agentBackingStatus: 'CURRENT' | 'STALE' | 'UNVERIFIED';
   agentTenantPrincipal: string;
+  agentKitChallengeId: string;
   approvalId: string;
+  approvalSessionId: string;
   companyRoleStatus: 'CURRENT' | 'EXPIRED' | 'REVOKED' | 'UNVERIFIED';
   consumptionClaimId: string;
   decision: 'APPROVE';
@@ -50,8 +52,10 @@ export type AdapterVerifiedApprovalFactCore = Readonly<{
   organizationId: string;
   role: string;
   roleCredentialId: string;
+  signedProofDigest: string;
   subjectId: string;
   verifiedAt: string;
+  worldProofId: string;
 }>;
 
 export type AdapterVerifiedApprovalFact = Readonly<
@@ -66,7 +70,9 @@ const APPROVAL_KEYS = [
   'agentBackingRecordId',
   'agentBackingStatus',
   'agentTenantPrincipal',
+  'agentKitChallengeId',
   'approvalId',
+  'approvalSessionId',
   'companyRoleStatus',
   'consumptionClaimId',
   'decision',
@@ -81,8 +87,10 @@ const APPROVAL_KEYS = [
   'recordDigest',
   'role',
   'roleCredentialId',
+  'signedProofDigest',
   'subjectId',
   'verifiedAt',
+  'worldProofId',
 ] as const;
 const REQUIREMENT_KEYS = [
   'actionHumanQuorum',
@@ -202,7 +210,9 @@ function parseApprovalCore(
     !isNonEmptyBoundedString(input.adapterId) ||
     !isNonEmptyBoundedString(input.agentBackingRecordId) ||
     !isNonEmptyBoundedString(input.agentTenantPrincipal) ||
+    !isNonEmptyBoundedString(input.agentKitChallengeId) ||
     !isNonEmptyBoundedString(input.approvalId) ||
+    !isNonEmptyBoundedString(input.approvalSessionId) ||
     !isNonEmptyBoundedString(input.consumptionClaimId) ||
     !isNonEmptyBoundedString(input.decisionId) ||
     !isNonEmptyBoundedString(input.invoiceRevisionId) ||
@@ -211,7 +221,9 @@ function parseApprovalCore(
     !isNonEmptyBoundedString(input.organizationId) ||
     !isNonEmptyBoundedString(input.role) ||
     !isNonEmptyBoundedString(input.roleCredentialId) ||
+    !isSha256Digest(input.signedProofDigest) ||
     !isNonEmptyBoundedString(input.subjectId) ||
+    !isNonEmptyBoundedString(input.worldProofId) ||
     !isCanonicalUtcInstant(
       typeof input.verifiedAt === 'string' ? input.verifiedAt : '',
     ) ||
@@ -242,7 +254,9 @@ function parseApprovalCore(
     agentBackingRecordId: input.agentBackingRecordId,
     agentBackingStatus: input.agentBackingStatus,
     agentTenantPrincipal: input.agentTenantPrincipal,
+    agentKitChallengeId: input.agentKitChallengeId,
     approvalId: input.approvalId,
+    approvalSessionId: input.approvalSessionId,
     companyRoleStatus: input.companyRoleStatus,
     consumptionClaimId: input.consumptionClaimId,
     decision: input.decision,
@@ -256,8 +270,10 @@ function parseApprovalCore(
     organizationId: input.organizationId,
     role: input.role,
     roleCredentialId: input.roleCredentialId,
+    signedProofDigest: input.signedProofDigest,
     subjectId: input.subjectId,
     verifiedAt: input.verifiedAt as string,
+    worldProofId: input.worldProofId,
   });
 }
 
@@ -366,6 +382,11 @@ export function validateApprovalQuorum(
 
   if (
     hasDuplicate(approvals.map(({ approvalId }) => approvalId)) ||
+    hasDuplicate(approvals.map(({ approvalSessionId }) => approvalSessionId)) ||
+    hasDuplicate(approvals.map(({ worldProofId }) => worldProofId)) ||
+    hasDuplicate(
+      approvals.map(({ agentKitChallengeId }) => agentKitChallengeId),
+    ) ||
     hasDuplicate(approvals.map(({ decisionId }) => decisionId)) ||
     hasDuplicate(approvals.map(({ consumptionClaimId }) => consumptionClaimId))
   ) {

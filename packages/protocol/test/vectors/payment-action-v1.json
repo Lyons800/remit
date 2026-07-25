@@ -42,6 +42,7 @@
   "policyEvaluation": {
     "config": {
       "executorAuthority": {
+        "adapterId": "world-agentbook-adapter",
         "agentBookRegistry": "world-agentbook:eip155:480",
         "audience": "invoiceguard:settlement",
         "grant": {
@@ -133,7 +134,7 @@
   },
   "expected": {
     "actionCoreDigest": "4f34166bdca2dd2ea06e727e03db737c99c22e7084e486e2c3f2670bac8bb1ed",
-    "actionDigest": "84b2125bfc69aa1766ad2ed060dc793e2b824ae710c5da6f6abd89b24c8a3c52",
-    "policyDecisionDigest": "e6931089c12208503eb42e06abcb1f0d4e68b102c760478a7df412783ea27f34"
+    "actionDigest": "18254f6bfba84b563d2037a5f8b635aca80cca957b1be93829c5d29e4a51dd2f",
+    "policyDecisionDigest": "a936690561126a75b14549c736447c4aacb3cd2f07c5ecc51968bbea3e400080"
   }
 }

@@ -20,6 +20,7 @@ export const evidencePolicyReferenceSchema = z
 
 export const executorAuthorityPolicySchema = z
   .object({
+    adapterId: nonEmptyBoundedStringSchema,
     agentBookRegistry: nonEmptyBoundedStringSchema,
     audience: nonEmptyBoundedStringSchema,
     grant: z
