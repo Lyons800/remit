@@ -2,12 +2,14 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import {
+  createMandateReservationLedger,
   invoiceRevisionEvents,
   invoiceRevisionStates,
   isTerminalInvoiceRevisionState,
   isTerminalPaymentActionState,
   isTerminalStandingMandateState,
   paymentActionStates,
+  reserveMandateCapacity,
   sourceObservationEvents,
   sourceObservationStates,
   standingMandateStates,
@@ -15,11 +17,18 @@ import {
   transitionPaymentAction,
   transitionSourceObservation,
   transitionStandingMandate,
+  validateMandateContainment,
+  type AdapterVerifiedApprovalFact,
+  type PaymentActionAggregate,
   type PaymentActionEvent,
 } from '../src/index.js';
 import {
+  ACTION_EXPIRES_AT,
   MANDATE_EXPIRES_AT,
   activeMandateAggregate,
+  authorization,
+  blockAuthorization,
+  humanAuthorization,
   standingMandate,
 } from './fixtures/authorization.js';
 
@@ -30,67 +39,168 @@ const BEFORE = '2026-07-25T09:00:00.000Z';
 function expectAcceptedState(
   result: ReturnType<typeof transitionPaymentAction>,
   state: string,
+  expectedAuthorization = authorization,
 ): void {
-  expect(result).toEqual({ ok: true, value: state });
+  expect(result).toEqual({
+    ok: true,
+    value: { authorization: expectedAuthorization, state },
+  });
 }
+
+function paymentAggregate(
+  state: PaymentActionAggregate['state'],
+  frozenAuthorization = authorization,
+): PaymentActionAggregate {
+  return { authorization: frozenAuthorization, state };
+}
+
+function createReservedMandateLedger() {
+  const containment = validateMandateContainment(
+    authorization,
+    activeMandateAggregate,
+    NOW,
+  );
+  if (!containment.ok) {
+    throw new Error('mandate containment fixture must be valid');
+  }
+  const ledger = createMandateReservationLedger(containment.value);
+  if (!ledger.ok) {
+    throw new Error('mandate ledger fixture must be valid');
+  }
+  const reserved = reserveMandateCapacity(ledger.value, containment.value);
+  if (!reserved.ok) {
+    throw new Error('mandate reservation fixture must be valid');
+  }
+  return reserved.value.ledger;
+}
+
+function approvalFacts(
+  actionDigest: string,
+): readonly AdapterVerifiedApprovalFact[] {
+  return [
+    {
+      actionDigest,
+      actionHumanPrincipal: 'human-1',
+      agentBackingStatus: 'CURRENT',
+      agentTenantPrincipal: 'agent-1',
+      companyRoleStatus: 'CURRENT',
+      decision: 'APPROVE',
+      expiresAt: '2026-07-25T10:05:00.000Z',
+      humanDecisionStatus: 'VERIFIED',
+      role: 'FINANCE_APPROVER',
+      subjectId: 'subject-1',
+      verifiedAt: NOW,
+    },
+    {
+      actionDigest,
+      actionHumanPrincipal: 'human-2',
+      agentBackingStatus: 'CURRENT',
+      agentTenantPrincipal: 'agent-2',
+      companyRoleStatus: 'CURRENT',
+      decision: 'APPROVE',
+      expiresAt: '2026-07-25T10:05:00.000Z',
+      humanDecisionStatus: 'VERIFIED',
+      role: 'TREASURY_APPROVER',
+      subjectId: 'subject-2',
+      verifiedAt: NOW,
+    },
+  ];
+}
+
+const ACTION_DIGEST = authorization.envelope.actionDigest;
+const HUMAN_ACTION_DIGEST = humanAuthorization.envelope.actionDigest;
+const TRANSACTION_HASH = 'f'.repeat(64);
 
 const paymentEvents = [
   { type: 'CLASSIFY' },
-  { route: 'BLOCK', type: 'REJECT_POLICY_BLOCK' },
+  { type: 'REJECT_POLICY_BLOCK' },
+  { type: 'SATISFY_EVIDENCE_NOT_REQUIRED' },
+  { type: 'QUOTE_VERIFICATION' },
   {
-    type: 'SATISFY_EVIDENCE_NOT_REQUIRED',
-    verificationMode: 'NOT_REQUIRED',
+    servicePayment: { actionDigest: ACTION_DIGEST, status: 'CONSENSUS' },
+    type: 'RECORD_VERIFICATION_PAYMENT',
   },
-  { type: 'QUOTE_VERIFICATION', verificationMode: 'REQUIRED' },
-  { type: 'RECORD_VERIFICATION_PAYMENT' },
-  { result: 'MATCH', type: 'ACCEPT_VERIFICATION' },
-  { result: 'UNKNOWN', type: 'REJECT_VERIFICATION' },
   {
-    capReserved: true,
-    expiresAt: LATER,
-    mandateContained: true,
-    now: NOW,
-    route: 'STRAIGHT_THROUGH',
+    type: 'ACCEPT_VERIFICATION',
+    verification: {
+      actionDigest: ACTION_DIGEST,
+      expiresAt: ACTION_EXPIRES_AT,
+      result: 'MATCH',
+      status: 'VERIFIED',
+    },
+  },
+  {
+    type: 'REJECT_VERIFICATION',
+    verification: {
+      actionDigest: ACTION_DIGEST,
+      expiresAt: ACTION_EXPIRES_AT,
+      result: 'UNKNOWN',
+      status: 'VERIFIED',
+    },
+  },
+  {
+    mandate: activeMandateAggregate,
+    reservationLedger: createReservedMandateLedger(),
     type: 'AUTHORIZE_MANDATE',
   },
-  { route: 'HUMAN_APPROVAL', type: 'AWAIT_APPROVALS' },
+  { type: 'AWAIT_APPROVALS' },
   {
-    expiresAt: LATER,
-    now: NOW,
-    quorumSatisfied: true,
+    approvals: approvalFacts(HUMAN_ACTION_DIGEST),
     type: 'AUTHORIZE_APPROVALS',
   },
   { type: 'REJECT_APPROVALS' },
   {
-    expiresAt: LATER,
-    hcsAuthorizationCommitted: true,
-    now: NOW,
+    authorizationCommit: {
+      actionDigest: ACTION_DIGEST,
+      status: 'CONSENSUS',
+    },
     type: 'COMMIT_AUDIT',
   },
   { type: 'START_AUTHORIZATION_RECOVERY' },
   {
-    expiresAt: LATER,
-    hcsAuthorizationCommitted: true,
-    now: NOW,
+    authorizationCommit: {
+      actionDigest: ACTION_DIGEST,
+      status: 'CONSENSUS',
+    },
     type: 'RECOVER_AUDIT',
   },
-  { expiresAt: LATER, now: NOW, type: 'QUEUE_SETTLEMENT' },
-  { consensusReceiptValid: true, type: 'SETTLE_CONSENSUS' },
+  { type: 'QUEUE_SETTLEMENT' },
+  {
+    receipt: {
+      actionDigest: ACTION_DIGEST,
+      status: 'SUCCESS',
+      transactionId: '0.0.1000@1753437600.000000001',
+    },
+    type: 'SETTLE_CONSENSUS',
+  },
   { type: 'START_SETTLEMENT_RECOVERY' },
-  { consensusReceiptValid: true, type: 'RECOVER_SETTLEMENT' },
-  { sameTransaction: true, type: 'RETRY_SAME_TRANSACTION' },
+  {
+    receipt: {
+      actionDigest: ACTION_DIGEST,
+      status: 'SUCCESS',
+      transactionId: '0.0.1000@1753437600.000000001',
+    },
+    type: 'RECOVER_SETTLEMENT',
+  },
+  {
+    recovery: {
+      actionDigest: ACTION_DIGEST,
+      frozenTransactionHash: TRANSACTION_HASH,
+      retryTransactionHash: TRANSACTION_HASH,
+    },
+    type: 'RETRY_SAME_TRANSACTION',
+  },
   { type: 'START_RECONCILIATION' },
   { type: 'RECONCILE_SUCCESS' },
   { type: 'RECONCILE_EXCEPTION' },
-  { expiresAt: NOW, now: NOW, type: 'EXPIRE' },
+  { type: 'EXPIRE' },
+  { type: 'SUPERSEDE' },
   {
-    hcsAuthorizationCommitted: false,
-    transactionSignedOrSubmitted: false,
-    type: 'SUPERSEDE',
-  },
-  {
-    hcsCancellationCommitted: true,
-    transactionSignedOrSubmitted: false,
+    cancellationCommit: {
+      actionDigest: ACTION_DIGEST,
+      status: 'CONSENSUS',
+    },
+    effectStatus: 'NOT_SIGNED',
     type: 'CANCEL',
   },
 ] as const satisfies readonly PaymentActionEvent[];
@@ -298,101 +408,150 @@ describe('standing-mandate lifecycle', () => {
 describe('payment-action lifecycle', () => {
   it('completes the mandate-authorized path without a per-invoice approval', () => {
     expectAcceptedState(
-      transitionPaymentAction('CAPTURED', { type: 'CLASSIFY' }),
+      transitionPaymentAction(
+        paymentAggregate('CAPTURED'),
+        { type: 'CLASSIFY' },
+        { now: NOW },
+      ),
       'CLASSIFIED',
     );
     expectAcceptedState(
-      transitionPaymentAction('CLASSIFIED', {
-        type: 'SATISFY_EVIDENCE_NOT_REQUIRED',
-        verificationMode: 'NOT_REQUIRED',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('CLASSIFIED'),
+        { type: 'SATISFY_EVIDENCE_NOT_REQUIRED' },
+        { now: NOW },
+      ),
       'EVIDENCE_SATISFIED',
     );
     expectAcceptedState(
-      transitionPaymentAction('EVIDENCE_SATISFIED', {
-        capReserved: true,
-        expiresAt: LATER,
-        mandateContained: true,
-        now: NOW,
-        route: 'STRAIGHT_THROUGH',
-        type: 'AUTHORIZE_MANDATE',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('EVIDENCE_SATISFIED'),
+        {
+          mandate: activeMandateAggregate,
+          reservationLedger: createReservedMandateLedger(),
+          type: 'AUTHORIZE_MANDATE',
+        },
+        { now: NOW },
+      ),
       'AUTHORIZED',
     );
     expectAcceptedState(
-      transitionPaymentAction('AUTHORIZED', {
-        expiresAt: LATER,
-        hcsAuthorizationCommitted: true,
-        now: NOW,
-        type: 'COMMIT_AUDIT',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('AUTHORIZED'),
+        {
+          authorizationCommit: {
+            actionDigest: ACTION_DIGEST,
+            status: 'CONSENSUS',
+          },
+          type: 'COMMIT_AUDIT',
+        },
+        { now: NOW },
+      ),
       'AUDIT_COMMITTED',
     );
     expectAcceptedState(
-      transitionPaymentAction('AUDIT_COMMITTED', {
-        expiresAt: LATER,
-        now: NOW,
-        type: 'QUEUE_SETTLEMENT',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('AUDIT_COMMITTED'),
+        { type: 'QUEUE_SETTLEMENT' },
+        { now: NOW },
+      ),
       'SETTLEMENT_PENDING',
     );
     expectAcceptedState(
-      transitionPaymentAction('SETTLEMENT_PENDING', {
-        consensusReceiptValid: true,
-        type: 'SETTLE_CONSENSUS',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('SETTLEMENT_PENDING'),
+        {
+          receipt: {
+            actionDigest: ACTION_DIGEST,
+            status: 'SUCCESS',
+            transactionId: '0.0.1000@1753437600.000000001',
+          },
+          type: 'SETTLE_CONSENSUS',
+        },
+        { now: NOW },
+      ),
       'SETTLED',
     );
     expectAcceptedState(
-      transitionPaymentAction('SETTLED', {
-        type: 'START_RECONCILIATION',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('SETTLED'),
+        { type: 'START_RECONCILIATION' },
+        { now: NOW },
+      ),
       'RECONCILING',
     );
     expectAcceptedState(
-      transitionPaymentAction('RECONCILING', {
-        type: 'RECONCILE_SUCCESS',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('RECONCILING'),
+        { type: 'RECONCILE_SUCCESS' },
+        { now: NOW },
+      ),
       'RECONCILED',
     );
   });
 
   it('routes required evidence through paid MATCH and fresh approvals', () => {
     expectAcceptedState(
-      transitionPaymentAction('CLASSIFIED', {
-        type: 'QUOTE_VERIFICATION',
-        verificationMode: 'REQUIRED',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('CLASSIFIED', humanAuthorization),
+        { type: 'QUOTE_VERIFICATION' },
+        { now: NOW },
+      ),
       'VERIFICATION_QUOTED',
+      humanAuthorization,
     );
     expectAcceptedState(
-      transitionPaymentAction('VERIFICATION_QUOTED', {
-        type: 'RECORD_VERIFICATION_PAYMENT',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('VERIFICATION_QUOTED', humanAuthorization),
+        {
+          servicePayment: {
+            actionDigest: HUMAN_ACTION_DIGEST,
+            status: 'CONSENSUS',
+          },
+          type: 'RECORD_VERIFICATION_PAYMENT',
+        },
+        { now: NOW },
+      ),
       'VERIFICATION_PAID',
+      humanAuthorization,
     );
     expectAcceptedState(
-      transitionPaymentAction('VERIFICATION_PAID', {
-        result: 'MATCH',
-        type: 'ACCEPT_VERIFICATION',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('VERIFICATION_PAID', humanAuthorization),
+        {
+          type: 'ACCEPT_VERIFICATION',
+          verification: {
+            actionDigest: HUMAN_ACTION_DIGEST,
+            expiresAt: ACTION_EXPIRES_AT,
+            result: 'MATCH',
+            status: 'VERIFIED',
+          },
+        },
+        { now: NOW },
+      ),
       'EVIDENCE_SATISFIED',
+      humanAuthorization,
     );
     expectAcceptedState(
-      transitionPaymentAction('EVIDENCE_SATISFIED', {
-        route: 'HUMAN_APPROVAL',
-        type: 'AWAIT_APPROVALS',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('EVIDENCE_SATISFIED', humanAuthorization),
+        { type: 'AWAIT_APPROVALS' },
+        { now: NOW },
+      ),
       'AWAITING_APPROVALS',
+      humanAuthorization,
     );
     expectAcceptedState(
-      transitionPaymentAction('AWAITING_APPROVALS', {
-        expiresAt: LATER,
-        now: NOW,
-        quorumSatisfied: true,
-        type: 'AUTHORIZE_APPROVALS',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('AWAITING_APPROVALS', humanAuthorization),
+        {
+          approvals: approvalFacts(HUMAN_ACTION_DIGEST),
+          type: 'AUTHORIZE_APPROVALS',
+        },
+        { now: NOW },
+      ),
       'AUTHORIZED',
+      humanAuthorization,
     );
   });
 
@@ -400,37 +559,127 @@ describe('payment-action lifecycle', () => {
     'rejects a paid %s result',
     (result) => {
       expectAcceptedState(
-        transitionPaymentAction('VERIFICATION_PAID', {
-          result,
-          type: 'REJECT_VERIFICATION',
-        }),
+        transitionPaymentAction(
+          paymentAggregate('VERIFICATION_PAID', humanAuthorization),
+          {
+            type: 'REJECT_VERIFICATION',
+            verification: {
+              actionDigest: HUMAN_ACTION_DIGEST,
+              expiresAt: ACTION_EXPIRES_AT,
+              result,
+              status: 'VERIFIED',
+            },
+          },
+          { now: NOW },
+        ),
         'REJECTED',
+        humanAuthorization,
       );
     },
   );
 
   it('applies block precedence without an evidence transition', () => {
     expectAcceptedState(
-      transitionPaymentAction('CLASSIFIED', {
-        route: 'BLOCK',
-        type: 'REJECT_POLICY_BLOCK',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('CLASSIFIED', blockAuthorization),
+        { type: 'REJECT_POLICY_BLOCK' },
+        { now: NOW },
+      ),
       'REJECTED',
+      blockAuthorization,
     );
   });
 
   it('checks state reachability before event payload guards', () => {
     expect(
-      transitionPaymentAction('CAPTURED', {
-        capReserved: false,
-        expiresAt: NOW,
-        mandateContained: false,
-        now: LATER,
-        route: 'HUMAN_APPROVAL',
-        type: 'AUTHORIZE_MANDATE',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('CAPTURED'),
+        {
+          capReserved: false,
+          expiresAt: NOW,
+          mandateContained: false,
+          now: LATER,
+          route: 'HUMAN_APPROVAL',
+          type: 'AUTHORIZE_MANDATE',
+        },
+        { now: NOW },
+      ),
     ).toMatchObject({
       error: { code: 'INVALID_STATE_TRANSITION' },
+      ok: false,
+    });
+  });
+
+  it('rejects caller booleans as authorization evidence', () => {
+    expect(
+      transitionPaymentAction(
+        paymentAggregate('EVIDENCE_SATISFIED'),
+        {
+          capReserved: true,
+          expiresAt: '2999-01-01T00:00:00.000Z',
+          mandateContained: true,
+          route: 'STRAIGHT_THROUGH',
+          type: 'AUTHORIZE_MANDATE',
+        },
+        { now: NOW },
+      ),
+    ).toMatchObject({
+      error: { code: 'MANDATE_CONTAINMENT_FAILED' },
+      ok: false,
+    });
+
+    const containment = validateMandateContainment(
+      authorization,
+      activeMandateAggregate,
+      NOW,
+    );
+    if (!containment.ok) {
+      throw new Error('mandate containment fixture must be valid');
+    }
+    const emptyLedger = createMandateReservationLedger(containment.value);
+    if (!emptyLedger.ok) {
+      throw new Error('mandate ledger fixture must be valid');
+    }
+    expect(
+      transitionPaymentAction(
+        paymentAggregate('EVIDENCE_SATISFIED'),
+        {
+          mandate: activeMandateAggregate,
+          reservationLedger: emptyLedger.value,
+          type: 'AUTHORIZE_MANDATE',
+        },
+        { now: NOW },
+      ),
+    ).toMatchObject({
+      error: { code: 'MANDATE_RESERVATION_NOT_FOUND' },
+      ok: false,
+    });
+
+    expect(
+      transitionPaymentAction(
+        paymentAggregate('AWAITING_APPROVALS', humanAuthorization),
+        {
+          quorumSatisfied: true,
+          type: 'AUTHORIZE_APPROVALS',
+        },
+        { now: NOW },
+      ),
+    ).toMatchObject({
+      error: { code: 'APPROVAL_FACT_INVALID' },
+      ok: false,
+    });
+
+    expect(
+      transitionPaymentAction(
+        paymentAggregate('AWAITING_APPROVALS', humanAuthorization),
+        {
+          approvals: approvalFacts(ACTION_DIGEST),
+          type: 'AUTHORIZE_APPROVALS',
+        },
+        { now: NOW },
+      ),
+    ).toMatchObject({
+      error: { code: 'ACTION_DIGEST_MISMATCH' },
       ok: false,
     });
   });
@@ -442,11 +691,11 @@ describe('payment-action lifecycle', () => {
       'AUTHORIZATION_RECOVERY',
     ] as const) {
       expectAcceptedState(
-        transitionPaymentAction(state, {
-          expiresAt: NOW,
-          now: NOW,
-          type: 'EXPIRE',
-        }),
+        transitionPaymentAction(
+          paymentAggregate(state),
+          { type: 'EXPIRE' },
+          { now: ACTION_EXPIRES_AT },
+        ),
         'EXPIRED',
       );
     }
@@ -454,32 +703,35 @@ describe('payment-action lifecycle', () => {
 
   it('refuses early expiry, stale authorization, and malformed time', () => {
     expect(
-      transitionPaymentAction('CAPTURED', {
-        expiresAt: LATER,
-        now: NOW,
-        type: 'EXPIRE',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('CAPTURED'),
+        { type: 'EXPIRE' },
+        { now: NOW },
+      ),
     ).toMatchObject({
       error: { code: 'ACTION_NOT_EXPIRED' },
       ok: false,
     });
     expect(
-      transitionPaymentAction('AWAITING_APPROVALS', {
-        expiresAt: NOW,
-        now: NOW,
-        quorumSatisfied: true,
-        type: 'AUTHORIZE_APPROVALS',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('AWAITING_APPROVALS', humanAuthorization),
+        {
+          approvals: approvalFacts(HUMAN_ACTION_DIGEST),
+          expiresAt: '2999-01-01T00:00:00.000Z',
+          type: 'AUTHORIZE_APPROVALS',
+        },
+        { now: ACTION_EXPIRES_AT },
+      ),
     ).toMatchObject({
       error: { code: 'ACTION_EXPIRED' },
       ok: false,
     });
     expect(
-      transitionPaymentAction('CAPTURED', {
-        expiresAt: LATER,
-        now: 'invalid',
-        type: 'EXPIRE',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('CAPTURED'),
+        { type: 'EXPIRE' },
+        { now: 'invalid' },
+      ),
     ).toMatchObject({
       error: { code: 'ACTION_TIME_INVALID' },
       ok: false,
@@ -488,39 +740,97 @@ describe('payment-action lifecycle', () => {
 
   it('supersedes before HCS and cancels after HCS only before signing', () => {
     expectAcceptedState(
-      transitionPaymentAction('AUTHORIZED', {
-        hcsAuthorizationCommitted: false,
-        transactionSignedOrSubmitted: false,
-        type: 'SUPERSEDE',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('AUTHORIZED'),
+        { type: 'SUPERSEDE' },
+        { now: NOW },
+      ),
       'SUPERSEDED',
     );
     expect(
-      transitionPaymentAction('AUTHORIZED', {
-        hcsAuthorizationCommitted: true,
-        transactionSignedOrSubmitted: false,
-        type: 'SUPERSEDE',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('AUTHORIZED'),
+        {
+          hcsAuthorizationCommitted: false,
+          transactionSignedOrSubmitted: false,
+          type: 'SUPERSEDE',
+        },
+        { now: NOW },
+      ),
     ).toMatchObject({
-      error: { code: 'ACTION_SUPERSEDE_TOO_LATE' },
+      error: { code: 'INVALID_STATE_TRANSITION' },
       ok: false,
     });
     expectAcceptedState(
-      transitionPaymentAction('AUDIT_COMMITTED', {
-        hcsCancellationCommitted: true,
-        transactionSignedOrSubmitted: false,
-        type: 'CANCEL',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('AUDIT_COMMITTED'),
+        {
+          cancellationCommit: {
+            actionDigest: ACTION_DIGEST,
+            status: 'CONSENSUS',
+          },
+          effectStatus: 'NOT_SIGNED',
+          type: 'CANCEL',
+        },
+        { now: NOW },
+      ),
       'CANCELLED',
     );
     expect(
-      transitionPaymentAction('AUDIT_COMMITTED', {
-        hcsCancellationCommitted: true,
-        transactionSignedOrSubmitted: true,
-        type: 'CANCEL',
-      }),
+      transitionPaymentAction(
+        paymentAggregate('AUDIT_COMMITTED'),
+        {
+          cancellationCommit: {
+            actionDigest: ACTION_DIGEST,
+            status: 'CONSENSUS',
+          },
+          effectStatus: 'SIGNED',
+          type: 'CANCEL',
+        },
+        { now: NOW },
+      ),
     ).toMatchObject({
       error: { code: 'ACTION_CANCEL_TOO_LATE' },
+      ok: false,
+    });
+  });
+
+  it('re-verifies the aggregate and exact retry transaction', () => {
+    expect(
+      transitionPaymentAction(
+        {
+          authorization: {
+            ...authorization,
+            actionCore: {
+              ...authorization.actionCore,
+              supplierSnapshotDigest: '0'.repeat(64),
+            },
+          },
+          state: 'CAPTURED',
+        },
+        { type: 'CLASSIFY' },
+        { now: NOW },
+      ),
+    ).toMatchObject({
+      error: { code: 'POLICY_CORE_BINDING_MISMATCH' },
+      ok: false,
+    });
+
+    expect(
+      transitionPaymentAction(
+        paymentAggregate('SETTLEMENT_RECOVERY'),
+        {
+          recovery: {
+            actionDigest: ACTION_DIGEST,
+            frozenTransactionHash: TRANSACTION_HASH,
+            retryTransactionHash: 'e'.repeat(64),
+          },
+          type: 'RETRY_SAME_TRANSACTION',
+        },
+        { now: NOW },
+      ),
+    ).toMatchObject({
+      error: { code: 'SETTLEMENT_TRANSACTION_MISMATCH' },
       ok: false,
     });
   });
@@ -535,7 +845,11 @@ describe('payment-action lifecycle', () => {
         fc.constantFrom(...terminalStates),
         fc.constantFrom(...paymentEvents),
         (state, event) => {
-          expect(transitionPaymentAction(state, event)).toMatchObject({
+          expect(
+            transitionPaymentAction(paymentAggregate(state), event, {
+              now: NOW,
+            }),
+          ).toMatchObject({
             error: { code: 'TERMINAL_STATE' },
             ok: false,
           });

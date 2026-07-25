@@ -1,6 +1,7 @@
 import {
   createAuthorizationBundle,
   createStandingMandate,
+  type PolicyDecisionInputV1,
 } from '@invoiceguard/protocol/hashing';
 
 export const NOW = '2026-07-25T10:00:00.000Z';
@@ -126,12 +127,43 @@ export const decisionInput = {
     mandateVersion: standingMandate.mandateVersion,
   },
   verificationMode: standingMandate.verificationMode,
-} as const;
+} satisfies PolicyDecisionInputV1;
 
 export const authorization = createAuthorizationBundle(
   actionCore,
   decisionInput,
 );
+
+export const humanAuthorization = createAuthorizationBundle(actionCore, {
+  ...decisionInput,
+  reasonCodes: ['BENEFICIARY_CHANGED', 'EVIDENCE_REQUIRED'],
+  requiredAuthority: {
+    actionHumanQuorum: 2,
+    agentBookQuorum: 2,
+    companySubjectQuorum: 2,
+    roles: [
+      { count: 1, role: 'FINANCE_APPROVER' },
+      { count: 1, role: 'TREASURY_APPROVER' },
+    ],
+  },
+  route: 'HUMAN_APPROVAL',
+  standingMandate: null,
+  verificationMode: 'REQUIRED',
+});
+
+export const blockAuthorization = createAuthorizationBundle(actionCore, {
+  ...decisionInput,
+  reasonCodes: ['DUPLICATE_ALREADY_PAID'],
+  requiredAuthority: {
+    actionHumanQuorum: 0,
+    agentBookQuorum: 0,
+    companySubjectQuorum: 0,
+    roles: [],
+  },
+  route: 'BLOCK',
+  standingMandate: null,
+  verificationMode: 'NOT_REQUIRED',
+});
 
 export const activeMandateAggregate = {
   record: standingMandate,
