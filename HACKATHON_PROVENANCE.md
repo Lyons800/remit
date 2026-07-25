@@ -14,18 +14,18 @@ contracts, designs, generated assets, or deployment state.
 
 All project-specific implementation, architecture records, product assets,
 tests, prompts, and plans committed here are created during the event window.
-Public libraries, sponsor SDKs, official templates, and open-source starter
-code may be used only when their source, version, license, and modifications
-are documented.
+Public libraries, sponsor SDKs, official templates, and open-source starter code
+may be used only when their source, version, license, and modifications are
+documented.
 
 The separate research workspace used to select the concept was also produced
-during the event. Relevant decisions will be restated in this repository so
-the submitted history is complete and auditable.
+during the event. Relevant decisions will be restated in this repository so the
+submitted history is complete and auditable.
 
 ## AI-assisted development
 
-AI tools may assist research, planning, implementation, testing, and review.
-The team remains responsible for:
+AI tools may assist research, planning, implementation, testing, and review. The
+team remains responsible for:
 
 - understanding every committed design and code path;
 - reviewing generated changes before commit;
@@ -36,9 +36,10 @@ The team remains responsible for:
 
 ## Initial partner scope
 
-1. World AgentKit: human-backed-agent verification and same-human quorum
-   collapse.
-2. Hedera: agent-to-service payment, exact Testnet financial operation, and
+1. World AgentKit: human-backed-agent verification and agent accountability.
+2. World Human-in-the-Loop: fresh, action-bound decisions from distinct humans.
+3. Hedera: agent-to-service payment, exact Testnet financial operation, and
    auditable receipts.
-3. 0G: optional only if real Private Computer becomes a load-bearing
-   beneficiary-check path and passes the documented admission gate.
+
+0G was evaluated as an optional private beneficiary-check implementation and
+rejected under the documented admission gate.
