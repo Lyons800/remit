@@ -19,6 +19,18 @@ jobs:
           persist-credentials: false
 
       - name: Review dependency changes
+        if: ${{ !github.event.repository.private }}
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: moderate
+
+      - name: Install pnpm for private-repository audit
+        if: ${{ github.event.repository.private }}
+        uses: pnpm/action-setup@a15d269cd4658e1107c09f1fabf4cbd7bd1f308a # v4.4.0
+        with:
+          run_install: false
+          version: 11.17.0
+
+      - name: Audit locked production dependencies
+        if: ${{ github.event.repository.private }}
+        run: pnpm audit --prod --audit-level=moderate
