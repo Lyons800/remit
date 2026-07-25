@@ -71,9 +71,12 @@ export type WorldProofOfHumanRequest = Readonly<{
 
 export type WorldProofOfHumanRequestValidationReason =
   | 'ACTION_MISMATCH'
+  | 'APP_MISMATCH'
+  | 'DEPLOYMENT_INVALID'
   | 'ENVIRONMENT_MISMATCH'
   | 'REQUEST_INVALID'
   | 'RP_CONTEXT_INVALID'
+  | 'RP_MISMATCH'
   | 'SIGNAL_MISMATCH';
 
 export type WorldProofOfHumanRequestValidationResult =
@@ -102,9 +105,8 @@ type CreateWorldHumanApprovalBindingInput = Readonly<{
 }>;
 
 type CreateWorldProofOfHumanRequestInput = Readonly<{
-  appId: string;
   binding: WorldHumanApprovalBinding;
-  environment?: WorldProofEnvironment;
+  deployment: TrustedWorldDeploymentContext;
   rpContext: RpContext;
 }>;
 
@@ -415,7 +417,16 @@ function invalidRequest(
 
 export function validateWorldProofOfHumanRequest(
   value: unknown,
+  deploymentInput: TrustedWorldDeploymentContext,
 ): WorldProofOfHumanRequestValidationResult {
+  const deploymentValidation =
+    validateTrustedWorldDeploymentContext(deploymentInput);
+
+  if (!deploymentValidation.ok) {
+    return invalidRequest('DEPLOYMENT_INVALID');
+  }
+
+  const deployment = deploymentValidation.context;
   const snapshot = cloneValue(value);
 
   if (!isRecord(snapshot)) {
@@ -528,7 +539,8 @@ export function validateWorldProofOfHumanRequest(
   if (
     configEnvironment === undefined ||
     requestEnvironment === undefined ||
-    configEnvironment !== requestEnvironment
+    configEnvironment !== requestEnvironment ||
+    configEnvironment !== deployment.environment
   ) {
     return invalidRequest('ENVIRONMENT_MISMATCH');
   }
@@ -543,6 +555,10 @@ export function validateWorldProofOfHumanRequest(
     }
 
     requirePattern(appId, APP_ID_PATTERN, 'appId');
+
+    if (appId !== deployment.appId) {
+      return invalidRequest('APP_MISMATCH');
+    }
   } catch {
     return invalidRequest('REQUEST_INVALID');
   }
@@ -567,6 +583,10 @@ export function validateWorldProofOfHumanRequest(
     typeof rawRpContext.expires_at !== 'number'
   ) {
     return invalidRequest('RP_CONTEXT_INVALID');
+  }
+
+  if (rpId !== deployment.rpId) {
+    return invalidRequest('RP_MISMATCH');
   }
 
   let rpContext: Readonly<RpContext>;
@@ -620,12 +640,18 @@ export function validateWorldProofOfHumanRequest(
 }
 
 export function createWorldProofOfHumanRequest({
-  appId: rawAppId,
   binding,
-  environment = 'production',
+  deployment: deploymentInput,
   rpContext: rawRpContext,
 }: CreateWorldProofOfHumanRequestInput): WorldProofOfHumanRequest {
-  const appId = requirePattern(rawAppId, APP_ID_PATTERN, 'appId');
+  const deploymentValidation =
+    validateTrustedWorldDeploymentContext(deploymentInput);
+
+  if (!deploymentValidation.ok) {
+    throw new Error('World deployment context is invalid.');
+  }
+
+  const deployment = deploymentValidation.context;
   const expectedWorldActionId = deriveWorldActionId(binding);
   const expectedWorldSignal = deriveWorldSignal(binding);
 
@@ -637,13 +663,16 @@ export function createWorldProofOfHumanRequest({
   }
 
   const rpContext = requireRpContext(rawRpContext, binding);
-  const validatedEnvironment = requireEnvironment(environment);
+  if (rpContext.rp_id !== deployment.rpId) {
+    throw new Error('rpContext.rp_id does not match the trusted deployment.');
+  }
+
   const preset = Object.freeze(proofOfHuman({ signal: binding.worldSignal }));
   const config = Object.freeze({
     action: binding.worldActionId,
     allow_legacy_proofs: false,
-    app_id: appId as `app_${string}`,
-    environment: validatedEnvironment,
+    app_id: deployment.appId,
+    environment: deployment.environment,
     require_user_presence: true,
     rp_context: rpContext,
   } satisfies IDKitRequestConfig);
@@ -651,11 +680,11 @@ export function createWorldProofOfHumanRequest({
   const candidate = Object.freeze({
     binding,
     config,
-    environment: validatedEnvironment,
+    environment: deployment.environment,
     expectedSignalHash: hashSignal(binding.worldSignal),
     preset,
   });
-  const validated = validateWorldProofOfHumanRequest(candidate);
+  const validated = validateWorldProofOfHumanRequest(candidate, deployment);
 
   if (!validated.ok) {
     throw new Error(
