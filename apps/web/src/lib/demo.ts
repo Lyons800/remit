@@ -173,3 +173,72 @@ export function theatreReducer(
       return state;
   }
 }
+
+/* ── product fixtures: suppliers, payments, audit, policies ────────── */
+
+export interface Supplier {
+  readonly id: string;
+  readonly name: string;
+  readonly accountOnFile: string;
+  readonly timesPaid: number;
+  readonly lastPaid: string;
+  readonly autonomousLimit: string;
+  readonly standing: 'trusted' | 'new' | 'flagged';
+}
+
+export const suppliers: readonly Supplier[] = [
+  { accountOnFile: 'PT50 ···· ···· 9015 4', autonomousLimit: '€5,000.00', id: 'SUP-4471', lastPaid: '28 Jun 2026', name: 'Padel Surfaces Lda', standing: 'flagged', timesPaid: 14 },
+  { accountOnFile: 'PT44 ···· ···· 2201 8', autonomousLimit: '€2,500.00', id: 'SUP-1180', lastPaid: '21 Jul 2026', name: 'EDP Comercial', standing: 'trusted', timesPaid: 31 },
+  { accountOnFile: 'PT19 ···· ···· 8834 2', autonomousLimit: '€1,000.00', id: 'SUP-2044', lastPaid: '25 Jul 2026', name: 'Águas do Sado', standing: 'trusted', timesPaid: 27 },
+  { accountOnFile: 'PT71 ···· ···· 4472 6', autonomousLimit: '€2,000.00', id: 'SUP-3308', lastPaid: '24 Jul 2026', name: 'CleanCourt Serviços', standing: 'trusted', timesPaid: 18 },
+  { accountOnFile: '— none on file —', autonomousLimit: '€0 until first approval', id: 'SUP-5512', lastPaid: 'never', name: 'Sport Import Iberia', standing: 'new', timesPaid: 0 },
+  { accountOnFile: 'PT02 ···· ···· 6619 3', autonomousLimit: '€1,500.00', id: 'SUP-2871', lastPaid: '19 Jul 2026', name: 'NovaRede Telecom', standing: 'trusted', timesPaid: 22 },
+];
+
+export interface Settlement {
+  readonly invoiceId: string;
+  readonly supplier: string;
+  readonly amount: string;
+  readonly rail: string;
+  readonly txId: string;
+  readonly state: 'settled' | 'consumed';
+  readonly at: string;
+}
+
+export const settlements: readonly Settlement[] = [
+  { amount: '€312.40', at: '25 Jul, 16:02', invoiceId: 'INV-2026-0916', rail: 'Hedera Testnet', state: 'consumed', supplier: 'Águas do Sado', txId: 'pending live credentials' },
+  { amount: '€1,840.06', at: '25 Jul, 14:47', invoiceId: 'INV-2026-0915', rail: 'Hedera Testnet', state: 'consumed', supplier: 'EDP Comercial', txId: 'pending live credentials' },
+  { amount: '€960.00', at: '25 Jul, 11:20', invoiceId: 'INV-2026-0914', rail: 'Hedera Testnet', state: 'consumed', supplier: 'CleanCourt Serviços', txId: 'pending live credentials' },
+  { amount: '€214.90', at: '25 Jul, 09:33', invoiceId: 'INV-2026-0913', rail: 'Hedera Testnet', state: 'consumed', supplier: 'NovaRede Telecom', txId: 'pending live credentials' },
+];
+
+export interface AuditEvent {
+  readonly at: string;
+  readonly actor: string;
+  readonly kind: 'allow' | 'refuse' | 'info';
+  readonly text: string;
+}
+
+export const auditEvents: readonly AuditEvent[] = [
+  { actor: 'policy', at: '25 Jul, 17:41', kind: 'refuse', text: 'INV-2026-0912 held — bank account differs from the account on file (paid 14 times).' },
+  { actor: 'world', at: '25 Jul, 17:44', kind: 'refuse', text: 'Approval from agent A2 declined — resolves to the same human as approval #1. Quorum unchanged.' },
+  { actor: 'agent', at: '25 Jul, 16:02', kind: 'allow', text: 'INV-2026-0916 settled autonomously — known supplier, unchanged account, within €1,000 limit.' },
+  { actor: 'policy', at: '25 Jul, 15:58', kind: 'refuse', text: 'INV-2026-0910 held — first payment to this supplier; no baseline exists.' },
+  { actor: 'agent', at: '25 Jul, 14:47', kind: 'allow', text: 'INV-2026-0915 settled autonomously — 31st payment to this supplier at the same account.' },
+  { actor: 'gateway', at: '25 Jul, 14:47', kind: 'info', text: 'Payable consumed — identifier can never settle again.' },
+];
+
+export interface PolicyRule {
+  readonly trigger: string;
+  readonly outcome: string;
+  readonly rationale: string;
+}
+
+export const POLICY_VERSION = 'acme-policy-3';
+
+export const policyRules: readonly PolicyRule[] = [
+  { outcome: 'Always held — 2 distinct humans', rationale: 'Changes where future money goes, not just where money goes once.', trigger: 'Bank account differs from the one on file' },
+  { outcome: 'Always held — 2 distinct humans', rationale: 'No baseline exists to compare against.', trigger: 'Supplier never paid before' },
+  { outcome: 'Held — 2 distinct humans', rationale: 'Amount is outside the unattended envelope for this supplier.', trigger: 'Amount above the supplier’s autonomous limit' },
+  { outcome: 'Paid by agent, unattended', rationale: 'The identifier matches the baseline in every field that could move money somewhere new.', trigger: 'Known supplier · unchanged account · within limit' },
+];
