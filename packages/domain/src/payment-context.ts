@@ -15,6 +15,8 @@ export type StandingMandateReference = NonNullable<
 
 export type PaymentAuthorizationContext = AuthorizationBundleV1;
 
+export type TrustedTransitionContext = Readonly<{ now: string }>;
+
 export type StandingMandateAggregate = Readonly<{
   record: StandingMandateV1;
   state: 'ISSUED' | 'ACTIVE' | 'PAUSED' | 'REVOKED' | 'EXPIRED';
