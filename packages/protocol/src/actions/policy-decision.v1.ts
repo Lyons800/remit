@@ -205,6 +205,17 @@ export const policyDecisionV1Schema = z
           code === 'SOURCE_AUTHENTICATED_STRUCTURED' ||
           code === 'FIELDS_INDEPENDENTLY_CONFIRMED',
       );
+      const purchaseOrderSatisfied =
+        decision.reasonCodes.includes('PURCHASE_ORDER_NOT_REQUIRED') !==
+        decision.reasonCodes.includes('PURCHASE_ORDER_EXACT_MATCH');
+      const requiredReasons = [
+        'SUPPLIER_ACTIVE_EXACT_MATCH',
+        'BENEFICIARY_EXACT_MATCH',
+        'DUPLICATE_CLEAR',
+        'AMOUNT_WITHIN_MANDATE',
+        'PERIOD_CAP_AVAILABLE',
+        'MANDATE_EXACT_CONTAINMENT',
+      ] as const;
       if (
         decision.standingMandate === null ||
         quorums.some((quorum) => quorum !== 0) ||
@@ -212,7 +223,12 @@ export const policyDecisionV1Schema = z
         hasHumanReviewReason ||
         hasBlockReason ||
         !confirmedSource ||
-        !decision.reasonCodes.includes('MANDATE_EXACT_CONTAINMENT')
+        !purchaseOrderSatisfied ||
+        requiredReasons.some(
+          (reason) => !decision.reasonCodes.includes(reason),
+        ) ||
+        (decision.verificationMode === 'NOT_REQUIRED') !==
+          decision.reasonCodes.includes('EVIDENCE_NOT_REQUIRED_BY_MANDATE')
       ) {
         context.addIssue({
           code: 'custom',
@@ -227,7 +243,9 @@ export const policyDecisionV1Schema = z
         hasBlockReason ||
         !hasHumanReviewReason ||
         totalRoleSlots === 0 ||
-        quorums.some((quorum) => quorum !== totalRoleSlots)
+        quorums.some((quorum) => quorum !== totalRoleSlots) ||
+        (decision.verificationMode === 'REQUIRED') !==
+          decision.reasonCodes.includes('EVIDENCE_REQUIRED')
       ) {
         context.addIssue({
           code: 'custom',
