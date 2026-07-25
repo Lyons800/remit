@@ -123,6 +123,7 @@ export function policyEvaluationForCore(
   return {
     config: {
       executorAuthority: {
+        adapterId: 'world-agentbook-adapter',
         agentBookRegistry: 'world-agentbook:eip155:480',
         audience: 'invoiceguard:settlement',
         grant: {

@@ -22,11 +22,13 @@ import {
 } from '../invariants/mandate.js';
 import {
   actionFactBinding,
+  deriveExecutionAuditEventId,
   deriveSettlementEffectDigest,
   deriveSettlementIdempotencyKey,
   parseAdapterVerifiedAuthorizationAudit,
   parseAdapterVerifiedCancellationAudit,
   parseAdapterVerifiedEvidenceResult,
+  parseAdapterVerifiedExecutionAudit,
   parseAdapterVerifiedSettlementReceipt,
   parseAdapterVerifiedSettlementUncertainty,
   parseAdapterVerifiedVerificationPayment,
@@ -38,6 +40,7 @@ import {
   type AdapterVerifiedAuthorizationAudit,
   type AdapterVerifiedCancellationAudit,
   type AdapterVerifiedEvidenceResult,
+  type AdapterVerifiedExecutionAudit,
   type AdapterVerifiedSettlementReceipt,
   type AdapterVerifiedSettlementUncertainty,
   type AdapterVerifiedVerificationPayment,
@@ -70,6 +73,8 @@ export const paymentActionStates = [
   'AUDIT_COMMITTED',
   'SETTLEMENT_PENDING',
   'SETTLEMENT_RECOVERY',
+  'SETTLED_AUDIT_PENDING',
+  'SETTLED_AUDIT_DEGRADED',
   'SETTLED',
   'RECONCILING',
   'RECONCILED',
@@ -150,6 +155,7 @@ export type PaymentActionAggregate = Readonly<{
   cancellationAudit: AdapterVerifiedCancellationAudit | null;
   consumptionClaim: AtomicSettlementConsumptionClaim | null;
   evidenceResult: AdapterVerifiedEvidenceResult | null;
+  executionAudit: AdapterVerifiedExecutionAudit | null;
   executionApprovals: readonly AdapterVerifiedApprovalFact[] | null;
   executionAuthority: RequestingAgentExecutionFact | null;
   metadata: PaymentAggregateMetadata;
@@ -237,6 +243,16 @@ export type PaymentActionEvent =
       reservationLedger: MandateReservationLedger | null;
       type: 'RETRY_SAME_TRANSACTION';
     }>
+  | Readonly<{
+      executionAudit: AdapterVerifiedExecutionAudit;
+      type: 'CONFIRM_EXECUTION_AUDIT';
+    }>
+  | Readonly<{ type: 'MARK_EXECUTION_AUDIT_DEGRADED' }>
+  | Readonly<{ type: 'RETRY_EXECUTION_AUDIT' }>
+  | Readonly<{
+      executionAudit: AdapterVerifiedExecutionAudit;
+      type: 'RECOVER_EXECUTION_AUDIT';
+    }>
   | Readonly<{ type: 'START_RECONCILIATION' }>
   | Readonly<{ type: 'RECONCILE_SUCCESS' }>
   | Readonly<{ type: 'RECONCILE_EXCEPTION' }>
@@ -277,6 +293,10 @@ export const paymentActionEventTypes = [
   'START_SETTLEMENT_RECOVERY',
   'RECOVER_SETTLEMENT',
   'RETRY_SAME_TRANSACTION',
+  'CONFIRM_EXECUTION_AUDIT',
+  'MARK_EXECUTION_AUDIT_DEGRADED',
+  'RETRY_EXECUTION_AUDIT',
+  'RECOVER_EXECUTION_AUDIT',
   'START_RECONCILIATION',
   'RECONCILE_SUCCESS',
   'RECONCILE_EXCEPTION',
@@ -315,15 +335,47 @@ export type VerificationQuoteRequestEffect = Readonly<{
 export type SettlementRetryRequestEffect = Readonly<{
   atomicGroupKey: string;
   attempt: FrozenSettlementAttempt;
+  authorityFactDigest: string;
   authorizationBasisDigest: string;
+  evidenceResultDigest: string | null;
+  eventId: string;
+  idempotencyKey: string;
   requestingAgent: RequestingAgentExecutionFact;
   type: 'SETTLEMENT_RETRY_REQUEST';
 }>;
 
+export type SettlementSubmissionRequestEffect = Readonly<{
+  atomicGroupKey: string;
+  attempt: FrozenSettlementAttempt;
+  authorityFactDigest: string;
+  authorizationBasisDigest: string;
+  evidenceResultDigest: string | null;
+  eventId: string;
+  idempotencyKey: string;
+  type: 'SETTLEMENT_SUBMISSION_REQUEST';
+}>;
+
+export type ExecutionAuditRequestEffect = Readonly<{
+  actionDigest: string;
+  atomicGroupKey: string;
+  authorizationAuditId: string;
+  eventId: string;
+  idempotencyKey: string;
+  attemptId: string;
+  networkId: string;
+  receiptId: string;
+  receiptRecordDigest: string;
+  settlementTransactionId: string;
+  signedBytesHash: string;
+  type: 'EXECUTION_AUDIT_REQUEST';
+}>;
+
 export type PaymentDomainEffect =
+  | ExecutionAuditRequestEffect
   | MandateReservationWriteEffect
   | SettlementConsumptionWriteEffect
   | SettlementRetryRequestEffect
+  | SettlementSubmissionRequestEffect
   | VerificationQuoteRequestEffect;
 
 export type PaymentActionTransition = Readonly<{
@@ -400,12 +452,20 @@ const transitions: Readonly<
   SETTLED: {
     START_RECONCILIATION: 'RECONCILING',
   },
+  SETTLED_AUDIT_DEGRADED: {
+    RECOVER_EXECUTION_AUDIT: 'SETTLED',
+    RETRY_EXECUTION_AUDIT: 'SETTLED_AUDIT_DEGRADED',
+  },
+  SETTLED_AUDIT_PENDING: {
+    CONFIRM_EXECUTION_AUDIT: 'SETTLED',
+    MARK_EXECUTION_AUDIT_DEGRADED: 'SETTLED_AUDIT_DEGRADED',
+  },
   SETTLEMENT_PENDING: {
-    SETTLE_CONSENSUS: 'SETTLED',
+    SETTLE_CONSENSUS: 'SETTLED_AUDIT_PENDING',
     START_SETTLEMENT_RECOVERY: 'SETTLEMENT_RECOVERY',
   },
   SETTLEMENT_RECOVERY: {
-    RECOVER_SETTLEMENT: 'SETTLED',
+    RECOVER_SETTLEMENT: 'SETTLED_AUDIT_PENDING',
     RETRY_SAME_TRANSACTION: 'SETTLEMENT_PENDING',
   },
   SUPERSEDED: {},
@@ -430,6 +490,7 @@ const AGGREGATE_KEYS = [
   'cancellationAudit',
   'consumptionClaim',
   'evidenceResult',
+  'executionAudit',
   'executionApprovals',
   'executionAuthority',
   'metadata',
@@ -475,10 +536,12 @@ const TERMINAL_KEYS = [
 const NO_PAYLOAD_EVENTS: ReadonlySet<PaymentActionEventType> = new Set([
   'AWAIT_APPROVALS',
   'CLASSIFY',
+  'MARK_EXECUTION_AUDIT_DEGRADED',
   'RECONCILE_EXCEPTION',
   'RECONCILE_SUCCESS',
   'REJECT_APPROVALS',
   'REJECT_POLICY_BLOCK',
+  'RETRY_EXECUTION_AUDIT',
   'SATISFY_EVIDENCE_NOT_REQUIRED',
   'START_AUTHORIZATION_RECOVERY',
   'START_RECONCILIATION',
@@ -612,6 +675,7 @@ function validateRequestingAgentPolicy(
     return refuse('ACTION_DIGEST_MISMATCH');
   }
   if (
+    fact.adapterId !== required.adapterId ||
     fact.agentBookRegistry !== required.agentBookRegistry ||
     fact.audience !== required.audience ||
     fact.grantDigest !== required.grant.digest ||
@@ -678,7 +742,9 @@ function sameRequestingAgentIdentity(
   current: RequestingAgentExecutionFact,
 ): boolean {
   return (
+    original.adapterId === current.adapterId &&
     original.agentId === current.agentId &&
+    original.agentKitChallengeId === current.agentKitChallengeId &&
     original.agentTenantPrincipal === current.agentTenantPrincipal &&
     original.actionHumanPrincipal === current.actionHumanPrincipal &&
     original.agentBookRegistry === current.agentBookRegistry &&
@@ -686,12 +752,16 @@ function sameRequestingAgentIdentity(
     original.grantDigest === current.grantDigest &&
     original.grantId === current.grantId &&
     original.grantVersion === current.grantVersion &&
+    original.factId === current.factId &&
     original.role === current.role &&
     original.roleCredentialId === current.roleCredentialId &&
     original.agentBackingRecordId === current.agentBackingRecordId &&
     original.scope === current.scope &&
+    original.signedProofDigest === current.signedProofDigest &&
     original.subjectId === current.subjectId &&
-    original.tenantId === current.tenantId
+    original.tenantId === current.tenantId &&
+    current.verifiedAt >= original.verifiedAt &&
+    current.expiresAt <= original.expiresAt
   );
 }
 
@@ -907,6 +977,10 @@ function parseAggregateFacts(
     input.evidenceResult === null
       ? null
       : parseAdapterVerifiedEvidenceResult(input.evidenceResult);
+  const executionAudit =
+    input.executionAudit === null
+      ? null
+      : parseAdapterVerifiedExecutionAudit(input.executionAudit);
   const authorizationBasis =
     input.authorizationBasis === null
       ? null
@@ -951,6 +1025,7 @@ function parseAggregateFacts(
   if (
     (input.verificationPayment !== null && verificationPayment === null) ||
     (input.evidenceResult !== null && evidenceResult === null) ||
+    (input.executionAudit !== null && executionAudit === null) ||
     (input.authorizationBasis !== null && !authorizationBasis?.ok) ||
     (input.authorizationAudit !== null && authorizationAudit === null) ||
     (input.auditAuthority !== null && auditAuthority === null) ||
@@ -976,6 +1051,7 @@ function parseAggregateFacts(
     cancellationAudit,
     consumptionClaim,
     evidenceResult,
+    executionAudit,
     executionApprovals,
     executionAuthority,
     settlementAttempt,
@@ -994,6 +1070,7 @@ function factsBindAuthorization(
   for (const candidate of [
     facts.verificationPayment,
     facts.evidenceResult,
+    facts.executionAudit,
     facts.authorizationAudit,
     facts.auditAuthority,
     facts.cancellationAudit,
@@ -1079,6 +1156,32 @@ function evidenceFactsValid(
   return stage === 'SATISFIED'
     ? facts.evidenceResult.result === 'MATCH'
     : facts.evidenceResult.result !== 'MATCH';
+}
+
+function validateCurrentMatchEvidence(
+  aggregate: PaymentActionAggregate,
+  now: string,
+): DomainResult<AdapterVerifiedEvidenceResult | null> {
+  if (now >= aggregate.authorization.actionCore.expiresAt) {
+    return refuse('ACTION_EXPIRED');
+  }
+  if (aggregate.authorization.decision.verificationMode === 'NOT_REQUIRED') {
+    return aggregate.evidenceResult === null
+      ? accept(null)
+      : refuse('VERIFICATION_MODE_MISMATCH');
+  }
+  const evidence = aggregate.evidenceResult;
+  if (
+    evidence === null ||
+    evidence.result !== 'MATCH' ||
+    evidence.verifiedAt > now
+  ) {
+    return refuse('VERIFICATION_MISMATCH');
+  }
+  if (now >= evidence.expiresAt) {
+    return refuse('VERIFICATION_EXPIRED');
+  }
+  return accept(evidence);
 }
 
 function authorizationFactsValid(
@@ -1214,6 +1317,40 @@ function settlementFactsValid(
   );
 }
 
+function executionAuditFactsValid(
+  authorization: AuthorizationBundleV1,
+  facts: ParsedAggregateFacts,
+  requireAudit: boolean,
+): boolean {
+  const executionAudit = facts.executionAudit;
+  if (!requireAudit) {
+    return executionAudit === null;
+  }
+  const authorizationAudit = facts.authorizationAudit;
+  const attempt = facts.settlementAttempt;
+  const receipt = facts.settlementReceipt;
+  return (
+    executionAudit !== null &&
+    authorizationAudit !== null &&
+    attempt !== null &&
+    receipt !== null &&
+    exactBinding(authorization, executionAudit) &&
+    executionAudit.adapterId === authorizationAudit.adapterId &&
+    executionAudit.authorizationAuditId === authorizationAudit.auditId &&
+    executionAudit.eventId === deriveExecutionAuditEventId(attempt) &&
+    executionAudit.attemptId === attempt.attemptId &&
+    executionAudit.networkId === attempt.networkId &&
+    executionAudit.receiptId === receipt.receiptId &&
+    executionAudit.receiptRecordDigest === receipt.recordDigest &&
+    executionAudit.settlementTransactionId === attempt.transactionId &&
+    executionAudit.signedBytesHash === attempt.signedBytesHash &&
+    executionAudit.writerAccountId === authorizationAudit.writerAccountId &&
+    executionAudit.writerId === authorizationAudit.writerId &&
+    executionAudit.writerKeyId === authorizationAudit.writerKeyId &&
+    executionAudit.committedAt >= receipt.settledAt
+  );
+}
+
 function uncertaintyMatchesAttempt(
   uncertainty: AdapterVerifiedSettlementUncertainty,
   attempt: FrozenSettlementAttempt,
@@ -1238,6 +1375,7 @@ function noAuthorizationFacts(facts: ParsedAggregateFacts): boolean {
     facts.authorizationAudit === null &&
     facts.auditAuthority === null &&
     facts.cancellationAudit === null &&
+    facts.executionAudit === null &&
     facts.executionAuthority === null &&
     facts.executionApprovals === null &&
     facts.settlementAttempt === null &&
@@ -1275,6 +1413,8 @@ function validateFactsForState(
     'AUDIT_COMMITTED',
     'SETTLEMENT_PENDING',
     'SETTLEMENT_RECOVERY',
+    'SETTLED_AUDIT_PENDING',
+    'SETTLED_AUDIT_DEGRADED',
     'SETTLED',
     'RECONCILING',
     'RECONCILED',
@@ -1309,6 +1449,8 @@ function validateFactsForState(
     'AUDIT_COMMITTED',
     'SETTLEMENT_PENDING',
     'SETTLEMENT_RECOVERY',
+    'SETTLED_AUDIT_PENDING',
+    'SETTLED_AUDIT_DEGRADED',
     'SETTLED',
     'RECONCILING',
     'RECONCILED',
@@ -1328,6 +1470,7 @@ function validateFactsForState(
     (state === 'AUTHORIZED' || state === 'AUTHORIZATION_RECOVERY') &&
     (facts.executionAuthority !== null ||
       facts.auditAuthority !== null ||
+      facts.executionAudit !== null ||
       facts.executionApprovals !== null ||
       facts.settlementAttempt !== null ||
       facts.settlementUncertainty !== null ||
@@ -1339,6 +1482,7 @@ function validateFactsForState(
   if (
     state === 'AUDIT_COMMITTED' &&
     (facts.auditAuthority === null ||
+      facts.executionAudit !== null ||
       facts.executionAuthority !== null ||
       facts.executionApprovals !== null ||
       facts.settlementAttempt !== null ||
@@ -1352,6 +1496,8 @@ function validateFactsForState(
   const attemptedStates = new Set<PaymentActionState>([
     'SETTLEMENT_PENDING',
     'SETTLEMENT_RECOVERY',
+    'SETTLED_AUDIT_PENDING',
+    'SETTLED_AUDIT_DEGRADED',
     'SETTLED',
     'RECONCILING',
     'RECONCILED',
@@ -1362,11 +1508,28 @@ function validateFactsForState(
     (!executionFactsValid(authorization, facts) ||
       !settlementFactsValid(
         facts,
-        state === 'SETTLED' ||
+        state === 'SETTLED_AUDIT_PENDING' ||
+          state === 'SETTLED_AUDIT_DEGRADED' ||
+          state === 'SETTLED' ||
           state === 'RECONCILING' ||
           state === 'RECONCILED' ||
           state === 'RECONCILIATION_EXCEPTION',
       ))
+  ) {
+    return false;
+  }
+  const executionAuditCommittedStates = new Set<PaymentActionState>([
+    'SETTLED',
+    'RECONCILING',
+    'RECONCILED',
+    'RECONCILIATION_EXCEPTION',
+  ]);
+  if (
+    !executionAuditFactsValid(
+      authorization,
+      facts,
+      executionAuditCommittedStates.has(state),
+    )
   ) {
     return false;
   }
@@ -1411,6 +1574,7 @@ function retainedFactChronologyValid(
   const uncertainty = facts.settlementUncertainty;
   const receipt = facts.settlementReceipt;
   const claim = facts.consumptionClaim;
+  const executionAudit = facts.executionAudit;
 
   if (payment !== null) {
     if (payment.paidAt < authorization.decision.evaluatedAt) {
@@ -1489,6 +1653,12 @@ function retainedFactChronologyValid(
       return false;
     }
     timestamps.push(claim.consumedAt);
+  }
+  if (executionAudit !== null) {
+    if (receipt === null || executionAudit.committedAt < receipt.settledAt) {
+      return false;
+    }
+    timestamps.push(executionAudit.committedAt);
   }
   return timestamps.every(
     (timestamp) => timestamp <= metadata.lastTransitionAt,
@@ -1624,6 +1794,7 @@ export function createPaymentActionAggregate(
         cancellationAudit: null,
         consumptionClaim: null,
         evidenceResult: null,
+        executionAudit: null,
         executionApprovals: null,
         executionAuthority: null,
         metadata: Object.freeze({
@@ -1665,6 +1836,10 @@ function atomicGroupKey(
   nextVersion = aggregate.metadata.version + 1,
 ): string {
   return `payment:${aggregate.authorization.envelope.actionDigest}:v${nextVersion}`;
+}
+
+function settlementSubmissionEventId(attempt: FrozenSettlementAttempt): string {
+  return `invoiceguard:settlement:submit:v1:${attempt.actionDigest}:${attempt.attemptId}`;
 }
 
 function transitionResult(
@@ -1711,15 +1886,35 @@ function sameApprovalIdentities(
 ): boolean {
   const identity = (approval: AdapterVerifiedApprovalFact) => ({
     actionHumanPrincipal: approval.actionHumanPrincipal,
+    adapterId: approval.adapterId,
     agentBackingRecordId: approval.agentBackingRecordId,
+    agentKitChallengeId: approval.agentKitChallengeId,
     agentTenantPrincipal: approval.agentTenantPrincipal,
     approvalId: approval.approvalId,
+    approvalSessionId: approval.approvalSessionId,
     consumptionClaimId: approval.consumptionClaimId,
     decisionId: approval.decisionId,
     role: approval.role,
     roleCredentialId: approval.roleCredentialId,
+    signedProofDigest: approval.signedProofDigest,
     subjectId: approval.subjectId,
+    worldProofId: approval.worldProofId,
   });
+  const originalByApproval = new Map(
+    original.map((approval) => [approval.approvalId, approval]),
+  );
+  if (
+    current.some((approval) => {
+      const previous = originalByApproval.get(approval.approvalId);
+      return (
+        previous === undefined ||
+        approval.verifiedAt < previous.verifiedAt ||
+        approval.expiresAt > previous.expiresAt
+      );
+    })
+  ) {
+    return false;
+  }
   return (
     canonicalizeJson(original.map(identity).sort(sortByApprovalId)) ===
     canonicalizeJson(current.map(identity).sort(sortByApprovalId))
@@ -1821,6 +2016,69 @@ function reservationEffect(
   });
 }
 
+function executionAuditRequestEffect(
+  aggregate: PaymentActionAggregate,
+  receipt: AdapterVerifiedSettlementReceipt,
+): DomainResult<ExecutionAuditRequestEffect> {
+  const authorizationAudit = aggregate.authorizationAudit;
+  const attempt = aggregate.settlementAttempt;
+  if (authorizationAudit === null || attempt === null) {
+    return refuse('EXECUTION_AUDIT_MISMATCH');
+  }
+  const eventId = deriveExecutionAuditEventId(attempt);
+  return accept(
+    Object.freeze({
+      actionDigest: attempt.actionDigest,
+      atomicGroupKey: atomicGroupKey(aggregate),
+      authorizationAuditId: authorizationAudit.auditId,
+      eventId,
+      idempotencyKey: eventId,
+      attemptId: attempt.attemptId,
+      networkId: attempt.networkId,
+      receiptId: receipt.receiptId,
+      receiptRecordDigest: receipt.recordDigest,
+      settlementTransactionId: attempt.transactionId,
+      signedBytesHash: attempt.signedBytesHash,
+      type: 'EXECUTION_AUDIT_REQUEST',
+    }),
+  );
+}
+
+function validateExecutionAudit(
+  input: unknown,
+  aggregate: PaymentActionAggregate,
+  now: string,
+): DomainResult<AdapterVerifiedExecutionAudit> {
+  const executionAudit = parseAdapterVerifiedExecutionAudit(input);
+  const authorizationAudit = aggregate.authorizationAudit;
+  const attempt = aggregate.settlementAttempt;
+  const receipt = aggregate.settlementReceipt;
+  if (
+    executionAudit === null ||
+    authorizationAudit === null ||
+    attempt === null ||
+    receipt === null ||
+    !exactBinding(aggregate.authorization, executionAudit) ||
+    executionAudit.adapterId !== authorizationAudit.adapterId ||
+    executionAudit.authorizationAuditId !== authorizationAudit.auditId ||
+    executionAudit.eventId !== deriveExecutionAuditEventId(attempt) ||
+    executionAudit.attemptId !== attempt.attemptId ||
+    executionAudit.networkId !== attempt.networkId ||
+    executionAudit.receiptId !== receipt.receiptId ||
+    executionAudit.receiptRecordDigest !== receipt.recordDigest ||
+    executionAudit.settlementTransactionId !== attempt.transactionId ||
+    executionAudit.signedBytesHash !== attempt.signedBytesHash ||
+    executionAudit.writerAccountId !== authorizationAudit.writerAccountId ||
+    executionAudit.writerId !== authorizationAudit.writerId ||
+    executionAudit.writerKeyId !== authorizationAudit.writerKeyId ||
+    executionAudit.committedAt < receipt.settledAt ||
+    executionAudit.committedAt > now
+  ) {
+    return refuse('EXECUTION_AUDIT_MISMATCH');
+  }
+  return accept(executionAudit);
+}
+
 function releaseReservationForTerminal(
   aggregate: PaymentActionAggregate,
   ledgerInput: unknown,
@@ -1912,6 +2170,10 @@ function handleQueue(
     ])
   ) {
     return refuse('SETTLEMENT_ATTEMPT_MISMATCH');
+  }
+  const evidence = validateCurrentMatchEvidence(aggregate, now);
+  if (!evidence.ok) {
+    return evidence;
   }
   const basis = aggregate.authorizationBasis;
   const audit = aggregate.authorizationAudit;
@@ -2006,6 +2268,18 @@ function handleQueue(
       executionAuthority: requestingAgent.value,
       settlementAttempt: attempt.value,
     },
+    [
+      Object.freeze({
+        atomicGroupKey: atomicGroupKey(aggregate),
+        attempt: attempt.value,
+        authorityFactDigest: requestingAgent.value.recordDigest,
+        authorizationBasisDigest: basis.basisDigest,
+        evidenceResultDigest: evidence.value?.recordDigest ?? null,
+        eventId: settlementSubmissionEventId(attempt.value),
+        idempotencyKey: attempt.value.idempotencyKey,
+        type: 'SETTLEMENT_SUBMISSION_REQUEST',
+      }),
+    ],
   );
 }
 
@@ -2034,6 +2308,13 @@ function handleSettlement(
   if (!settled.ok) {
     return settled;
   }
+  const executionAuditEffect = executionAuditRequestEffect(
+    aggregate,
+    settled.value.receipt,
+  );
+  if (!executionAuditEffect.ok) {
+    return executionAuditEffect;
+  }
   const effects: PaymentDomainEffect[] = [
     Object.freeze({
       atomicGroupKey: atomicGroupKey(aggregate),
@@ -2041,6 +2322,7 @@ function handleSettlement(
       receipt: settled.value.receipt,
       type: 'SETTLEMENT_CONSUMPTION_WRITE',
     }),
+    executionAuditEffect.value,
   ];
   const basis = aggregate.authorizationBasis;
   if (basis?.kind === 'MANDATE') {
@@ -2065,7 +2347,7 @@ function handleSettlement(
   }
   return transitionResult(
     aggregate,
-    'SETTLED',
+    'SETTLED_AUDIT_PENDING',
     eventType,
     now,
     {
@@ -2297,6 +2579,10 @@ export function transitionPaymentAction(
     ) {
       return refuse('APPROVAL_FACT_INVALID');
     }
+    const evidence = validateCurrentMatchEvidence(aggregate, now);
+    if (!evidence.ok) {
+      return evidence;
+    }
     const approvals = validateApprovalQuorum(
       approvalBinding(
         aggregate.authorization,
@@ -2337,6 +2623,10 @@ export function transitionPaymentAction(
       ])
     ) {
       return refuse('MANDATE_CONTAINMENT_FAILED');
+    }
+    const evidence = validateCurrentMatchEvidence(aggregate, now);
+    if (!evidence.ok) {
+      return evidence;
     }
     const containment = validateMandateContainment(
       aggregate.authorization,
@@ -2399,6 +2689,10 @@ export function transitionPaymentAction(
     ) {
       return refuse('HCS_AUTHORIZATION_REQUIRED');
     }
+    const evidence = validateCurrentMatchEvidence(aggregate, now);
+    if (!evidence.ok) {
+      return evidence;
+    }
     const audit = validateAudit(
       eventInput.authorizationAudit,
       eventInput.requestingAgent,
@@ -2450,6 +2744,10 @@ export function transitionPaymentAction(
       ])
     ) {
       return refuse('SETTLEMENT_TRANSACTION_MISMATCH');
+    }
+    const evidence = validateCurrentMatchEvidence(aggregate, now);
+    if (!evidence.ok) {
+      return evidence;
     }
     const basis = aggregate.authorizationBasis;
     const audit = aggregate.authorizationAudit;
@@ -2528,11 +2826,46 @@ export function transitionPaymentAction(
       Object.freeze({
         atomicGroupKey: atomicGroupKey(aggregate),
         attempt,
+        authorityFactDigest: requestingAgent.value.recordDigest,
         authorizationBasisDigest: basis.basisDigest,
+        evidenceResultDigest: evidence.value?.recordDigest ?? null,
+        eventId: settlementSubmissionEventId(attempt),
+        idempotencyKey: attempt.idempotencyKey,
         requestingAgent: requestingAgent.value,
         type: 'SETTLEMENT_RETRY_REQUEST',
       }),
     ]);
+  }
+  if (
+    eventType === 'CONFIRM_EXECUTION_AUDIT' ||
+    eventType === 'RECOVER_EXECUTION_AUDIT'
+  ) {
+    if (!hasExactKeys(eventInput, ['executionAudit', 'type'])) {
+      return refuse('EXECUTION_AUDIT_MISMATCH');
+    }
+    const executionAudit = validateExecutionAudit(
+      eventInput.executionAudit,
+      aggregate,
+      now,
+    );
+    return executionAudit.ok
+      ? transitionResult(aggregate, next, eventType, now, {
+          executionAudit: executionAudit.value,
+        })
+      : executionAudit;
+  }
+  if (eventType === 'MARK_EXECUTION_AUDIT_DEGRADED') {
+    return transitionResult(aggregate, next, eventType, now);
+  }
+  if (eventType === 'RETRY_EXECUTION_AUDIT') {
+    const receipt = aggregate.settlementReceipt;
+    if (receipt === null) {
+      return refuse('EXECUTION_AUDIT_MISMATCH');
+    }
+    const effect = executionAuditRequestEffect(aggregate, receipt);
+    return effect.ok
+      ? transitionResult(aggregate, next, eventType, now, {}, [effect.value])
+      : effect;
   }
   if (eventType === 'START_RECONCILIATION') {
     return transitionResult(aggregate, next, eventType, now);

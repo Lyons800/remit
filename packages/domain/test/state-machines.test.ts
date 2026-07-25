@@ -7,6 +7,7 @@ import {
   createAdapterVerifiedAuthorizationAudit,
   createAdapterVerifiedCancellationAudit,
   createAdapterVerifiedEvidenceResult,
+  createAdapterVerifiedExecutionAudit,
   createAdapterVerifiedSettlementReceipt,
   createAdapterVerifiedSettlementUncertainty,
   createAdapterVerifiedVerificationPayment,
@@ -60,6 +61,7 @@ const T5 = '2026-07-25T10:00:05.000Z';
 const T6 = '2026-07-25T10:00:06.000Z';
 const T7 = '2026-07-25T10:00:07.000Z';
 const T8 = '2026-07-25T10:00:08.000Z';
+const T9 = '2026-07-25T10:00:09.000Z';
 const BEFORE = '2026-07-25T09:00:00.000Z';
 const FACT_EXPIRES_AT = '2026-07-25T10:59:00.000Z';
 const EVIDENCE_EXPIRES_AT = '2026-07-25T10:50:00.000Z';
@@ -98,11 +100,12 @@ function requestingAgent(
     agentBookRegistry: 'world-agentbook:eip155:480',
     agentBookStatus: 'CURRENT',
     agentId: 'payment-agent-1',
+    agentKitChallengeId: `agentkit-challenge:${frozenAuthorization.actionCore.actionId}`,
     agentTenantPrincipal: 'agent-tenant-1',
     audience: 'invoiceguard:settlement',
     companyRoleStatus: 'CURRENT',
     expiresAt: FACT_EXPIRES_AT,
-    factId: `requesting-agent:${verifiedAt}`,
+    factId: `requesting-agent-proof:${frozenAuthorization.actionCore.actionId}`,
     grantDigest: '7'.repeat(64),
     grantId: 'payment-executor-grant',
     grantStatus: 'CURRENT',
@@ -110,6 +113,7 @@ function requestingAgent(
     role: 'PAYMENT_EXECUTOR',
     roleCredentialId: 'role-credential-payment-executor-1',
     scope: 'payments:execute',
+    signedProofDigest: frozenAuthorization.envelope.actionDigest,
     subjectId: 'payment-agent-1',
     tenantId: frozenAuthorization.actionCore.organizationId,
     verifiedAt,
@@ -131,7 +135,9 @@ function approvalFacts(
       agentBackingRecordId: 'agent-backing-approval-1',
       agentBackingStatus: 'CURRENT',
       agentTenantPrincipal: 'approval-agent-1',
+      agentKitChallengeId: 'approval-agentkit-challenge-1',
       approvalId: 'approval-1',
+      approvalSessionId: 'approval-session-1',
       companyRoleStatus: 'CURRENT',
       consumptionClaimId: 'approval-consumption-1',
       decision: 'APPROVE',
@@ -141,8 +147,10 @@ function approvalFacts(
       kind: 'APPROVAL_FACT',
       role: 'FINANCE_APPROVER',
       roleCredentialId: 'role-credential-finance-1',
+      signedProofDigest: '1'.repeat(64),
       subjectId: 'subject-1',
       verifiedAt,
+      worldProofId: 'world-proof-1',
       ...overrides,
     }),
     createAdapterVerifiedApprovalFact({
@@ -152,7 +160,9 @@ function approvalFacts(
       agentBackingRecordId: 'agent-backing-approval-2',
       agentBackingStatus: 'CURRENT',
       agentTenantPrincipal: 'approval-agent-2',
+      agentKitChallengeId: 'approval-agentkit-challenge-2',
       approvalId: 'approval-2',
+      approvalSessionId: 'approval-session-2',
       companyRoleStatus: 'CURRENT',
       consumptionClaimId: 'approval-consumption-2',
       decision: 'APPROVE',
@@ -162,8 +172,10 @@ function approvalFacts(
       kind: 'APPROVAL_FACT',
       role: 'TREASURY_APPROVER',
       roleCredentialId: 'role-credential-treasury-2',
+      signedProofDigest: '2'.repeat(64),
       subjectId: 'subject-2',
       verifiedAt,
+      worldProofId: 'world-proof-2',
       ...overrides,
     }),
   ];
@@ -256,6 +268,35 @@ function consumptionClaim(
       expectedAggregateVersion: aggregate.metadata.version,
       writerId: 'postgres-payment-writer',
       writerVersion: 1,
+    },
+  );
+}
+
+function executionAudit(
+  frozenAuthorization: typeof authorization,
+  aggregate: PaymentActionAggregate,
+  committedAt: string,
+) {
+  const authorizationAudit = aggregate.authorizationAudit;
+  const attempt = aggregate.settlementAttempt;
+  const receipt = aggregate.settlementReceipt;
+  if (authorizationAudit === null || attempt === null || receipt === null) {
+    throw new Error('settled aggregate fixtures must carry audit evidence');
+  }
+  return createAdapterVerifiedExecutionAudit(
+    frozenAuthorization,
+    authorizationAudit,
+    attempt,
+    receipt,
+    {
+      adapterId: authorizationAudit.adapterId,
+      auditId: `execution-audit:${attempt.attemptId}`,
+      committedAt,
+      topicId: authorizationAudit.topicId,
+      transactionId: `execution-audit-transaction:${attempt.attemptId}`,
+      writerAccountId: authorizationAudit.writerAccountId,
+      writerId: authorizationAudit.writerId,
+      writerKeyId: authorizationAudit.writerKeyId,
     },
   );
 }
@@ -624,6 +665,18 @@ describe('persisted payment-action aggregate', () => {
     if (basis === null || basis.kind !== 'MANDATE' || attempt === null) {
       throw new Error('queued mandate fixtures must carry their basis');
     }
+    expect(queued.effects).toEqual([
+      {
+        atomicGroupKey: queued.atomicGroupKey,
+        attempt,
+        authorityFactDigest: queued.aggregate.executionAuthority?.recordDigest,
+        authorizationBasisDigest: basis.basisDigest,
+        evidenceResultDigest: null,
+        eventId: `invoiceguard:settlement:submit:v1:${attempt.actionDigest}:${attempt.attemptId}`,
+        idempotencyKey: attempt.idempotencyKey,
+        type: 'SETTLEMENT_SUBMISSION_REQUEST',
+      },
+    ]);
     const receipt = settlementReceipt(authorization, attempt, T6);
     const claim = consumptionClaim(
       authorization,
@@ -642,8 +695,9 @@ describe('persisted payment-action aggregate', () => {
       },
       T6,
     );
-    expect(settled.aggregate.state).toBe('SETTLED');
+    expect(settled.aggregate.state).toBe('SETTLED_AUDIT_PENDING');
     expect(settled.effects.map(({ type }) => type).sort()).toEqual([
+      'EXECUTION_AUDIT_REQUEST',
       'MANDATE_RESERVATION_WRITE',
       'SETTLEMENT_CONSUMPTION_WRITE',
     ]);
@@ -658,24 +712,178 @@ describe('persisted payment-action aggregate', () => {
           claim,
           receipt,
         }),
+        expect.objectContaining({
+          atomicGroupKey: settled.atomicGroupKey,
+          authorizationAuditId: queued.aggregate.authorizationAudit?.auditId,
+          eventId: `invoiceguard:hcs:execution:v1:${attempt.actionDigest}:${attempt.attemptId}`,
+          idempotencyKey: `invoiceguard:hcs:execution:v1:${attempt.actionDigest}:${attempt.attemptId}`,
+          receiptId: receipt.receiptId,
+          type: 'EXECUTION_AUDIT_REQUEST',
+        }),
       ]),
     );
 
-    const reconciling = applyEvent(
+    const audit = executionAudit(authorization, settled.aggregate, T7);
+    const auditConfirmed = applyEvent(
       settled.aggregate,
-      { type: 'START_RECONCILIATION' },
+      { executionAudit: audit, type: 'CONFIRM_EXECUTION_AUDIT' },
       T7,
+    );
+    expect(auditConfirmed.aggregate).toMatchObject({
+      executionAudit: audit,
+      state: 'SETTLED',
+    });
+    expect(auditConfirmed.effects).toEqual([]);
+
+    const reconciling = applyEvent(
+      auditConfirmed.aggregate,
+      { type: 'START_RECONCILIATION' },
+      T8,
     );
     const reconciled = applyEvent(
       reconciling.aggregate,
       { type: 'RECONCILE_SUCCESS' },
-      T8,
+      T9,
     );
     expect(reconciled.aggregate.state).toBe('RECONCILED');
     expect(reconciled.aggregate.terminal).toMatchObject({
       eventType: 'RECONCILE_SUCCESS',
       outcome: 'RECONCILED',
     });
+  });
+
+  it('retries a degraded execution audit without undoing settled value', () => {
+    const queued = queuedMandate();
+    const basis = queued.aggregate.authorizationBasis;
+    const attempt = queued.aggregate.settlementAttempt;
+    if (basis === null || basis.kind !== 'MANDATE' || attempt === null) {
+      throw new Error('queued mandate fixtures must carry their basis');
+    }
+    const receipt = settlementReceipt(authorization, attempt, T6);
+    const claim = consumptionClaim(
+      authorization,
+      queued.aggregate,
+      attempt,
+      receipt,
+      T6,
+    );
+    const settled = applyEvent(
+      queued.aggregate,
+      {
+        consumptionClaim: claim,
+        receipt,
+        reservationLedger: basis.reservedLedger,
+        type: 'SETTLE_CONSENSUS',
+      },
+      T6,
+    );
+    const originalRequest = settled.effects.find(
+      ({ type }) => type === 'EXECUTION_AUDIT_REQUEST',
+    );
+    if (originalRequest?.type !== 'EXECUTION_AUDIT_REQUEST') {
+      throw new Error('settlement must emit its execution-audit request');
+    }
+
+    const degraded = applyEvent(
+      settled.aggregate,
+      { type: 'MARK_EXECUTION_AUDIT_DEGRADED' },
+      T7,
+    );
+    expect(degraded.aggregate).toMatchObject({
+      consumptionClaim: claim,
+      executionAudit: null,
+      settlementReceipt: receipt,
+      state: 'SETTLED_AUDIT_DEGRADED',
+    });
+
+    const retried = applyEvent(
+      degraded.aggregate,
+      { type: 'RETRY_EXECUTION_AUDIT' },
+      T8,
+    );
+    expect(retried.aggregate).toMatchObject({
+      consumptionClaim: claim,
+      executionAudit: null,
+      settlementReceipt: receipt,
+      state: 'SETTLED_AUDIT_DEGRADED',
+    });
+    expect(retried.effects).toEqual([
+      expect.objectContaining({
+        eventId: originalRequest.eventId,
+        idempotencyKey: originalRequest.idempotencyKey,
+        type: 'EXECUTION_AUDIT_REQUEST',
+      }),
+    ]);
+    expect(
+      retried.effects.some(
+        ({ type }) =>
+          type === 'MANDATE_RESERVATION_WRITE' ||
+          type === 'SETTLEMENT_CONSUMPTION_WRITE',
+      ),
+    ).toBe(false);
+
+    const audit = executionAudit(authorization, retried.aggregate, T9);
+    const { recordDigest, ...auditCore } = audit;
+    void recordDigest;
+    const substitutedEventCore = Object.freeze({
+      ...auditCore,
+      eventId: 'invoiceguard:hcs:execution:v1:substituted',
+    });
+    const substitutedEventAudit = Object.freeze({
+      ...substitutedEventCore,
+      recordDigest: hashAdapterRecord('EXECUTION_AUDIT', substitutedEventCore),
+    });
+    const authorizationAudit = retried.aggregate.authorizationAudit;
+    if (authorizationAudit === null) {
+      throw new Error('settled aggregate must retain its authorization audit');
+    }
+    const substitutedWriterAudit = createAdapterVerifiedExecutionAudit(
+      authorization,
+      authorizationAudit,
+      attempt,
+      receipt,
+      {
+        adapterId: authorizationAudit.adapterId,
+        auditId: `execution-audit:${attempt.attemptId}`,
+        committedAt: T9,
+        topicId: authorizationAudit.topicId,
+        transactionId: 'execution-audit-transaction:substituted-writer',
+        writerAccountId: authorizationAudit.writerAccountId,
+        writerId: 'substituted-audit-writer',
+        writerKeyId: authorizationAudit.writerKeyId,
+      },
+    );
+    for (const invalidAudit of [
+      substitutedEventAudit,
+      substitutedWriterAudit,
+    ]) {
+      expect(
+        transitionPaymentAction(
+          retried.aggregate,
+          {
+            executionAudit: invalidAudit,
+            type: 'RECOVER_EXECUTION_AUDIT',
+          },
+          { now: T9 },
+        ),
+      ).toMatchObject({
+        error: { code: 'EXECUTION_AUDIT_MISMATCH' },
+        ok: false,
+      });
+    }
+
+    const recovered = applyEvent(
+      retried.aggregate,
+      { executionAudit: audit, type: 'RECOVER_EXECUTION_AUDIT' },
+      T9,
+    );
+    expect(recovered.aggregate).toMatchObject({
+      consumptionClaim: claim,
+      executionAudit: audit,
+      settlementReceipt: receipt,
+      state: 'SETTLED',
+    });
+    expect(recovered.effects).toEqual([]);
   });
 
   it('persists paid verification, MATCH evidence, original approvals, and fresh execution authority', () => {
@@ -697,6 +905,25 @@ describe('persisted payment-action aggregate', () => {
     });
     expect(queued.aggregate.executionApprovals).toHaveLength(2);
     expect(queued.aggregate.executionAuthority?.verifiedAt).toBe(T8);
+    const basis = queued.aggregate.authorizationBasis;
+    const attempt = queued.aggregate.settlementAttempt;
+    if (basis === null || attempt === null) {
+      throw new Error(
+        'queued human fixtures must retain their basis and attempt',
+      );
+    }
+    expect(queued.effects).toEqual([
+      expect.objectContaining({
+        atomicGroupKey: queued.atomicGroupKey,
+        attempt,
+        authorityFactDigest: queued.aggregate.executionAuthority?.recordDigest,
+        authorizationBasisDigest: basis.basisDigest,
+        evidenceResultDigest: queued.aggregate.evidenceResult?.recordDigest,
+        eventId: `invoiceguard:settlement:submit:v1:${attempt.actionDigest}:${attempt.attemptId}`,
+        idempotencyKey: attempt.idempotencyKey,
+        type: 'SETTLEMENT_SUBMISSION_REQUEST',
+      }),
+    ]);
   });
 
   it('rejects forged hydration of an advanced state', () => {
@@ -868,7 +1095,10 @@ describe('persisted payment-action aggregate', () => {
         },
         effects: [
           {
+            authorizationBasisDigest: recoveryBasis.basisDigest,
             attempt,
+            eventId: `invoiceguard:settlement:submit:v1:${attempt.actionDigest}:${attempt.attemptId}`,
+            idempotencyKey: attempt.idempotencyKey,
             type: 'SETTLEMENT_RETRY_REQUEST',
           },
         ],
@@ -1150,6 +1380,7 @@ describe('persisted payment-action aggregate', () => {
       { scope: 'payments:read' },
       { audience: 'invoiceguard:reporting' },
       { agentBookRegistry: 'unconfigured-agentbook' },
+      { adapterId: 'substituted-executor-adapter' },
       { tenantId: 'another-organization' },
     ]) {
       expect(
@@ -1181,21 +1412,27 @@ describe('persisted payment-action aggregate', () => {
       error: { code: 'AGENT_BACKING_UNVERIFIED' },
       ok: false,
     });
-    expect(
-      transitionPaymentAction(
-        audited.aggregate,
-        {
-          ...baseEvent,
-          requestingAgent: requestingAgent(authorization, T5, {
-            agentBackingRecordId: 'changed-agent-backing-record',
-          }),
-        },
-        { now: T5 },
-      ),
-    ).toMatchObject({
-      error: { code: 'REQUESTING_AGENT_IDENTITY_CHANGED' },
-      ok: false,
-    });
+    for (const override of [
+      { agentBackingRecordId: 'changed-agent-backing-record' },
+      { agentKitChallengeId: 'changed-agentkit-challenge' },
+      { factId: 'changed-requesting-agent-proof' },
+      { signedProofDigest: '8'.repeat(64) },
+      { expiresAt: ACTION_EXPIRES_AT },
+    ]) {
+      expect(
+        transitionPaymentAction(
+          audited.aggregate,
+          {
+            ...baseEvent,
+            requestingAgent: requestingAgent(authorization, T5, override),
+          },
+          { now: T5 },
+        ),
+      ).toMatchObject({
+        error: { code: 'REQUESTING_AGENT_IDENTITY_CHANGED' },
+        ok: false,
+      });
+    }
   });
 
   it('revalidates counted human approvals and their original identities at queue time', () => {
@@ -1221,29 +1458,40 @@ describe('persisted payment-action aggregate', () => {
       ),
     ).toMatchObject({ error: { code: 'ROLE_REVOKED' }, ok: false });
 
-    const changed = approvalFacts(humanAuthorization, T8).map(
-      (approval, index) => {
-        if (index !== 0) {
-          return approval;
-        }
-        const { recordDigest, ...core } = approval;
-        void recordDigest;
-        return createAdapterVerifiedApprovalFact({
-          ...core,
-          roleCredentialId: 'replacement-role-credential',
-        });
-      },
-    );
-    expect(
-      transitionPaymentAction(
-        audited.aggregate,
-        { ...base, approvals: changed },
-        { now: T8 },
-      ),
-    ).toMatchObject({
-      error: { code: 'APPROVAL_IDENTITY_CHANGED' },
-      ok: false,
-    });
+    for (const override of [
+      { adapterId: 'substituted-approval-adapter' },
+      { agentKitChallengeId: 'replacement-agentkit-challenge' },
+      { approvalSessionId: 'replacement-approval-session' },
+      { decisionId: 'replacement-decision' },
+      { expiresAt: ACTION_EXPIRES_AT },
+      { roleCredentialId: 'replacement-role-credential' },
+      { signedProofDigest: '9'.repeat(64) },
+      { worldProofId: 'replacement-world-proof' },
+    ]) {
+      const changed = approvalFacts(humanAuthorization, T8).map(
+        (approval, index) => {
+          if (index !== 0) {
+            return approval;
+          }
+          const { recordDigest, ...core } = approval;
+          void recordDigest;
+          return createAdapterVerifiedApprovalFact({
+            ...core,
+            ...override,
+          });
+        },
+      );
+      expect(
+        transitionPaymentAction(
+          audited.aggregate,
+          { ...base, approvals: changed },
+          { now: T8 },
+        ),
+      ).toMatchObject({
+        error: { code: 'APPROVAL_IDENTITY_CHANGED' },
+        ok: false,
+      });
+    }
   });
 
   it('checks exact expiry boundaries before quote, payment, and evidence work', () => {
@@ -1292,6 +1540,134 @@ describe('persisted payment-action aggregate', () => {
         { now: EVIDENCE_EXPIRES_AT },
       ),
     ).toMatchObject({ error: { code: 'VERIFICATION_EXPIRED' }, ok: false });
+  });
+
+  it('requires retained MATCH evidence to be current for every new effect', () => {
+    const awaitingApprovals = applyEvent(
+      humanThroughEvidence(),
+      { type: 'AWAIT_APPROVALS' },
+      T5,
+    ).aggregate;
+    expect(
+      transitionPaymentAction(
+        awaitingApprovals,
+        {
+          approvals: approvalFacts(humanAuthorization, EVIDENCE_EXPIRES_AT),
+          requestingAgent: requestingAgent(
+            humanAuthorization,
+            EVIDENCE_EXPIRES_AT,
+          ),
+          type: 'AUTHORIZE_APPROVALS',
+        },
+        { now: EVIDENCE_EXPIRES_AT },
+      ),
+    ).toMatchObject({
+      error: { code: 'VERIFICATION_EXPIRED' },
+      ok: false,
+    });
+
+    const authorized = authorizedHuman();
+    expect(
+      transitionPaymentAction(
+        authorized.aggregate,
+        {
+          authorizationAudit: { forged: true },
+          requestingAgent: { forged: true },
+          type: 'COMMIT_AUDIT',
+        },
+        { now: EVIDENCE_EXPIRES_AT },
+      ),
+    ).toMatchObject({
+      error: { code: 'VERIFICATION_EXPIRED' },
+      ok: false,
+    });
+
+    const audited = auditedHuman();
+    expect(
+      transitionPaymentAction(
+        audited.aggregate,
+        {
+          approvals: approvalFacts(humanAuthorization, EVIDENCE_EXPIRES_AT),
+          attempt: frozenAttempt(humanAuthorization, EVIDENCE_EXPIRES_AT),
+          mandate: null,
+          requestingAgent: requestingAgent(
+            humanAuthorization,
+            EVIDENCE_EXPIRES_AT,
+          ),
+          reservationLedger: null,
+          type: 'QUEUE_SETTLEMENT',
+        },
+        { now: EVIDENCE_EXPIRES_AT },
+      ),
+    ).toMatchObject({
+      error: { code: 'VERIFICATION_EXPIRED' },
+      ok: false,
+    });
+
+    const queued = queuedHuman();
+    const attempt = queued.aggregate.settlementAttempt;
+    if (attempt === null) {
+      throw new Error('queued human fixture must retain its attempt');
+    }
+    const recovery = applyEvent(
+      queued.aggregate,
+      {
+        type: 'START_SETTLEMENT_RECOVERY',
+        uncertainty: createAdapterVerifiedSettlementUncertainty(
+          humanAuthorization,
+          attempt,
+          {
+            adapterId: attempt.adapterId,
+            observedAt: T9,
+            reason: 'SUBMISSION_RESULT_UNKNOWN',
+            uncertaintyId: 'settlement-uncertainty:evidence-expiry',
+          },
+        ),
+      },
+      T9,
+    );
+    expect(
+      transitionPaymentAction(
+        recovery.aggregate,
+        {
+          approvals: approvalFacts(humanAuthorization, EVIDENCE_EXPIRES_AT),
+          mandate: null,
+          requestingAgent: requestingAgent(
+            humanAuthorization,
+            EVIDENCE_EXPIRES_AT,
+          ),
+          reservationLedger: null,
+          type: 'RETRY_SAME_TRANSACTION',
+        },
+        { now: EVIDENCE_EXPIRES_AT },
+      ),
+    ).toMatchObject({
+      error: { code: 'VERIFICATION_EXPIRED' },
+      ok: false,
+    });
+
+    expect(
+      transitionPaymentAction(
+        queued.aggregate,
+        {
+          type: 'START_SETTLEMENT_RECOVERY',
+          uncertainty: createAdapterVerifiedSettlementUncertainty(
+            humanAuthorization,
+            attempt,
+            {
+              adapterId: attempt.adapterId,
+              observedAt: EVIDENCE_EXPIRES_AT,
+              reason: 'RECEIPT_LOOKUP_INCONCLUSIVE',
+              uncertaintyId: 'settlement-uncertainty:historical-hydration',
+            },
+          ),
+        },
+        { now: EVIDENCE_EXPIRES_AT },
+      ),
+    ).toMatchObject({
+      ok: true,
+      value: { aggregate: { state: 'SETTLEMENT_RECOVERY' } },
+    });
   });
 
   it('releases mandate reservations on expire, supersede, and cancel before effect', () => {
