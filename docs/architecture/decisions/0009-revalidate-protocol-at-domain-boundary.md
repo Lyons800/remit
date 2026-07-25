@@ -28,6 +28,17 @@ Policy evaluation cannot predate action creation, and authorization cannot
 precede the frozen evaluation time. A mandate version cannot authorize an action
 created before that version's `notBefore`, even if every other field matches.
 
+The payment reducer carries the verified authorization bundle as part of its
+aggregate. Events cannot choose the route, verification mode or expiry. Mandate
+authorization requires an exact active reservation keyed by the action digest
+and referenced mandate version. Human authorization requires the current
+adapter-verified facts themselves; it does not accept a computed quorum boolean.
+Audit and settlement transitions likewise require exact action-bound receipts
+instead of validity flags. Evidence-result, consensus, service-payment and
+settlement receipt objects are adapter-verified application-layer facts produced
+only after the adapter validates the sponsor response; raw SDK or HTTP payloads
+never enter the domain reducer.
+
 Sponsor cryptography remains outside the domain. World approval adapters emit a
 separate verified-fact contract whose action, status, validity, role and
 distinctness semantics are checked by the domain.
