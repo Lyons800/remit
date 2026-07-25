@@ -325,13 +325,17 @@ and a human-side proof.
 
 1. The authenticated subject opens a short-lived, single-use approval session.
    The browser loads the immutable action and posts no mutable payment fields.
-2. World Human-in-the-Loop uses one action identifier derived from the action
-   digest, role, and decision for every slot on that action. Its signal binds
-   the application subject and approval session.
+2. World Human-in-the-Loop uses one action identifier derived only from the
+   organization and canonical action digest for every role and decision slot on
+   that action. Its signal binds the application subject, approval session,
+   role, decision, role grant, agent, action, and expiry.
 3. The control API verifies the proof, recomputes the stored action digest,
-   rechecks the role, and derives an action-scoped HMAC of the World nullifier.
-4. One database transaction consumes the agent challenge, approval session, and
-   World proof, then inserts a decision unique on all three:
+   rechecks the role, derives the current and still-admitted versioned
+   action-scoped HMAC aliases of the World nullifier, and emits the canonical
+   `AdapterVerifiedApprovalFact`.
+4. One future physical database transaction consumes the agent challenge,
+   approval session, World proof, and approval fact, then reserves every
+   current/previous alias under all three identities:
 
    ```text
    (organizationId, actionDigest, subjectId)

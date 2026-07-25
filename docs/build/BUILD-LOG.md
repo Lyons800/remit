@@ -90,3 +90,21 @@ and PR wait for successful authentication and owner/org confirmation.
 The repository cannot enable a ruleset while it is a private personal repository
 on the current GitHub plan. Public visibility requires explicit owner approval;
 the documented `main` ruleset follows immediately afterward.
+
+## 2026-07-26 - World offline AP integration
+
+### Outcome
+
+- Admitted pinned AgentKit, IDKit Core, and viem packages without weakening the
+  repository supply-chain policy.
+- Added exact AgentKit challenge, World Chain AgentBook, IDKit request-contract,
+  and versioned privacy primitives from the reviewed World spike.
+- Reused one World action across all roles and decisions for a canonical payment
+  while retaining slot-specific subject, role, grant, session, agent, decision,
+  and expiry binding in the signal.
+- Emitted only the AP domain's canonical `AdapterVerifiedApprovalFact` and
+  `RequestingAgentExecutionFact`; no parallel durable World decision record was
+  introduced.
+- Kept physical persistence, live Developer Portal verification, registered
+  identities, company credentials, and real-human quorum as explicit NO-GO
+  gates.

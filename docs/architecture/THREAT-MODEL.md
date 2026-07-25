@@ -73,7 +73,7 @@ credentials outside the controlled InvoiceGuard gateway.
 | T32 | An uncertain transaction is retried after expiry or authority loss         | No caller attempt; current authority and mandate recheck before exact-byte retry | Expired, revoked, or paused retry emits no effect              |
 | T33 | A pending row is polled twice or missed before first settlement submission | Attempt and deterministic submission outbox are one atomic aggregate transition  | Crash at commit yields one recoverable logical submission      |
 | T34 | HCS postcommit failure is reported as failed payment or repeats value      | Audit-pending/degraded states and same-ID audit retry preserve consumed value    | Audit recovery never emits another transfer or consumption     |
-| T35 | Concurrent approval requests reuse a proof or one human fills two slots    | Serializable proof consumption plus action-scoped three-principal unique keys    | Racing claims admit at most one identity into the quorum       |
+| T35 | Concurrent or key-rotation aliases let one human fill two approval slots   | Serializable proof consumption plus all-version three-principal unique keys      | Racing or cross-version claims admit one quorum identity       |
 
 ## Security invariants
 
@@ -111,6 +111,8 @@ credentials outside the controlled InvoiceGuard gateway.
 18. Approval decisions, sessions, World proofs, AgentKit challenges, company
     subjects, AgentBook principals, and action-human principals cannot race into
     duplicate quorum slots.
+19. One payment action has one World action identifier across every role and
+    decision; slot-specific authority remains in the signal.
 
 ## Review gates
 

@@ -23,7 +23,10 @@ The World identifier is treated as a sensitive stable pseudonym.
 1. Resolve AgentBook identifiers and World decision nullifiers only inside the
    control API.
 2. Derive tenant-scoped HMAC values for agent accountability and action-scoped
-   HMAC values for decision deduplication.
+   HMAC values for decision deduplication. Every stored principal names its
+   derivation-key version. During key rotation, derive the current and every
+   still-admitted previous alias from the transient raw identifier; the physical
+   repository must reserve all aliases in one transaction.
 3. Derive a separate action-scoped display tag when a UI or evidence bundle
    needs a local label.
 4. Store the raw identifier only when technically unavoidable and with a short
@@ -87,9 +90,10 @@ no mutable payment fields back.
 
 World Human-in-the-Loop requests a proof with:
 
-- one action derived from the canonical action digest, policy, role, and
-  decision;
-- one signal derived from the authenticated company subject and action;
+- one action derived only from the organization and canonical action digest,
+  reused across every role and decision slot;
+- one signal derived from the authenticated company subject, approval session,
+  role, decision, role grant, agent, action, and expiry;
 - a short RP-signature expiry; and
 - a server webhook that verifies and consumes the proof.
 
@@ -108,19 +112,23 @@ signal, nullifier scope and expiry. The company credential adapter verifies the
 issuer, role, subject, revocation and time bounds. The AgentBook adapter
 resolves the current tenant-scoped backing principal.
 
-Only then may the control API construct and persist an adapter-verified approval
-fact containing the exact action digest, decision, role, company subject,
-tenant-scoped agent principal, action-scoped human principal, verification time,
-expiry, adapter, approval and decision IDs, approval-session ID, World-proof ID,
-AgentKit challenge ID, signed-proof digest, and the current status of all three
-authority facts. The domain never infers `CURRENT` or `VERIFIED`, and never
-accepts a browser claim, structural status tag or caller-computed quorum. It
-checks the fact's action, decision, role, time, status and independent
-distinctness again. A refresh may advance `verifiedAt` and current status, but
-cannot substitute any proof identity or extend the originally admitted expiry.
-Persistence must consume the decision, proof, challenge, approval-session, and
-company-subject, AgentBook-principal, and action-human-principal claims under
-uniqueness constraints in the same serializable authorization transaction.
+Only then may the control API construct and persist the canonical
+`AdapterVerifiedApprovalFact` containing the exact action digest, decision,
+role, company subject, tenant-scoped agent principal, action-scoped human
+principal, verification time, expiry, adapter, approval and decision IDs,
+approval-session ID, World-proof ID, AgentKit challenge ID, signed-proof digest,
+and the current status of all three authority facts. The domain never infers
+`CURRENT` or `VERIFIED`, and never accepts a browser claim, structural status
+tag or caller-computed quorum. It checks the fact's action, decision, role,
+time, status and independent distinctness again. A refresh may advance
+`verifiedAt` and current status, but cannot substitute any proof identity or
+extend the originally admitted expiry. Persistence must consume the decision,
+proof, challenge, approval-session, and company-subject, AgentBook-principal,
+and action-human-principal claims under uniqueness constraints in the same
+serializable authorization transaction. The offline World adapter now emits that
+canonical domain fact and does not define a parallel durable human-decision
+record. The physical transaction and repository constraints remain a separate
+live admission gate.
 
 ## Exact-agent execution
 
@@ -142,6 +150,10 @@ audit commit, settlement freeze, and retry each re-resolve the backing and grant
 and must match the frozen adapter, policy, signed-proof identity, fact identity,
 and original validity ceiling exactly. A refresh may be newer and shorter lived;
 it cannot extend the original authorization.
+
+The offline World adapter emits this evidence as the canonical
+`RequestingAgentExecutionFact`, deriving all policy-owned fields from the
+verified authorization bundle rather than caller input.
 
 AgentKit proves that the wallet is registered to a World ID human. It does not
 prove that the backing human reviewed this payment at signing time; the
