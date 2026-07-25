@@ -18,6 +18,7 @@
     "format:write": "prettier --write .",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
+    "test:persistence": "vitest run --config vitest.persistence.config.ts",
     "typecheck": "pnpm typecheck:workspaces && pnpm typecheck:tests",
     "typecheck:tests": "tsc -p tsconfig.tests.json",
     "typecheck:workspaces": "turbo run typecheck"
