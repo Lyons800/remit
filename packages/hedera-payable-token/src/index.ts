@@ -6,6 +6,7 @@ export {
   mirrorNftUrl,
   PAYABLE_COLLECTION_NAME,
   PAYABLE_COLLECTION_SYMBOL,
+  PAYABLE_COLLECTION_KEY_POLICY,
   PAYABLE_METADATA_MAX_BYTES,
   PayableTokenError,
   validatePayableBurnEvidence,

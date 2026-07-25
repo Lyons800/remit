@@ -106,3 +106,18 @@ describe('demo links', () => {
     );
   });
 });
+
+describe('collection key policy', () => {
+  it('is supply-key only — no admin, wipe, metadata or issuer-control keys', async () => {
+    const { PAYABLE_COLLECTION_KEY_POLICY } = await import('./payable-token.js');
+    expect(PAYABLE_COLLECTION_KEY_POLICY).toEqual({
+      adminKey: false,
+      freezeKey: false,
+      kycKey: false,
+      metadataKey: false,
+      pauseKey: false,
+      supplyKey: true,
+      wipeKey: false,
+    });
+  });
+});
