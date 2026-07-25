@@ -6,8 +6,8 @@ their first-party integration spikes pass.
 ## Architecture principles
 
 1. Deterministic policy, not an LLM, authorizes value movement.
-2. Agent backing, company role, action-time human decision, agent execution,
-   evidence, and settlement are separate facts.
+2. Agent backing, company role, standing mandate, action-time human decision,
+   agent execution, evidence, and settlement are separate facts.
 3. Every external effect is idempotent, replay-resistant, observable, and
    recoverable after process failure.
 4. Keys are split by purpose and held only by the component that needs them.
@@ -24,17 +24,19 @@ their first-party integration spikes pass.
 
 ```mermaid
 flowchart LR
+  Sources["Invoice API / upload / connector events"] --> API["Control API"]
   Operator["Finance operator"] --> Web["InvoiceGuard desktop control room"]
   Humans["Authorized humans"] --> Mobile["InvoiceGuard mobile approval"]
   Mobile --> WorldHITL["World Human-in-the-Loop"]
-  Delegates["Human-backed approval agents"] --> API["Control API"]
+  Delegates["Human-backed approval agents"] --> API
   Web --> API
   Mobile --> API
   API --> DB[("PostgreSQL")]
+  API --> Objects[("Encrypted invoice objects")]
   API --> World["World AgentKit / AgentBook"]
   WorldHITL --> API
   API --> Buyer["Payment agent"]
-  Buyer --> Verifier["x402 beneficiary-check service"]
+  Buyer --> Verifier["x402 supplier-evidence service"]
   Buyer --> Facilitator["x402 facilitator"]
   API --> Worker["Settlement worker"]
   Facilitator --> Hedera["Hedera Testnet"]
@@ -49,7 +51,7 @@ flowchart LR
 | Deployable                   | Responsibility                                                                               | Secrets                                          |
 | ---------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | `apps/web`                   | Responsive desktop control room and mobile approval experience                               | No treasury, issuer, provider, RP, or agent keys |
-| `apps/control-api`           | Authentication, action state machine, deterministic policy, read/write API, audit export     | Database and identifier-HMAC keys                |
+| `apps/control-api`           | Invoice ingestion/jobs, authentication, deterministic policy, action state, API, audit       | Database, object-store, connector, and HMAC keys |
 | `services/verifier`          | x402 resource, evidence check, and signed digest-bound response                              | Service-signing key                              |
 | `services/payment-agent`     | Autonomously purchases the configured verifier resource                                      | Low-balance x402 buyer key                       |
 | `services/x402-facilitator`  | Verifies, co-signs, submits, and settles Hedera x402 transactions                            | Capped facilitator fee-payer key                 |
@@ -80,6 +82,7 @@ packages/
   domain/              pure entities, values, policy and state transitions
   protocol/            schemas, canonical serialization and signed envelopes
   persistence/         database schema, repositories and transactional outbox
+  runtime-config/      fail-closed process identity and environment validation
   world-adapter/       AgentKit and AgentBook integration
   hedera-x402-adapter/ x402 buyer/facilitator protocol and receipts
   hedera-settlement-adapter/ Agent Kit, signing guard, HCS and Mirror
@@ -92,14 +95,112 @@ package has no network, database, framework, or sponsor dependencies.
 ## Interface boundary
 
 `apps/web` is the only human-facing application. Its desktop routes expose the
-invoice comparison, authority state, execution timeline, attack attempts, and
-audit evidence. Its mobile route exposes only the exact action fields required
-for one short-lived approval session.
+invoice queue, source and supplier comparison, deterministic policy trace,
+authority state, execution timeline, refusal attempts, reconciliation, and audit
+evidence. Its mobile route exposes only the exact exception fields required for
+one short-lived approval session.
 
 Both layouts fetch sanitized projections from the control API with `no-store`
 semantics. A live dependency failure is rendered as unavailable and never causes
 a fixture fallback. Installability may use a web manifest, but service workers
 do not cache sensitive projections or queue mutations.
+
+## Invoice ingestion and provenance
+
+The control API accepts source observations through organization-scoped,
+idempotent boundaries. Upload is one API client; email, accounting, procurement,
+and e-invoice integrations are connector adapters around the same acceptance
+port. V1 creates no separate ingestion microservice.
+
+```text
+POST /v1/orgs/{org}/invoice-uploads
+POST /v1/orgs/{org}/invoice-submissions
+POST /v1/connections/{kind}/{connection}/events
+POST /v1/orgs/{org}/connections/{connection}/sync
+```
+
+Client submissions require an idempotency key and request-body hash. Webhooks
+require a pinned signature and unique external event ID; the connection resolves
+the organization server-side. Arbitrary remote URL ingestion is forbidden.
+Content type and size are bounded before storage and parsing.
+
+Raw documents are encrypted in object storage. PostgreSQL stores hashes,
+metadata, normalized facts, immutable snapshots, lifecycle state, and object
+references. Extraction runs as a durable, leased job inside the control-plane
+deployment and receives no financial key.
+
+InvoiceGuard keeps three records:
+
+### Source observation
+
+```text
+schemaVersion
+observationId
+organizationId
+sourceKind            UPLOAD | EMAIL | API | ACCOUNTING
+connectionId
+externalEventId
+sourceTrustClass
+receivedAt
+mediaType
+byteLength
+contentSha256
+actorReference
+```
+
+### Canonical invoice
+
+```text
+schemaVersion
+invoiceId
+organizationId
+supplierId
+supplierSnapshotDigest
+invoiceNumber
+issueDate
+dueDate
+netAmountAtoms
+taxAmountAtoms
+totalAmountAtoms
+assetId
+proposedBeneficiary
+purchaseOrderReferences
+lineItemsRoot
+sourceEvidenceRoot
+createdAt
+```
+
+Extraction output is candidate data with extractor identity, version,
+field-level source spans, confidence, parse warnings, observation references,
+and its own immutable hash. It becomes canonical only through deterministic
+validation and any required operator correction.
+
+The supplier master is independently versioned. An invoice loads an immutable
+supplier snapshot containing approved beneficiaries, default asset, payment
+terms, status, source connection, and snapshot digest. Invoice ingestion cannot
+change that record.
+
+Duplicate controls distinguish:
+
+- exact source-event replay;
+- repeated document bytes;
+- suspected business duplicate;
+- another observation of the same invoice; and
+- a previously paid payment action.
+
+A second source may attach to the existing invoice. It cannot create another
+payable silently.
+
+## Invoice routing
+
+A frozen policy evaluation binds the action digest, input root, policy version,
+route, reason codes, required roles and quorums, and verification mode. The
+route is exactly `STRAIGHT_THROUGH`, `HUMAN_APPROVAL`, or `BLOCK`.
+
+`STRAIGHT_THROUGH` requires exact containment by a current standing mandate plus
+an enrolled, human-backed, company-authorized payment agent. A model score never
+selects this route. `HUMAN_APPROVAL` uses the exception protocol below. `BLOCK`
+cannot be overridden on the existing action.
 
 ## Action protocol
 
@@ -127,6 +228,8 @@ createdAt
 ```
 
 - Network and account identifiers use CAIP-2 and CAIP-10 where applicable.
+- V1 uses request type `SUPPLIER_INVOICE_PAYMENT`; the canonical invoice digest
+  is its `purposeHash`.
 - Amounts are integer atoms with an explicit asset identifier.
 - JSON is canonicalized using RFC 8785 before SHA-256 hashing.
 - The hash input includes the domain separator `callguard:payment-action:v1`.
@@ -137,7 +240,8 @@ createdAt
 
 ## Approval protocol
 
-One counted decision requires an agent-side and a human-side proof.
+When policy requires human approval, one counted decision requires an agent-side
+and a human-side proof.
 
 ### Approval delegate
 
@@ -165,15 +269,17 @@ One counted decision requires an agent-side and a human-side proof.
 3. The control API verifies the proof, recomputes the stored action digest,
    rechecks the role, and derives an action-scoped HMAC of the World nullifier.
 4. One database transaction consumes the agent challenge, approval session, and
-   World proof, then inserts a decision unique on both:
+   World proof, then inserts a decision unique on all three:
 
    ```text
+   (organizationId, actionDigest, subjectId)
    (organizationId, actionDigest, agentTenantPrincipal)
    (organizationId, actionDigest, actionHumanPrincipal)
    ```
 
-5. Deterministic policy counts only decisions whose agent and human classes are
-   both distinct and whose roles remain current.
+5. Deterministic policy counts only decisions whose company subject, agent
+   class, and action-human class are all distinct and whose roles remain
+   current.
 
 World identity keys, RP credentials, browser sessions, and Hedera financial
 accounts are separate principals. Any mapping between them is explicit and
@@ -220,19 +326,71 @@ receipt with `SUCCESS`. The x402 payment and the later company settlement are
 separate transactions; CallGuard joins them with the action digest, service
 attestation, HCS approval precommit, and durable one-use state.
 
-## State machine
+The service result means only that the configured supplier-evidence policy
+matched its declared inputs. It does not prove beneficiary ownership, invoice
+truth, or compliance. Provider `close match`, no-match, outage, and unsupported
+states map to `MISMATCH` or `UNKNOWN`, never `MATCH`.
+
+## Payment rail
+
+The payment action always names one explicit network, asset, integer atom count,
+and beneficiary. V1 execution is Hedera Testnet only. The final settlement may
+admit HBAR or one allowlisted HTS fungible test token after its integration
+spike passes; the signing guard validates the exact transfer type and token ID.
+
+An invoice denominated in EUR is not mapped to an arbitrary HBAR amount. Until a
+synthetic EUR-denominated Testnet token is admitted, the UI displays the source
+invoice separately from the demonstrated Hedera effect. Test assets have no
+monetary value and are never presented as a completed bank or SEPA payment.
+
+A future production `PaymentRail` may target regulated banking, open-banking, or
+stablecoin infrastructure only through a new protocol version and explicit
+security review.
+
+## Invoice lifecycle
+
+```mermaid
+stateDiagram-v2
+  [*] --> Received
+  Received --> Stored
+  Stored --> Extracting
+  Extracting --> Draft
+  Extracting --> Quarantined
+  Draft --> NeedsReview
+  Draft --> Ready
+  NeedsReview --> Ready
+  Ready --> ActionFrozen
+  ActionFrozen --> PaymentPending
+  ActionFrozen --> PaymentBlocked
+  PaymentPending --> Paid
+  Paid --> Reconciling
+  Reconciling --> Reconciled
+  Reconciling --> ReconciliationException
+  Draft --> Held
+  Ready --> Held
+  Draft --> Void
+```
+
+A correction after `ActionFrozen` creates a new invoice revision and payment
+action. Accounting write-back failure becomes `ReconciliationException`; it
+never changes a successful payment to failed or creates another transfer.
+
+## Payment-action state machine
 
 ```mermaid
 stateDiagram-v2
   [*] --> Captured
-  Captured --> AwaitingApprovals
+  Captured --> Classified
+  Classified --> Authorized: current standing mandate
+  Classified --> AwaitingApprovals: exception policy
+  Classified --> Rejected: deterministic block
   AwaitingApprovals --> Authorized: delegate + fresh-human quorum
   AwaitingApprovals --> Rejected: policy refusal
   Authorized --> VerificationQuoted
   VerificationQuoted --> VerificationPaid
   VerificationPaid --> Verified: signed MATCH
   VerificationPaid --> Rejected: MISMATCH or UNKNOWN
-  Verified --> AuditCommitted: HCS approval receipt
+  Verified --> AuditCommitted: HCS authorization receipt
   Verified --> RecoveryRequired: HCS precommit unavailable
   AuditCommitted --> SettlementPending
   SettlementPending --> Settled: consensus receipt
@@ -240,6 +398,7 @@ stateDiagram-v2
   RecoveryRequired --> Settled: network reconciliation
   RecoveryRequired --> SettlementPending: safe retry of same transaction
   Captured --> Expired
+  Classified --> Expired
   AwaitingApprovals --> Expired
   Authorized --> Expired
   Verified --> Expired
@@ -272,7 +431,8 @@ the source commit SHA.
 
 HCS has explicit asymmetric failure semantics:
 
-- the hashed `approval.v1` event is a fail-closed precondition to settlement;
+- the hashed `authorization.v1` event is a fail-closed precondition to
+  settlement;
 - the hashed `execution.v1` event is an at-least-once postcommit effect;
 - failure after a successful transfer marks the action `audit-degraded` and
   retries the same deterministic event ID; and
@@ -286,7 +446,7 @@ HCS has explicit asymmetric failure semantics:
 | World RP signing key        | Signs action-time Human-in-the-Loop proof requests    | Server only; never sent to `apps/web`                  |
 | Company role issuer         | Issues short-lived role credentials                   | Offline or isolated service; never inferred from World |
 | Identifier HMAC key         | Derives tenant principals and action display tags     | API only; rotated and never logged                     |
-| Verifier signing key        | Signs beneficiary-check envelopes                     | Verifier only; published public key and key ID         |
+| Verifier signing key        | Signs supplier-evidence envelopes                     | Verifier only; published public key and key ID         |
 | Hedera x402 buyer           | Signs the verification-service debit                  | Low balance and per-operation cap                      |
 | Hedera x402 facilitator     | Adds the fee-payer signature and submits x402 payment | Separate capped fee-payer account                      |
 | Hedera settlement account   | Executes approved Testnet payment                     | Separate key, allowlist, amount cap, gateway only      |
@@ -308,7 +468,8 @@ The demo uses synthetic supplier data and marks it as synthetic.
 
 ## Deployment topology
 
-- Local: Docker Compose with PostgreSQL and six Node processes.
+- Local: Docker Compose with PostgreSQL, an object store, and six Node
+  processes.
 - Preview: per-PR web/API/verifier deployments using fake adapters only, with an
   unmistakable `FAKE ADAPTERS` banner.
 - Live integration: protected environment with sponsor secrets and Testnet
