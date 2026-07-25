@@ -1,4 +1,5 @@
 import { accept, refuse, type DomainResult } from '../result.js';
+import { isCanonicalUtcInstant } from '../state/temporal.js';
 
 export type FrozenInvoiceFacts = Readonly<{
   amountAtoms: string;
@@ -56,6 +57,8 @@ export function validateInvoiceRevisionLineage(
     !Number.isSafeInteger(previous.invoiceRevision) ||
     !Number.isSafeInteger(candidate.invoiceRevision) ||
     previous.invoiceRevision <= 0 ||
+    !isCanonicalUtcInstant(previous.createdAt) ||
+    !isCanonicalUtcInstant(candidate.createdAt) ||
     candidate.invoiceRevision !== previous.invoiceRevision + 1 ||
     candidate.invoiceRevisionId === previous.invoiceRevisionId ||
     candidate.supersedesInvoiceRevisionId !== previous.invoiceRevisionId ||

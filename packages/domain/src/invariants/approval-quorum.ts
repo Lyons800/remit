@@ -57,6 +57,11 @@ export function validateApprovalQuorum(
     return refuse('ACTION_DIGEST_MISMATCH');
   }
 
+  const requiredRoles = new Set(requirement.roles.map(({ role }) => role));
+  if (approvals.some(({ role }) => !requiredRoles.has(role))) {
+    return refuse('ROLE_UNEXPECTED');
+  }
+
   const distinctSubjects = new Set(approvals.map(({ subjectId }) => subjectId));
   if (distinctSubjects.size !== approvals.length) {
     return refuse('SUBJECT_NOT_DISTINCT');

@@ -102,6 +102,24 @@ describe('approval quorum', () => {
       ok: false,
     });
   });
+
+  it('rejects evidence for a role the policy did not request', () => {
+    expect(
+      validateApprovalQuorum(ACTION_DIGEST, approvalRequirement, [
+        ...approvals,
+        {
+          actionDigest: ACTION_DIGEST,
+          actionHumanPrincipal: 'human-3',
+          agentTenantPrincipal: 'agent-3',
+          role: 'OBSERVER',
+          subjectId: 'subject-3',
+        },
+      ]),
+    ).toMatchObject({
+      error: { code: 'ROLE_UNEXPECTED' },
+      ok: false,
+    });
+  });
 });
 
 describe('invoice and obligation invariants', () => {
@@ -175,6 +193,24 @@ describe('invoice and obligation invariants', () => {
       validateInvoiceRevisionLineage(previous, {
         ...candidate,
         invoiceRevision: 3,
+      }),
+    ).toMatchObject({
+      error: { code: 'INVOICE_REVISION_CONFLICT' },
+      ok: false,
+    });
+    expect(
+      validateInvoiceRevisionLineage(
+        { ...previous, createdAt: 'not-an-instant' },
+        candidate,
+      ),
+    ).toMatchObject({
+      error: { code: 'INVOICE_REVISION_CONFLICT' },
+      ok: false,
+    });
+    expect(
+      validateInvoiceRevisionLineage(previous, {
+        ...candidate,
+        createdAt: '2026-07-25T11:01:00+01:00',
       }),
     ).toMatchObject({
       error: { code: 'INVOICE_REVISION_CONFLICT' },
