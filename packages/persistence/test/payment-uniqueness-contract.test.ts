@@ -84,7 +84,7 @@ describe('payment persistence uniqueness contract', () => {
       transactionIsolation: 'SERIALIZABLE',
     });
     expect(paymentPersistenceUniquenessContract.implementationPhase).toBe(
-      'PR3_DATABASE_CONSTRAINTS',
+      'POSTGRESQL_V1',
     );
     expect(paymentPersistenceUniquenessContract.schemaVersion).toBe(2);
   });

@@ -46,7 +46,7 @@ export type PaymentPersistenceUniquenessContract = Readonly<{
     ];
     transactionIsolation: 'SERIALIZABLE';
   }>;
-  implementationPhase: 'PR3_DATABASE_CONSTRAINTS';
+  implementationPhase: 'POSTGRESQL_V1';
   schemaVersion: 2;
   uniqueKeys: readonly PersistenceUniqueKey[];
 }>;
@@ -94,7 +94,7 @@ export const paymentPersistenceUniquenessContract: PaymentPersistenceUniquenessC
       ] as const),
       transactionIsolation: 'SERIALIZABLE',
     }),
-    implementationPhase: 'PR3_DATABASE_CONSTRAINTS',
+    implementationPhase: 'POSTGRESQL_V1',
     schemaVersion: 2,
     uniqueKeys: Object.freeze([
       Object.freeze({
