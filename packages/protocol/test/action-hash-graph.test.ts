@@ -176,6 +176,21 @@ describe('non-circular payment authorization hash graph', () => {
     ).toBe(false);
   });
 
+  it('rejects an incomplete straight-through policy trace', () => {
+    expect(
+      policyDecisionV1Schema.safeParse({
+        ...createPolicyDecision(
+          vectorActionCore,
+          vectorStraightThroughDecision,
+        ),
+        reasonCodes: [
+          'MANDATE_EXACT_CONTAINMENT',
+          'SOURCE_AUTHENTICATED_STRUCTURED',
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it('blocks without purchasing evidence when a block reason takes precedence', () => {
     expect(
       policyDecisionV1Schema.safeParse({
