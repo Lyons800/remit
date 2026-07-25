@@ -2,9 +2,12 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import {
+  createMandateReservationLedger,
+  deriveMandateReservationTotals,
   releaseMandateReservation,
   reserveMandateCapacity,
   settleMandateReservation,
+  validateActiveMandateReservation,
   validateApprovalQuorum,
   validateDigestBindings,
   validateInvoiceActionBinding,
@@ -12,6 +15,8 @@ import {
   validateNewPaymentActionEligibility,
   validatePaymentHistory,
   validateSettlementClaim,
+  type MandateReservationClaim,
+  type MandateReservationLedger,
 } from '../src/index.js';
 
 const ACTION_DIGEST = 'a'.repeat(64);
@@ -275,98 +280,238 @@ describe('invoice and obligation invariants', () => {
 });
 
 describe('standing-mandate capacity', () => {
-  it('reserves, settles, and releases only canonical capacity', () => {
-    const reserved = reserveMandateCapacity({
-      candidateAtoms: '25',
-      periodCapAtoms: '100',
-      reservedAtoms: '15',
-      settledAtoms: '10',
-    });
-    expect(reserved).toEqual({
+  const claim = (
+    actionDigest: string,
+    settlementAmountAtoms: string,
+    overrides: Partial<MandateReservationClaim> = {},
+  ): MandateReservationClaim => ({
+    actionDigest,
+    mandateDigest: 'd'.repeat(64),
+    mandateId: 'mandate-1',
+    mandateVersion: 3,
+    periodCapAtoms: '100',
+    periodKey: 'UTC_MONTH:2026-07',
+    settlementAmountAtoms,
+    ...overrides,
+  });
+
+  function emptyLedger(
+    reservationClaim: MandateReservationClaim,
+  ): MandateReservationLedger {
+    const result = createMandateReservationLedger(reservationClaim);
+    if (!result.ok) {
+      throw new Error('fixture ledger must be valid');
+    }
+    return result.value;
+  }
+
+  it('makes exact reserve and terminal retries idempotent', () => {
+    const reservationClaim = claim('1'.repeat(64), '25');
+    const initial = emptyLedger(reservationClaim);
+    const reserved = reserveMandateCapacity(initial, reservationClaim);
+    expect(reserved).toMatchObject({
       ok: true,
       value: {
-        periodCapAtoms: '100',
-        reservedAtoms: '40',
-        settledAtoms: '10',
+        reservation: { amountAtoms: '25', status: 'RESERVED' },
+        totals: {
+          releasedAtoms: '0',
+          reservedAtoms: '25',
+          settledAtoms: '0',
+        },
       },
     });
     if (!reserved.ok) {
       throw new Error('fixture reservation must succeed');
     }
 
-    expect(settleMandateReservation(reserved.value, '25')).toEqual({
+    expect(
+      reserveMandateCapacity(reserved.value.ledger, reservationClaim),
+    ).toEqual(reserved);
+
+    const settled = settleMandateReservation(
+      reserved.value.ledger,
+      reservationClaim,
+    );
+    expect(settled).toMatchObject({
       ok: true,
       value: {
-        periodCapAtoms: '100',
-        reservedAtoms: '15',
-        settledAtoms: '35',
+        reservation: { amountAtoms: '25', status: 'SETTLED' },
+        totals: {
+          releasedAtoms: '0',
+          reservedAtoms: '0',
+          settledAtoms: '25',
+        },
       },
     });
-    expect(releaseMandateReservation(reserved.value, '25')).toEqual({
+    if (!settled.ok) {
+      throw new Error('fixture settlement must succeed');
+    }
+
+    expect(
+      settleMandateReservation(settled.value.ledger, reservationClaim),
+    ).toEqual(settled);
+    expect(
+      releaseMandateReservation(settled.value.ledger, reservationClaim),
+    ).toMatchObject({
+      error: { code: 'MANDATE_RESERVATION_TERMINAL' },
+      ok: false,
+    });
+  });
+
+  it('proves replaying release A cannot erase reservation B', () => {
+    const claimA = claim('1'.repeat(64), '25');
+    const claimB = claim('2'.repeat(64), '40');
+    const initial = emptyLedger(claimA);
+    const reservedA = reserveMandateCapacity(initial, claimA);
+    if (!reservedA.ok) {
+      throw new Error('reservation A must succeed');
+    }
+    const reservedB = reserveMandateCapacity(reservedA.value.ledger, claimB);
+    if (!reservedB.ok) {
+      throw new Error('reservation B must succeed');
+    }
+    const releasedA = releaseMandateReservation(reservedB.value.ledger, claimA);
+    if (!releasedA.ok) {
+      throw new Error('release A must succeed');
+    }
+
+    const replayedA = releaseMandateReservation(releasedA.value.ledger, claimA);
+    expect(replayedA).toEqual(releasedA);
+    expect(
+      validateActiveMandateReservation(releasedA.value.ledger, claimB),
+    ).toEqual({
       ok: true,
       value: {
-        periodCapAtoms: '100',
-        reservedAtoms: '15',
-        settledAtoms: '10',
+        actionDigest: claimB.actionDigest,
+        amountAtoms: claimB.settlementAmountAtoms,
+        status: 'RESERVED',
+      },
+    });
+    expect(deriveMandateReservationTotals(releasedA.value.ledger)).toEqual({
+      ok: true,
+      value: {
+        releasedAtoms: '25',
+        reservedAtoms: '40',
+        settledAtoms: '0',
       },
     });
   });
 
-  it('accepts aggregate reservations exactly up to the period cap', () => {
+  it('rejects conflicting action reuse, wrong keys, and unknown actions', () => {
+    const original = claim('1'.repeat(64), '25');
+    const reserved = reserveMandateCapacity(emptyLedger(original), original);
+    if (!reserved.ok) {
+      throw new Error('fixture reservation must succeed');
+    }
+
+    expect(
+      reserveMandateCapacity(
+        reserved.value.ledger,
+        claim(original.actionDigest, '26'),
+      ),
+    ).toMatchObject({
+      error: { code: 'MANDATE_RESERVATION_CONFLICT' },
+      ok: false,
+    });
+    expect(
+      reserveMandateCapacity(
+        reserved.value.ledger,
+        claim('2'.repeat(64), '25', { mandateVersion: 4 }),
+      ),
+    ).toMatchObject({
+      error: { code: 'MANDATE_RESERVATION_KEY_MISMATCH' },
+      ok: false,
+    });
+    expect(
+      settleMandateReservation(
+        reserved.value.ledger,
+        claim('2'.repeat(64), '25'),
+      ),
+    ).toMatchObject({
+      error: { code: 'MANDATE_RESERVATION_NOT_FOUND' },
+      ok: false,
+    });
+  });
+
+  it('derives totals and accepts aggregate reservations exactly to the cap', () => {
     fc.assert(
       fc.property(
-        fc.bigInt({ max: 1_000_000n, min: 0n }),
-        fc.bigInt({ max: 1_000_000n, min: 0n }),
-        fc.bigInt({ max: 1_000_000n, min: 1n }),
+        fc.bigInt({ max: 100_000n, min: 1n }),
+        fc.bigInt({ max: 100_000n, min: 1n }),
+        fc.bigInt({ max: 100_000n, min: 1n }),
         (settled, alreadyReserved, candidate) => {
           const cap = settled + alreadyReserved + candidate;
-          expect(
-            reserveMandateCapacity({
-              candidateAtoms: candidate.toString(),
-              periodCapAtoms: cap.toString(),
-              reservedAtoms: alreadyReserved.toString(),
-              settledAtoms: settled.toString(),
-            }),
-          ).toMatchObject({ ok: true });
+          const shared = { periodCapAtoms: cap.toString() };
+          const settledClaim = claim(
+            '1'.repeat(64),
+            settled.toString(),
+            shared,
+          );
+          const reservedClaim = claim(
+            '2'.repeat(64),
+            alreadyReserved.toString(),
+            shared,
+          );
+          const candidateClaim = claim(
+            '3'.repeat(64),
+            candidate.toString(),
+            shared,
+          );
+          const first = reserveMandateCapacity(
+            emptyLedger(settledClaim),
+            settledClaim,
+          );
+          if (!first.ok) {
+            return false;
+          }
+          const firstSettled = settleMandateReservation(
+            first.value.ledger,
+            settledClaim,
+          );
+          if (!firstSettled.ok) {
+            return false;
+          }
+          const second = reserveMandateCapacity(
+            firstSettled.value.ledger,
+            reservedClaim,
+          );
+          if (!second.ok) {
+            return false;
+          }
+
+          return reserveMandateCapacity(second.value.ledger, candidateClaim).ok;
         },
       ),
     );
   });
 
-  it('refuses aggregate reservations that exceed the period cap', () => {
-    fc.assert(
-      fc.property(
-        fc.bigInt({ max: 1_000_000n, min: 1n }),
-        fc.bigInt({ max: 1_000_000n, min: 0n }),
-        fc.bigInt({ max: 1_000_000n, min: 1n }),
-        (settled, alreadyReserved, candidate) => {
-          const cap = settled + alreadyReserved + candidate - 1n;
-          expect(
-            reserveMandateCapacity({
-              candidateAtoms: candidate.toString(),
-              periodCapAtoms: cap.toString(),
-              reservedAtoms: alreadyReserved.toString(),
-              settledAtoms: settled.toString(),
-            }),
-          ).toMatchObject({
-            error: { code: 'MANDATE_CAP_EXCEEDED' },
-            ok: false,
-          });
-        },
-      ),
-    );
+  it('refuses a reservation that would exceed the derived period total', () => {
+    const firstClaim = claim('1'.repeat(64), '60');
+    const secondClaim = claim('2'.repeat(64), '41');
+    const first = reserveMandateCapacity(emptyLedger(firstClaim), firstClaim);
+    if (!first.ok) {
+      throw new Error('fixture reservation must succeed');
+    }
+
+    expect(
+      reserveMandateCapacity(first.value.ledger, secondClaim),
+    ).toMatchObject({
+      error: { code: 'MANDATE_CAP_EXCEEDED' },
+      ok: false,
+    });
   });
 
-  it('returns a refusal instead of throwing for arbitrary atom strings', () => {
+  it('returns refusals instead of throwing for arbitrary persisted values', () => {
     fc.assert(
-      fc.property(fc.string(), (candidateAtoms) => {
+      fc.property(fc.anything(), fc.anything(), (ledger, reservationClaim) => {
         expect(() =>
-          reserveMandateCapacity({
-            candidateAtoms,
-            periodCapAtoms: '100',
-            reservedAtoms: '0',
-            settledAtoms: '0',
-          }),
+          reserveMandateCapacity(ledger, reservationClaim),
+        ).not.toThrow();
+        expect(() =>
+          settleMandateReservation(ledger, reservationClaim),
+        ).not.toThrow();
+        expect(() =>
+          releaseMandateReservation(ledger, reservationClaim),
         ).not.toThrow();
       }),
     );
