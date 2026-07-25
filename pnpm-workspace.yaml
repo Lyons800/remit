@@ -6,6 +6,7 @@ packages:
 overrides:
   postcss: 8.5.23
   sharp: 0.35.3
+  undici-types@~6.19.2: 6.19.2
 
 catalog:
   '@eslint/js': 10.0.1
