@@ -1,8 +1,8 @@
 # World authorization integration contract
 
-Status: architecture contract pending a live spike.
+Status: offline adapter contract implemented; live authority is a NO-GO.
 
-Checked: 2026-07-25.
+Checked: 2026-07-26.
 
 ## Why World is load-bearing
 
@@ -31,13 +31,17 @@ C  -> AgentBook P3 + fresh action human H3 + role -> counted
 ## Pinned surface
 
 - Package: `@worldcoin/agentkit@0.2.0`
+- IDKit request contract: `@worldcoin/idkit-core@4.2.2`
+- EVM verification and World RPC: `viem@2.55.8`
 - CLI: `@worldcoin/agentkit-cli@0.2.0`
-- Canonical lookup chain: World Chain, `eip155:480`
+- Canonical lookup chain: World Chain, `eip155:480`; the HTTPS RPC must return
+  numeric chain ID `480` before a lookup is accepted
 - AgentBook: `0xA23aB2712eA7BBa896930544C7d6636a96b944dA`
 - Approval signature: EIP-191 EOA using declared chain `eip155:296`
 - Mode: free/custom verification, never AgentKit discount mode
-- Human approval: `@worldcoin/human-in-the-loop` and its React binding, with
-  exact versions admitted only after the control-plane spike
+- Human approval: `@worldcoin/human-in-the-loop` and its React binding are not
+  installed; exact versions remain gated on supply-chain admission and a live
+  control-plane spike
 
 The World identity wallet is intentionally unfunded or minimally funded. It is
 not the Hedera service payer or settlement account.
@@ -160,21 +164,35 @@ operations, so the InvoiceGuard database owns atomic consumption.
    expiresAt
    ```
 
-2. Use the same `worldActionId` for every approval slot on the canonical action.
-   Do not accept the SDK default when it derives a different action from each
-   tool call.
-3. Bind the proof signal to the authenticated subject and approval session.
-4. Render the Human-in-the-Loop React component or headless hook in the focused
-   mobile route. The RP signing key and proof verification remain server-side.
+2. Derive `worldActionId` only from the organization and canonical action
+   digest. Reuse it for every role, decision, and approval slot on that action.
+   Do not accept an SDK or tool-call default that changes the action identifier.
+3. Bind the proof signal to the authenticated subject, approval session, role,
+   decision, role grant, agent, and expiry.
+4. The offline adapter constructs and revalidates the IDKit v4 request contract.
+   A future live composition root must call `IDKit.request` or an admitted
+   first-party connector. The RP signing key and proof verification remain
+   server-side.
 5. Recompute the stored action digest, verify the World proof, recheck the
-   company role, and derive an action-scoped HMAC of the returned nullifier.
-6. In one database transaction, consume the agent challenge, approval session,
-   and World proof, then insert the decision under unique AgentBook and
-   action-human constraints.
+   company role, and derive versioned, action-scoped HMAC aliases of the
+   returned nullifier.
+6. After those sponsor checks, emit the domain's canonical
+   `AdapterVerifiedApprovalFact`; AgentKit execution evidence emits the domain's
+   canonical `RequestingAgentExecutionFact`. The World adapter does not define a
+   parallel durable decision type.
+7. A future physical repository must reserve every current and still-admitted
+   previous HMAC alias while atomically consuming the agent challenge, approval
+   session, World proof, and approval claim. That PostgreSQL transaction is not
+   implemented by this offline integration.
 
 The current World interfaces do not establish that the IDKit user is the same
 person as the AgentBook human backing the agent. InvoiceGuard requires both
 facts and does not claim that they are joined.
+
+The action identifier is deliberately broader than the slot-specific signal.
+World nullifiers are action-scoped, so including role or decision in
+`worldActionId` would let one human receive a different nullifier for another
+slot on the same payment.
 
 ## Availability and privacy behavior
 
@@ -188,8 +206,11 @@ check:
 The raw `humanId` is a public pseudonymous value on World Chain and wallets for
 the same person are linkable within AgentBook. InvoiceGuard does not expose that
 value or its company mapping in logs, UI, Hedera messages, or public evidence.
-Normal records store a tenant HMAC; public displays use an action-scoped local
-label.
+Normal records store a versioned tenant or action HMAC; public displays use an
+action-scoped local label. During HMAC rotation, the adapter derives the current
+and still-admitted previous aliases. The future physical repository must reserve
+all aliases in one transaction so the same raw World identity cannot count once
+per key version.
 
 ## Required tests
 
@@ -199,6 +220,11 @@ label.
 - the same challenge cannot be consumed twice, including concurrently;
 - every Human-in-the-Loop proof binds the expected action, signal, subject,
   decision, and expiry;
+- every role and decision slot on one payment shares one World action while its
+  signal remains slot-specific;
+- verified World evidence parses as the canonical AP approval and requesting
+  agent facts, and refresh cannot substitute action/proof identities or extend
+  validity;
 - reused or cross-action World nullifiers fail;
 - a routine invoice inside a current standing mandate uses no per-invoice HITL;
 - a beneficiary, amount, asset, evidence, or cap change exits that mandate;
@@ -209,6 +235,9 @@ label.
 - wallet re-registration invalidates a principal-bound role;
 - expired and revoked roles fail before authorization and before execution;
 - raw World identifiers are absent from structured logs and evidence.
+
+The scoped offline evidence and the unresolved live gates are recorded in
+[WORLD-SPIKE.md](WORLD-SPIKE.md).
 
 ## Judge evidence
 

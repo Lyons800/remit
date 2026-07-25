@@ -18,10 +18,11 @@ as an additional authorization fact:
 1. every approval candidate remains an AgentKit-backed, company-enrolled agent;
 2. the company role binds the agent, its AgentBook-derived tenant principal, and
    the authenticated application subject;
-3. one World action identifier binds the canonical action digest, role,
-   decision, approval session, and expiry;
-4. the World proof signal binds the authenticated subject to that approval
-   session;
+3. one World action identifier binds only the organization and canonical action
+   digest, so every role and decision slot shares the same World nullifier
+   scope;
+4. the World proof signal binds the authenticated subject, approval session,
+   role, decision, role grant, agent, action, and expiry;
 5. AgentBook principals and action-scoped World nullifiers are independently
    deduplicated; and
 6. proof verification, role checks, nonce consumption, and decision insertion
@@ -48,6 +49,9 @@ offline.
   financial keys remain server-side.
 - The same World action identifier is reused for every slot on one canonical
   action so a human cannot obtain different nullifiers by changing tool calls.
+- Verified sponsor evidence enters the domain only as its canonical
+  `AdapterVerifiedApprovalFact` and `RequestingAgentExecutionFact`; no
+  World-specific durable authority type is admitted.
 - Native mobile, MiniKit, Capacitor, Expo, service-worker mutation queues, and
   offline approval are outside the accepted architecture.
 - A spike must prove that the Human-in-the-Loop workflow can resume through the
