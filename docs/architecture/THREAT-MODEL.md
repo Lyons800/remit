@@ -71,6 +71,9 @@ credentials outside the controlled InvoiceGuard gateway.
 | T30 | A hydrated authority fact bypasses a revoked role, grant, or backing       | Historical-time validation plus fresh effect-time revalidation                   | Stale, revoked, expired, wrong-scope hydration is rejected     |
 | T31 | A valid service, network, quote, receipt, or adapter is substituted        | Frozen service policy and exact cross-boundary fact binding                      | Cross-service, network, quote, and adapter copies are rejected |
 | T32 | An uncertain transaction is retried after expiry or authority loss         | No caller attempt; current authority and mandate recheck before exact-byte retry | Expired, revoked, or paused retry emits no effect              |
+| T33 | A pending row is polled twice or missed before first settlement submission | Attempt and deterministic submission outbox are one atomic aggregate transition  | Crash at commit yields one recoverable logical submission      |
+| T34 | HCS postcommit failure is reported as failed payment or repeats value      | Audit-pending/degraded states and same-ID audit retry preserve consumed value    | Audit recovery never emits another transfer or consumption     |
+| T35 | Concurrent approval requests reuse a proof or one human fills two slots    | Serializable proof consumption plus action-scoped three-principal unique keys    | Racing claims admit at most one identity into the quorum       |
 
 ## Security invariants
 
@@ -101,6 +104,13 @@ credentials outside the controlled InvoiceGuard gateway.
     and retains uncertainty when revalidation fails.
 15. Verification, audit, settlement receipt, and consumption records retain
     their exact service, adapter, network, writer, attempt, and atomic context.
+16. Queueing settlement and its initial submission outbox effect share one
+    aggregate atomic group; a poller never invents first submission.
+17. A successful settlement remains consumed while execution audit is pending,
+    degraded, retried, or recovered.
+18. Approval decisions, sessions, World proofs, AgentKit challenges, company
+    subjects, AgentBook principals, and action-human principals cannot race into
+    duplicate quorum slots.
 
 ## Review gates
 

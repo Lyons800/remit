@@ -483,11 +483,15 @@ stateDiagram-v2
   Authorized --> AuditCommitted: HCS authorization receipt
   Authorized --> AuthorizationRecovery: HCS precommit unavailable
   AuthorizationRecovery --> AuditCommitted: HCS retry succeeds
-  AuditCommitted --> SettlementPending
-  SettlementPending --> Settled: consensus receipt
+  AuditCommitted --> SettlementPending: frozen attempt + atomic submission outbox
+  SettlementPending --> SettledAuditPending: consensus receipt + atomic audit outbox
   SettlementPending --> SettlementRecovery: timeout or uncertain result
-  SettlementRecovery --> Settled: network reconciliation
+  SettlementRecovery --> SettledAuditPending: network reconciliation
   SettlementRecovery --> SettlementPending: safe retry of same transaction
+  SettledAuditPending --> Settled: execution audit confirmed
+  SettledAuditPending --> SettledAuditDegraded: HCS postcommit unavailable
+  SettledAuditDegraded --> SettledAuditDegraded: retry same audit event
+  SettledAuditDegraded --> Settled: execution audit recovered
   Settled --> Reconciling
   Reconciling --> Reconciled
   Reconciling --> ReconciliationException
@@ -527,25 +531,32 @@ verification payment and evidence records, a discriminated human or mandate
 authorization basis, the authority fact and explicit writer context used by the
 authorization precommit, fresh execution-authority facts, the original frozen
 settlement attempt and exact signed transaction bytes, uncertainty, receipt,
-one-use consumption claim, and terminal record as required by its state.
-Hydration recomputes every record digest and rejects a state whose prerequisite
-records, policy-bound roles, grants, services, adapter identities, exact
-chronology, or last transition are absent.
+one-use consumption claim, postcommit execution-audit fact, and terminal record
+as required by its state. Hydration recomputes every record digest and rejects a
+state whose prerequisite records, policy-bound roles, grants, services, adapter
+identities, exact chronology, or last transition are absent.
 
 Both authorization routes revalidate the enrolled requesting agent's current
-company role, versioned execution grant, scope, audience, tenant, subject and
-AgentBook backing before settlement is frozen or retried. The human route also
-revalidates the exact originally counted approval identities and current
-statuses. The mandate route revalidates the active mandate version and original
-`RESERVED` claim against the current period ledger.
+company role, versioned execution grant, scope, audience, tenant, subject,
+configured adapter, signed-proof identity, fixed validity ceiling, and AgentBook
+backing before authorization, audit commit, settlement freeze, or retry can
+create a new effect. When verification is required, the retained `MATCH` result
+must also remain current at each of those transitions. The human route
+revalidates the exact originally counted approval, adapter, session, proof,
+challenge, role, subject, and principal identities without extending their
+original expiry. The mandate route revalidates the active mandate version and
+original `RESERVED` claim against the current period ledger.
 
 `obligationId` is stable across invoice revisions. The persistence contract
 defines unique organization-scoped keys for action ID and digest, obligation,
-invoice revision, nonce, settlement idempotency key, attempt, receipt,
-consumption claim, mandate reservation, mandate version, approval, and approval
-consumption. It also requires one non-terminal action and at most one successful
-settlement per obligation. The physical PostgreSQL constraints arrive with the
-PR 3 persistence implementation; adapters must already satisfy this contract. A
+invoice revision, nonce, settlement idempotency key, outbox event, attempt,
+receipt, consumption claim, mandate reservation, mandate version, approval,
+decision, approval session, World proof, AgentKit challenge, and approval
+consumption. Action-scoped composite keys independently reserve the company
+subject, AgentBook principal, and action-human principal counted toward quorum.
+It also requires one non-terminal action and at most one successful settlement
+per obligation. The physical PostgreSQL constraints arrive with the PR 3
+persistence implementation; adapters must already satisfy this contract. A
 correction may supersede an action only before the HCS authorization precommit.
 After that precommit, cancellation requires its own successful HCS record and is
 permitted only before signing or submission. After signing, submission, or
@@ -575,21 +586,27 @@ Database state and network effects cannot be one atomic transaction.
 InvoiceGuard uses a transactional outbox and recoverable saga:
 
 1. lock the action row with optimistic version checking;
-2. write the intended effect and deterministic idempotency key in the same
-   database transaction as the state transition;
-3. have the worker claim the outbox item;
-4. freeze and persist one attempt before submission, including attempt ID,
-   deterministic idempotency key, exact action and effect digest, transaction
-   ID, canonical base64url-encoded signed transaction bytes, their SHA-256 hash,
-   network, adapter, status, and time window;
+2. freeze one attempt, including attempt ID, deterministic idempotency key,
+   exact action and effect digest, transaction ID, canonical base64url-encoded
+   signed transaction bytes, their SHA-256 hash, network, adapter, status, and
+   time window;
+3. atomically persist that aggregate-held attempt and its initial
+   `SETTLEMENT_SUBMISSION_REQUEST`; persistence never discovers first submission
+   by polling `SETTLEMENT_PENDING`;
+4. have the worker claim the outbox item by its deterministic event ID;
 5. submit once and reconcile an uncertain result through the network/Mirror
    before any retry;
-6. resubmit only the aggregate-held original attempt when supported; a caller
-   cannot prove sameness by presenting two matching candidate hashes;
+6. resubmit only the aggregate-held original attempt with the same event and
+   idempotency identities when supported; a caller cannot prove sameness by
+   presenting two matching candidate hashes;
 7. accept a receipt only when its attempt, transaction, signed bytes, effect,
-   network, action, and idempotency fields all match that original; and
+   network, action, and idempotency fields all match that original;
 8. mark the action consumed only by an exact receipt-bound claim in the same
-   serializable write as the aggregate and mandate ledger.
+   serializable write as the aggregate, mandate ledger, and deterministic
+   `EXECUTION_AUDIT_REQUEST`; and
+9. move from audit-pending to settled only on the exact HCS execution fact, or
+   expose audit-degraded and retry the same logical outbox event without undoing
+   moved value.
 
 The repository that applies these effects is a security boundary, not a passive
 JSON store. It must authenticate the adapter or worker identity before creating
@@ -598,7 +615,10 @@ claim's expected aggregate version; require the effect atomic-group key; and
 write the aggregate, outbox item, receipt consumption, uniqueness rows, and
 mandate mutation in one serializable transaction. A caller cannot self-assert a
 writer, service, adapter or `CURRENT` status merely because it can construct the
-same JSON shape.
+same JSON shape. Concurrent approval admission similarly consumes its decision,
+session, World proof, AgentKit challenge, and three quorum-principal claims in
+the aggregate's atomic group. Re-enqueue uses an upsert of the same outbox
+event, never a second logical event ID.
 
 Every request carries `actionId`, `actionDigest`, `attemptId`, `traceId`, and
 the source commit SHA.
@@ -608,8 +628,12 @@ HCS has explicit asymmetric failure semantics:
 - the hashed `authorization.v1` event is a fail-closed precondition to
   settlement;
 - the hashed `execution.v1` event is an at-least-once postcommit effect;
-- failure after a successful transfer marks the action `audit-degraded` and
-  retries the same deterministic event ID; and
+- consensus settlement enters `settled-audit-pending`; failure after that
+  successful transfer marks the action `settled-audit-degraded`, preserves the
+  receipt and consumption claim, and retries the same deterministic event ID;
+- only the exact event, authorization audit, attempt, receipt, transaction,
+  signed-bytes hash, writer, account, key, and network can recover it to
+  `settled`; and
 - neither public HCS event contains beneficiary details or private evidence.
 
 ## Key architecture

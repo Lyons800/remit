@@ -128,9 +128,15 @@ Pass when:
 - the demo asset is explicitly selected and labelled before the action freezes;
 - the worker validates exact recipient, integer amount, asset, network, memo,
   digest, authorization evidence, and expiry before signing;
+- queueing the frozen attempt and initial submission request is one atomic
+  transition, so first submission is never inferred by polling;
 - the same frozen transaction is reconciled after an uncertain submit;
 - crash-before-submit, crash-after-submit, timeout, and retry tests yield at
   most one transfer;
+- consensus receipt, one-use consumption, mandate settlement, and the
+  deterministic execution-audit request commit atomically;
+- execution audit exposes pending and degraded states, retries the same event
+  ID, and recovers without undoing or repeating value;
 - mutation and replay show no second movement; and
 - HCS and Mirror evidence are linked without being presented as external truth.
 
