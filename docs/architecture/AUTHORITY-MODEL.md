@@ -100,7 +100,7 @@ cannot fill another approval slot without exposing the stable source value.
 Every counted slot is also unique by authenticated company subject, so a shared
 or replayed company session cannot represent two approvers.
 
-### Verified approval-fact boundary
+### Adapter-verified approval-fact boundary
 
 Sponsor proof verification ends at the control API, not in the domain package.
 The World adapter verifies the proof cryptography, relying-party origin, action,
@@ -108,14 +108,15 @@ signal, nullifier scope and expiry. The company credential adapter verifies the
 issuer, role, subject, revocation and time bounds. The AgentBook adapter
 resolves the current tenant-scoped backing principal.
 
-Only then may the control API construct a verified approval fact containing the
-exact action digest, decision, role, company subject, tenant-scoped agent
-principal, action-scoped human principal, verification time, expiry and the
-current status of all three authority facts. The domain never accepts a browser
-claim, a structural `VERIFIED` tag or a caller-computed quorum. It checks the
-fact's action, decision, role, time, status and independent distinctness again.
-Persistence must consume the underlying proof and approval-session identifiers
-under uniqueness constraints in the same serializable authorization transaction.
+Only then may the control API construct and persist an adapter-verified approval
+fact containing the exact action digest, decision, role, company subject,
+tenant-scoped agent principal, action-scoped human principal, verification time,
+expiry and the current status of all three authority facts. The domain never
+infers `CURRENT` or `VERIFIED`, and never accepts a browser claim, structural
+status tag or caller-computed quorum. It checks the fact's action, decision,
+role, time, status and independent distinctness again. Persistence must consume
+the underlying proof and approval-session identifiers under uniqueness
+constraints in the same serializable authorization transaction.
 
 ## Exact-agent execution
 
