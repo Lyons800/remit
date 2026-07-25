@@ -25,7 +25,11 @@ Do not begin implementation from a chat summary alone.
 - All approvals, verification, and settlement bind one recomputed canonical
   action digest.
 - AgentKit backing, company role, and action-time World approval are independent
-  facts; no one fact substitutes for another.
+  facts. Where policy requires fresh human approval, no one fact substitutes for
+  another.
+- Straight-through payment requires an unexpired, unrevoked standing mandate
+  whose exact supplier, beneficiary, asset, evidence, and caps contain the
+  action. Model extraction alone is never sufficient.
 - Integer amounts and explicit network/account identifiers only.
 - `MISMATCH`, `UNKNOWN`, expiry, revocation, mutation, and replay move no value.
 - One action settles at most once, including across process crashes.
@@ -39,6 +43,8 @@ Do not begin implementation from a chat summary alone.
 - No fourth partner integration.
 - `apps/web` is the only human-facing application. Do not add a native client,
   MiniKit, an offline approval path, or browser-held authority credentials.
+- Invoice ingestion never edits the supplier master. A permanent supplier or
+  beneficiary change is a separate governed workflow.
 
 ## Architecture rules
 

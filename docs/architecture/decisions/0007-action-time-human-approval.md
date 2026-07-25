@@ -12,7 +12,8 @@ phone without creating a second client or moving authority keys into a browser.
 
 ## Decision
 
-Use World Human-in-the-Loop as an additional authorization fact:
+For policies that require per-action human approval, use World Human-in-the-Loop
+as an additional authorization fact:
 
 1. every approval candidate remains an AgentKit-backed, company-enrolled agent;
 2. the company role binds the agent, its AgentBook-derived tenant principal, and
@@ -40,6 +41,9 @@ offline.
 
 - A mobile action review is part of the authorization path, not a second
   product.
+- Routine invoices inside a current standing mandate do not create artificial
+  Human-in-the-Loop ceremony; leaving that mandate routes them back to this
+  exception flow.
 - The RP signing key, raw World identifiers, role issuer key, agent keys, and
   financial keys remain server-side.
 - The same World action identifier is reused for every slot on one canonical

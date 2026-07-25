@@ -28,12 +28,16 @@ Use separate process and dependency boundaries:
    action itself, and returns unsigned frozen transaction bytes;
 5. a deterministic signing guard decodes and validates the entire transaction
    before signing;
-6. HCS `approval.v1` is an explicit fail-closed precommit; and
+6. HCS `authorization.v1` is an explicit fail-closed precommit containing the
+   hash of either standing-mandate or exception-quorum evidence; and
 7. HCS `execution.v1` is an at-least-once postcommit using one deterministic
    event ID and an `audit-degraded` recovery state.
 
-Both Hedera transfers carry a public digest-only memo. HCS contains hashes and
-public transaction references, never beneficiary data or private evidence.
+The x402 service payment uses HBAR. Final settlement uses the exact HBAR or
+allowlisted HTS fungible asset named by the payment action after the applicable
+live spike passes. Both transfers carry a public digest-only memo. HCS contains
+hashes and public transaction references, never beneficiary data or private
+evidence.
 
 ## Consequences
 
@@ -43,7 +47,7 @@ public transaction references, never beneficiary data or private evidence.
   durable state, not presented as an atomic ledger operation.
 - More processes are deployed, but key custody and incompatible SDK graphs
   remain isolated.
-- Final settlement pauses when the HCS approval precommit is unavailable.
+- Final settlement pauses when the HCS authorization precommit is unavailable.
 - A postcommit outage cannot reverse a settled transfer, so it is visible and
   recoverable rather than falsely reported as a failed payment.
 

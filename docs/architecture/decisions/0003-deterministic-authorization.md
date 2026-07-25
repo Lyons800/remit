@@ -15,7 +15,7 @@ Use a pure deterministic policy engine. It evaluates:
 
 - World-derived distinct-human equivalence;
 - independently issued company roles and revocation;
-- action-bound Human-in-the-Loop decisions;
+- standing-mandate containment or action-bound Human-in-the-Loop decisions;
 - exact-action agent signatures;
 - expiry and nonce state;
 - verifier signature and digest/evidence/payment binding;
@@ -23,7 +23,11 @@ Use a pure deterministic policy engine. It evaluates:
 - network, recipient, asset, amount, and spend caps; and
 - one-use state.
 
-AI may extract proposed fields or produce the configured beneficiary-check
+The policy route is explicit: `STRAIGHT_THROUGH`, `HUMAN_APPROVAL`, or `BLOCK`.
+`STRAIGHT_THROUGH` may require zero per-invoice human decisions only under the
+standing-mandate constraints in ADR 0008.
+
+AI may extract proposed fields or produce the configured supplier-evidence
 result. It cannot sign, mutate policy, or directly authorize settlement.
 
 ## Consequences
