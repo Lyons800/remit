@@ -7,5 +7,10 @@
     "lib": ["DOM", "DOM.Iterable", "ES2024"],
     "noEmit": true
   },
-  "include": ["tests/**/*.ts"]
+  "include": [
+    "apps/**/*.test.ts",
+    "packages/**/*.test.ts",
+    "services/**/*.test.ts",
+    "tests/**/*.ts"
+  ]
 }
