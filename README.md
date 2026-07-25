@@ -1,31 +1,33 @@
-# CallGuard
+# InvoiceGuard
 
-CallGuard is an exact-action authorization gateway for high-risk company
-payments.
+InvoiceGuard is the accounts-payable workflow built on CallGuard's exact-action
+authorization engine. It stops a changed supplier payout instruction from
+becoming an unreviewed agent payment.
 
-A convincing call, message, or agent request may propose a supplier
-beneficiary change. It cannot authorize that change. CallGuard freezes the
-exact action, requires distinct human-backed approval agents with separately
-issued company roles, purchases the configured verification service, and
-allows the unchanged request to settle once.
+An accounts-payable agent may extract and propose an invoice action, but it
+cannot authorize one. InvoiceGuard freezes the exact request, checks the backing
+and role of each approval delegate, collects action-bound decisions from
+distinct people, and allows only the unchanged request to settle once.
 
 ## Status
 
-Architecture and repository bootstrap for ETHGlobal Lisbon 2026.
+Active build for ETHGlobal Lisbon 2026.
 
 - Track: Classic / From Scratch
-- Core partner integrations: World AgentKit and Hedera
-- Optional third integration: 0G, only after its private-compute admission
-  gate passes
-- Network policy: testnets only until an explicit production security review
+- Core partner integrations: World AgentKit, World Human-in-the-Loop, and Hedera
+- 0G admission: rejected on 2026-07-25; no suitable testnet private,
+  authenticated text-inference path is currently available
+- Financial operations: Hedera Testnet only
+- Identity exception: AgentBook registration and lookup use World Chain
+  `eip155:480`
 
-CallGuard does not detect deepfakes or prove caller identity, employment,
+InvoiceGuard does not detect deepfakes or prove caller identity, employment,
 beneficiary ownership, or the truth of external evidence.
 
 ## Provenance
 
-Project-specific work began in this repository during ETHGlobal Lisbon 2026.
-See [HACKATHON_PROVENANCE.md](HACKATHON_PROVENANCE.md).
+Project-specific work began in this repository during ETHGlobal Lisbon 2026. See
+[HACKATHON_PROVENANCE.md](HACKATHON_PROVENANCE.md).
 
 ## License
 
