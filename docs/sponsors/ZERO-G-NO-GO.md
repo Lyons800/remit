@@ -1,11 +1,11 @@
 # 0G admission record
 
-Decision: **NO-GO** for the current CallGuard submission.
+Decision: **NO-GO** for the current InvoiceGuard submission.
 
 Checked: 2026-07-25.
 
-CallGuard selects World and Hedera only. No 0G SDK, credential, funded wallet,
-or runtime is installed.
+InvoiceGuard selects World and Hedera only. No 0G SDK, credential, funded
+wallet, or runtime is installed.
 
 ## Why admission failed
 
@@ -36,7 +36,7 @@ The first-party `0g-pc-e2ee` repository has no tagged release. At commit
   `report_data`.
 
 This can provide transport confidentiality under assumptions, but it cannot
-support CallGuard's required authenticated, verifiable provider result.
+support InvoiceGuard's required authenticated, verifiable provider result.
 
 ### Released SDK does not prove exact content binding
 
@@ -44,9 +44,9 @@ support CallGuard's required authenticated, verifiable provider result.
 verifies its signer, but its released response helper does not recompute and
 compare exact request and response commitments. The Router's
 `tee_verified: true` is a Router assertion rather than raw proof returned to
-CallGuard.
+InvoiceGuard.
 
-CallGuard therefore cannot truthfully bind:
+InvoiceGuard therefore cannot truthfully bind:
 
 ```text
 action digest
@@ -79,7 +79,7 @@ Every condition must pass:
 - the signer is matched against the onchain service record;
 - exact request and response commitments are independently verified;
 - provider/model fallback is disabled and pinned;
-- deterministic request/output schemas bind CallGuard's existing action and
+- deterministic request/output schemas bind InvoiceGuard's existing action and
   evidence digests;
 - mutation, replay, prompt-injection, outage, and no-downgrade tests pass;
 - any failure becomes `UNKNOWN` and moves no value;

@@ -14,7 +14,7 @@ Hedera proves two separate financial transitions:
 
 The check is released only after the first transaction reaches consensus. The
 second transaction is signed only after deterministic authorization and a
-successful HCS authorization precommit. CallGuard never claims the two
+successful HCS authorization precommit. InvoiceGuard never claims the two
 transactions are atomic.
 
 ## Dependency and process contract
@@ -58,7 +58,7 @@ POST /v1/supplier-evidence-checks/{actionDigest}
    buyer debit, and uses:
 
    ```text
-   cg:x402:v1:<64-hex-action-digest>
+   invoiceguard:x402:v1:<64-hex-action-digest>
    ```
 
    as its public memo.
@@ -78,10 +78,12 @@ callback. A live smoke test is a gate, not an assumption.
 ## Supplier-evidence result
 
 The paid service checks the configured evidence bundle for one action. In the
-synthetic fixture, `MATCH` means the service found an unexpired record whose
-supplier identity hash, proposed beneficiary fingerprint, evidence root, and
-action digest all match the request. `MISMATCH` means a declared field differs.
-Missing, malformed, stale, or unavailable evidence returns `UNKNOWN`.
+synthetic fixture, it reads a separately administered, signed supplier-change
+registry. The control API and payment agent have no write path to this registry.
+`MATCH` means the service found an unexpired record whose supplier identity
+hash, proposed beneficiary fingerprint, issuer, source-document digest, evidence
+root, and action digest all match the request. `MISMATCH` means a declared field
+differs. Missing, malformed, stale, or unavailable evidence returns `UNKNOWN`.
 
 The result does not prove legal account ownership, invoice truth, tax
 compliance, or the correctness of any source outside that declared policy.
@@ -104,11 +106,14 @@ The deterministic signing guard decodes the returned transaction and requires:
 - `TransferTransaction` only;
 - exact treasury payer, beneficiary, action asset, integer atom amount, and
   zero-sum transfers;
-- HBAR or one explicitly allowlisted HTS fungible test token after its live
-  transfer spike passes;
+- one explicitly allowlisted two-decimal synthetic-EUR HTS fungible test token
+  after its live transfer spike passes;
 - no token, contract, schedule, allowance, or additional operation;
-- exact `cg:exec:v1:<digest>` memo;
-- current signed `MATCH` attestation;
+- exact `invoiceguard:exec:v1:<digest>` memo;
+- exact source invoice, settlement effect, and `mappingPolicyHash`;
+- current signed `MATCH` attestation when the frozen verification mode is
+  `REQUIRED`, or an explicit `NOT_REQUIRED` policy marker with no substituted
+  attestation;
 - successful HCS authorization precommit;
 - unexpired and unconsumed action; and
 - transaction bytes and ID matching the durable execution claim.
@@ -138,8 +143,8 @@ references:
   "eventId": "sha256:...",
   "actionDigest": "sha256:...",
   "authorizationEvidenceHash": "sha256:...",
-  "attestationHash": "sha256:...",
-  "x402TransactionId": "0.0.x@...",
+  "verificationMode": "REQUIRED",
+  "verificationEvidenceHash": "sha256:...",
   "policyHash": "sha256:...",
   "decision": "MATCH"
 }
@@ -190,7 +195,8 @@ authorization.
 - raw 402 requirements hash and paid request hash;
 - x402 transaction ID, facilitator transaction ID, transfer list, memo, receipt,
   and Mirror/HashScan link;
-- signed digest-bound `MATCH` attestation;
+- signed digest-bound `MATCH` attestation and x402 transaction when the fixture
+  requires verification;
 - HCS authorization sequence, running hash, payer, and consensus time;
 - decoded final frozen transaction and bytes hash;
 - final receipt, Mirror transfer, and HCS execution event;
@@ -198,10 +204,11 @@ authorization.
 - one evidence manifest tied to the exact repository/deployment SHA.
 
 The source invoice currency and demonstrated settlement asset are always shown
-separately. HBAR is never presented as a EUR payment. A synthetic
+separately. HBAR is never presented as a EUR payment. The preferred synthetic
 EUR-denominated HTS token may be used only after the token-transfer guard and
-Agent Kit planning path pass live review; it remains a no-value Testnet fixture,
-not a bank payment or backed stablecoin.
+Agent Kit planning path pass live review; its two-decimal parity mapping and
+token ID are frozen in the action. It remains a no-value Testnet fixture, not a
+bank payment or backed stablecoin.
 
 ## First-party sources
 

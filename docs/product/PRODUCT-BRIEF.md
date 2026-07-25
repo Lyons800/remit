@@ -2,7 +2,7 @@
 
 ## Product
 
-InvoiceGuard is an agentic accounts-payable operations system on CallGuard's
+InvoiceGuard is an agentic accounts-payable operations system with an
 exact-action control plane. It gives finance teams one place to receive, check,
 approve, pay, and reconcile supplier invoices.
 
@@ -50,8 +50,9 @@ document or immutable object reference
 sourceMetadata
 ```
 
-It returns `202 Accepted` with an `invoiceId` and `received` state. The product
-uses the same boundary for:
+It returns `202 Accepted` with an immutable `observationId` and `received`
+state. Normalization later creates or attaches an invoice revision. The product
+uses the same acceptance boundary for:
 
 - drag-and-drop PDF or image upload;
 - structured procurement, ERP, vendor-portal, or accounting calls;
@@ -71,24 +72,31 @@ InvoiceGuard does not turn an uploaded document directly into a payment:
    metadata, content hash, and extraction provenance.
 2. **Invoice record:** normalized candidate fields, supplier and purchase-order
    matches, duplicate evidence, validation outcomes, and operator corrections.
-3. **Payment action:** the final recipient, asset, integer amount, network,
-   purpose, evidence root, policy, expiry, and nonce frozen under one digest.
+3. **Payment action:** the source invoice digest and amount plus the final
+   settlement recipient, asset, integer amount, network, deterministic mapping,
+   evidence root, exact policy-decision digest, expiry, and nonce frozen under
+   one digest.
 
 A changed field creates a new action. Approving one exceptional payment never
 updates the approved supplier record.
 
 ## Policy lanes
 
-| Lane             | Typical conditions                                                                                                                                      | Authority                                                                                                                        | Outcome                                       |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Straight-through | Known supplier and beneficiary, authenticated structured source or independently confirmed fields, non-duplicate, expected amount/currency, within caps | Current company-enrolled AgentKit-backed payment agent plus an unexpired, pre-approved standing mandate for the exact boundaries | Schedule and execute without per-invoice HITL |
-| Review           | New supplier, changed beneficiary, unusual amount, first payment, missing evidence, cap breach, or configured high-value threshold                      | Paid evidence check plus the configured fresh World-bound company-role approvals                                                 | Hold until the exact exception reaches quorum |
-| Blocked          | Duplicate, `MISMATCH`, `UNKNOWN`, unavailable required evidence, altered action, expired/revoked authority, or replay                                   | No agent or operator override on the existing action                                                                             | No value movement                             |
+| Lane             | Typical conditions                                                                                                                                      | Authority                                                                                                                                 | Outcome                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Straight-through | Known supplier and beneficiary, authenticated structured source or independently confirmed fields, non-duplicate, expected amount/currency, within caps | Current company-enrolled AgentKit-backed payment agent plus an unexpired, pre-approved standing mandate for the exact boundaries          | Schedule and execute without per-invoice HITL |
+| Review           | New supplier, changed beneficiary, unusual amount, first payment, missing evidence, cap breach, or configured high-value threshold                      | Configured evidence when the frozen policy says `REQUIRED`, plus the fresh World-bound company-role approvals specified for the exception | Hold until the exact exception reaches quorum |
+| Blocked          | Duplicate, `MISMATCH`, `UNKNOWN`, unavailable required evidence, altered action, expired/revoked authority, or replay                                   | No agent or operator override on the existing action                                                                                      | No value movement                             |
 
 A standing mandate is itself a governed object. It fixes supplier, beneficiary,
 asset, per-invoice and period caps, required evidence, purchase-order rules,
 effective dates, and revocation state. A material change exits the mandate; it
 does not silently broaden it.
+
+Every frozen policy decision sets `verificationMode` to exactly `NOT_REQUIRED`
+or `REQUIRED`. Routine invoices do not buy circular evidence merely to create an
+x402 transaction. The CourtGlass beneficiary exception sets it to `REQUIRED`;
+without the paid result, that action cannot settle.
 
 Unstructured model extraction alone is never sufficient for straight-through
 payment. Missing or indeterminate evidence routes to review or blocked according
@@ -107,6 +115,12 @@ synthetic. None is an authority source. It freezes the proposed payment as one
 exception, purchases the configured supplier-evidence check, and asks the
 required company roles to review only the consequential difference.
 
+For the synthetic demo, that paid service reads a separately administered,
+signed supplier-change registry fixture. The control API and payment agent
+cannot write it. `MATCH` means only that the submitted supplier and beneficiary
+fingerprints match one current registry entry; it does not prove real-world bank
+account ownership.
+
 ## Product surfaces
 
 1. **Invoice inbox:** one operational queue for received, auto-ready,
@@ -124,11 +138,11 @@ required company roles to review only the consequential difference.
 
 ## Sponsor-owned transitions
 
-| Sponsor surface         | State transition                                                                                                                                              |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| World AgentKit          | A company-enrolled invoice or payment agent becomes eligible for its configured role; agents backed by the same human remain one accountability class.        |
-| World Human-in-the-Loop | A company user makes a fresh decision bound to an exact exception; the same human cannot fill two approval slots.                                             |
-| Hedera                  | The agent purchases the configured evidence service, waits for consensus, executes the exact admitted Testnet effect once, and exposes reconcilable receipts. |
+| Sponsor surface         | State transition                                                                                                                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| World AgentKit          | A company-enrolled invoice or payment agent becomes eligible for its configured role; agents backed by the same human remain one accountability class.                                |
+| World Human-in-the-Loop | A company user makes a fresh decision bound to an exact exception; the same human cannot fill two approval slots.                                                                     |
+| Hedera                  | When policy requires it, the agent purchases the evidence service and waits for consensus; it then executes the exact admitted Testnet effect once and exposes reconcilable receipts. |
 
 World does not replace company SSO or role authority. AgentKit establishes
 human-backed-agent accountability. Human-in-the-Loop establishes fresh unique
@@ -184,9 +198,11 @@ The demo is one batch and one uninterrupted exception path:
    Mirror evidence, mutate one beneficiary character, replay settlement, and
    show that the settlement count remains one.
 
-The source invoice amount and demonstrated Testnet asset are displayed
-separately unless a synthetic EUR-denominated Testnet token passes the Hedera
-spike. The UI never presents HBAR as a completed EUR bank payment.
+The rail is a clearly labelled, no-value synthetic-EUR HTS Testnet token whose
+exact ID and two-decimal parity rule are frozen in the action after the Hedera
+spike passes. If that spike fails, no supplier invoice is shown as settled; HBAR
+is used only for the separate x402 service purchase. The UI never presents HBAR
+as a completed EUR bank payment.
 
 ## Product success criteria
 

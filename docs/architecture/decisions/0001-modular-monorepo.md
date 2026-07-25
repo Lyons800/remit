@@ -5,7 +5,7 @@
 
 ## Context
 
-CallGuard needs one product UI, one policy/control API, an independently paid
+InvoiceGuard needs one product UI, one policy/control API, an independently paid
 verification service, an isolated financial worker, and three sponsor adapters.
 Multiple team members and coding agents must work concurrently without mixing
 trust boundaries or duplicating dependencies.

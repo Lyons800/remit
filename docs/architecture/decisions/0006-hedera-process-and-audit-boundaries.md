@@ -5,8 +5,8 @@
 
 ## Context
 
-CallGuard uses Hedera both to purchase a verifier resource through x402 and to
-execute a later approved financial operation. Those effects are not atomic.
+InvoiceGuard uses Hedera both to purchase a verifier resource through x402 and
+to execute a later approved financial operation. Those effects are not atomic.
 Current `@x402/hedera` and Hedera Agent Kit releases also resolve different
 Hiero SDK versions, whose class instances must not be mixed.
 
@@ -54,9 +54,9 @@ evidence.
 ## Fallback
 
 If x402 2.19 fails its live signature/preflight smoke tests, use the official
-scaffold's locked `2.13.2 / 2.14.0 / 2.80.0` graph. Keep CallGuard's digest/memo
-checks, wait for the consensus receipt, and document that the older `/verify`
-discovers an invalid payer signature only during settlement.
+scaffold's locked `2.13.2 / 2.14.0 / 2.80.0` graph. Keep InvoiceGuard's
+digest/memo checks, wait for the consensus receipt, and document that the older
+`/verify` discovers an invalid payer signature only during settlement.
 
 If Agent Kit v4 is unstable, construct the same transaction directly through the
 pinned Hiero SDK. Do not claim Agent Kit use unless it remains on the executed

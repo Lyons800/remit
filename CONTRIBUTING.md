@@ -1,6 +1,6 @@
 # Contributing
 
-CallGuard is a security-sensitive financial authorization project. Small,
+InvoiceGuard is a security-sensitive financial authorization project. Small,
 reviewable changes and explicit evidence are part of the product.
 
 ## Before coding
@@ -37,8 +37,8 @@ sessions edit the same working directory.
 
 ```bash
 git fetch origin
-git worktree add ../callguard-<topic> -b <branch> origin/main
-cd ../callguard-<topic>
+git worktree add ../invoiceguard-<topic> -b <branch> origin/main
+cd ../invoiceguard-<topic>
 pnpm install --frozen-lockfile
 ```
 

@@ -81,7 +81,7 @@ check by weakening configuration or deleting coverage.
 
 - First-party sponsor documentation is authoritative.
 - Record URL, package version, network, and access date for sponsor behavior.
-- Distinguish documented behavior from CallGuard design decisions.
+- Distinguish documented behavior from InvoiceGuard design decisions.
 - Put material architecture changes in an ADR.
 - Update claims and limitations whenever evidence changes.
 - Label synthetic fixtures, mocks, and recorded responses explicitly.

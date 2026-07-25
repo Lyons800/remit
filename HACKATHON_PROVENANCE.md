@@ -9,7 +9,7 @@
 
 ## Starting-state declaration
 
-This repository began without pre-existing CallGuard application code,
+This repository began without pre-existing InvoiceGuard application code,
 contracts, designs, generated assets, or deployment state.
 
 All project-specific implementation, architecture records, product assets,
@@ -41,5 +41,5 @@ team remains responsible for:
 3. Hedera: agent-to-service payment, exact Testnet financial operation, and
    auditable receipts.
 
-0G was evaluated as an optional private beneficiary-check implementation and
+0G was evaluated as an optional private supplier-evidence implementation and
 rejected under the documented admission gate.

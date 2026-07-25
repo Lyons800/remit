@@ -33,6 +33,8 @@ flowchart LR
   Mobile --> API
   API --> DB[("PostgreSQL")]
   API --> Objects[("Encrypted invoice objects")]
+  API --> Extractor["Isolated extraction worker"]
+  Extractor --> API
   API --> World["World AgentKit / AgentBook"]
   WorldHITL --> API
   API --> Buyer["Payment agent"]
@@ -51,16 +53,21 @@ flowchart LR
 | Deployable                   | Responsibility                                                                               | Secrets                                          |
 | ---------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | `apps/web`                   | Responsive desktop control room and mobile approval experience                               | No treasury, issuer, provider, RP, or agent keys |
-| `apps/control-api`           | Invoice ingestion/jobs, authentication, deterministic policy, action state, API, audit       | Database, object-store, connector, and HMAC keys |
+| `apps/control-api`           | Invoice acceptance, authentication, deterministic policy, action state, API, audit           | Database, object-store, connector, and HMAC keys |
+| `services/extraction-worker` | Sandboxed parsing and candidate-field extraction from one staged document                    | No long-lived secret and no network egress       |
 | `services/verifier`          | x402 resource, evidence check, and signed digest-bound response                              | Service-signing key                              |
 | `services/payment-agent`     | Autonomously purchases the configured verifier resource                                      | Low-balance x402 buyer key                       |
 | `services/x402-facilitator`  | Verifies, co-signs, submits, and settles Hedera x402 transactions                            | Capped facilitator fee-payer key                 |
 | `services/settlement-worker` | Plans, guards, signs, submits, and recovers the exact approved transfer; writes HCS evidence | Separate settlement and audit-writer keys        |
 
-The control API remains a modular monolith. The verifier is separate because it
-is an independently purchased service. The x402 buyer, facilitator, and
-settlement worker are separate because they hold different keys and the current
-x402 and Agent Kit packages require incompatible Hedera SDK graphs. They
+The control API remains a modular monolith. Untrusted document parsing is
+separate because attachment bytes are an execution boundary: each extraction job
+receives one staged input and a one-use result capability, runs with strict CPU,
+memory, file, and time limits, and has no network egress or long-lived database,
+object-store, connector, HMAC, or financial credential. The verifier is separate
+because it is an independently purchased service. The x402 buyer, facilitator,
+and settlement worker are separate because they hold different keys and the
+current x402 and Agent Kit packages require incompatible Hedera SDK graphs. They
 exchange only validated JSON, decimal strings, identifiers, and base64
 transaction bytes—never SDK class instances.
 
@@ -74,6 +81,7 @@ apps/
   web/
   control-api/
 services/
+  extraction-worker/
   verifier/
   payment-agent/
   x402-facilitator/
@@ -113,21 +121,27 @@ and e-invoice integrations are connector adapters around the same acceptance
 port. V1 creates no separate ingestion microservice.
 
 ```text
-POST /v1/orgs/{org}/invoice-uploads
-POST /v1/orgs/{org}/invoice-submissions
+POST /v1/orgs/{org}/invoices
 POST /v1/connections/{kind}/{connection}/events
 POST /v1/orgs/{org}/connections/{connection}/sync
 ```
 
-Client submissions require an idempotency key and request-body hash. Webhooks
-require a pinned signature and unique external event ID; the connection resolves
-the organization server-side. Arbitrary remote URL ingestion is forbidden.
-Content type and size are bounded before storage and parsing.
+`POST /invoices` is the sole acceptance contract for direct API calls and
+authenticated uploads. It returns `202 Accepted` with an immutable
+`observationId`; it does not claim that normalization has already produced an
+invoice. Connectors translate verified external events into the same internal
+command. Client submissions require an idempotency key and request-body hash.
+Webhooks require a pinned signature and unique external event ID; the connection
+resolves the organization server-side. Arbitrary remote URL ingestion is
+forbidden. Content type and size are bounded before storage and parsing.
 
 Raw documents are encrypted in object storage. PostgreSQL stores hashes,
 metadata, normalized facts, immutable snapshots, lifecycle state, and object
-references. Extraction runs as a durable, leased job inside the control-plane
-deployment and receives no financial key.
+references. The control plane leases a durable extraction job to the isolated
+worker using a one-document input capability and a one-use result capability.
+The worker receives no long-lived secret and has no network egress. Until that
+sandbox is exercised, the live hackathon intake accepts only the controlled
+synthetic fixture set.
 
 InvoiceGuard keeps three records:
 
@@ -153,6 +167,8 @@ actorReference
 ```text
 schemaVersion
 invoiceId
+invoiceRevision
+supersedesInvoiceRevisionId
 organizationId
 supplierId
 supplierSnapshotDigest
@@ -162,7 +178,7 @@ dueDate
 netAmountAtoms
 taxAmountAtoms
 totalAmountAtoms
-assetId
+invoiceAssetId
 proposedBeneficiary
 purchaseOrderReferences
 lineItemsRoot
@@ -196,15 +212,23 @@ payable silently.
 A frozen policy evaluation binds the action digest, input root, policy version,
 route, reason codes, required roles and quorums, and verification mode. The
 route is exactly `STRAIGHT_THROUGH`, `HUMAN_APPROVAL`, or `BLOCK`.
+`verificationMode` is exactly `NOT_REQUIRED` or `REQUIRED`.
 
 `STRAIGHT_THROUGH` requires exact containment by a current standing mandate plus
 an enrolled, human-backed, company-authorized payment agent. A model score never
 selects this route. `HUMAN_APPROVAL` uses the exception protocol below. `BLOCK`
 cannot be overridden on the existing action.
 
+Evidence is purchased only when the frozen policy says `REQUIRED`. The
+changed-beneficiary fixture requires it and cannot settle without a valid paid
+result. A routine invoice may set `NOT_REQUIRED` only when its mandate and
+policy version explicitly permit that route; the authorization record binds the
+absence of a verifier envelope rather than silently skipping a required check.
+
 ## Action protocol
 
-The canonical action contains no floating-point amounts and no ambiguous
+The canonical action separates the source obligation from the demonstrated
+settlement effect. It contains no floating-point amounts and no ambiguous
 addresses:
 
 ```text
@@ -213,28 +237,54 @@ actionId
 organizationId
 requestType
 supplierId
-currentBeneficiary
-proposedBeneficiary
-amountAtoms
-assetId
-networkId
-purposeHash
+beneficiary {
+  approved
+  proposed
+}
+sourceInvoice {
+  obligationId
+  digest
+  amountAtoms
+  assetId
+}
+settlement {
+  beneficiary
+  amountAtoms
+  assetId
+  networkId
+  mappingPolicyHash
+}
 evidenceRoot
-policyId
-policyVersion
+policy {
+  id
+  version
+}
+policyDecisionDigest
 expiresAt
 nonce
 createdAt
 ```
 
 - Network and account identifiers use CAIP-2 and CAIP-10 where applicable.
-- V1 uses request type `SUPPLIER_INVOICE_PAYMENT`; the canonical invoice digest
-  is its `purposeHash`.
-- Amounts are integer atoms with an explicit asset identifier.
+- V1 uses request type `SUPPLIER_INVOICE_PAYMENT`.
+- Source and settlement amounts are integer atoms with separate explicit asset
+  identifiers.
+- `sourceInvoice.digest` binds the canonical invoice revision, including its
+  source-currency amount.
+- `mappingPolicyHash` binds the deterministic source-to-settlement mapping. It
+  is never inferred from a market price or model output.
+- Policy evaluation is non-circular. InvoiceGuard first hashes the action core
+  without `policyDecisionDigest`. The deterministic decision binds that core
+  digest, input root, route, verification mode, mandate ID and version, required
+  roles and quorums, reason codes, and validity. The final authorization intent
+  embeds the decision digest and is hashed again as `actionDigest`.
 - JSON is canonicalized using RFC 8785 before SHA-256 hashing.
-- The hash input includes the domain separator `callguard:payment-action:v1`.
+- The hash input includes the domain separator `invoiceguard:payment-action:v1`.
 - The full action remains immutable. A changed field creates a new action and
   invalidates prior approvals and verification responses.
+- Every approval, verifier response, HCS record, outbox effect, and settlement
+  binds the final `actionDigest`, so a policy route cannot be swapped without
+  changing the authorized action.
 - Human-readable rendering is generated from the same validated object that is
   hashed.
 
@@ -287,7 +337,7 @@ auditable.
 
 The released AgentKit validator is wrapped rather than trusted as the whole
 authorization check: it validates origin-level properties but does not itself
-enforce the exact path, resource, HTTP method, or CallGuard action. World
+enforce the exact path, resource, HTTP method, or InvoiceGuard action. World
 Human-in-the-Loop is also an additional fact, not a replacement for agent
 backing or company authority.
 
@@ -323,8 +373,15 @@ The worker accepts the response only after validating:
 The x402 facilitator's `/verify` result is not proof of payment. The verifier
 releases its signed response only after `/settle` produces a Hedera consensus
 receipt with `SUCCESS`. The x402 payment and the later company settlement are
-separate transactions; CallGuard joins them with the action digest, service
+separate transactions; InvoiceGuard joins them with the action digest, service
 attestation, HCS authorization precommit, and durable one-use state.
+
+The synthetic service reads a separately administered, signed supplier-change
+registry fixture. The control API and payment agent have no write path to that
+registry. A record contains supplier identity hash, proposed beneficiary
+fingerprint, effective interval, issuer, and source-document digest. A
+production adapter would replace this fixture with an independently operated
+bank-account-validation or supplier-confirmation source.
 
 The service result means only that the configured supplier-evidence policy
 matched its declared inputs. It does not prove beneficiary ownership, invoice
@@ -333,47 +390,66 @@ states map to `MISMATCH` or `UNKNOWN`, never `MATCH`.
 
 ## Payment rail
 
-The payment action always names one explicit network, asset, integer atom count,
-and beneficiary. V1 execution is Hedera Testnet only. The final settlement may
-admit HBAR or one allowlisted HTS fungible test token after its integration
-spike passes; the signing guard validates the exact transfer type and token ID.
+The payment action names one explicit source obligation and one explicit
+settlement effect. V1 execution is Hedera Testnet only. The preferred fixture is
+one allowlisted HTS fungible test token with two decimals and an explicit
+no-value synthetic-EUR label, admitted only after its transfer and signing-guard
+spikes pass. Its mapping policy fixes one test-token cent for one source EUR
+cent; that rule and the exact token ID enter `mappingPolicyHash`.
 
-An invoice denominated in EUR is not mapped to an arbitrary HBAR amount. Until a
-synthetic EUR-denominated Testnet token is admitted, the UI displays the source
-invoice separately from the demonstrated Hedera effect. Test assets have no
-monetary value and are never presented as a completed bank or SEPA payment.
+An invoice denominated in EUR is never mapped to an arbitrary HBAR amount. If
+the HTS spike fails, no invoice payment action reaches `Settled`. HBAR may still
+pay for the x402 evidence service, but it is not a fallback supplier settlement.
+Test assets have no monetary value and are never presented as a completed bank
+or SEPA payment.
 
 A future production `PaymentRail` may target regulated banking, open-banking, or
 stablecoin infrastructure only through a new protocol version and explicit
 security review.
 
-## Invoice lifecycle
+## Source-observation lifecycle
 
 ```mermaid
 stateDiagram-v2
   [*] --> Received
   Received --> Stored
   Stored --> Extracting
-  Extracting --> Draft
   Extracting --> Quarantined
-  Draft --> NeedsReview
-  Draft --> Ready
-  NeedsReview --> Ready
-  Ready --> ActionFrozen
-  ActionFrozen --> PaymentPending
-  ActionFrozen --> PaymentBlocked
-  PaymentPending --> Paid
-  Paid --> Reconciling
-  Reconciling --> Reconciled
-  Reconciling --> ReconciliationException
-  Draft --> Held
-  Ready --> Held
-  Draft --> Void
+  Extracting --> Extracted
+  Extracted --> Attached
+  Quarantined --> Stored: reviewed and released
+  Attached --> [*]
 ```
 
-A correction after `ActionFrozen` creates a new invoice revision and payment
-action. Accounting write-back failure becomes `ReconciliationException`; it
-never changes a successful payment to failed or creates another transfer.
+Source observations are immutable. A retry advances the same observation; it
+does not insert another payable.
+
+## Invoice-revision lifecycle
+
+```mermaid
+stateDiagram-v2
+  [*] --> Draft
+  Draft --> NeedsReview
+  Draft --> Ready
+  Draft --> Held
+  Draft --> Void
+  NeedsReview --> Ready
+  NeedsReview --> Held
+  NeedsReview --> Void
+  Ready --> ActionFrozen
+  Ready --> Held
+  Draft --> Superseded: corrected
+  NeedsReview --> Superseded: corrected
+  Ready --> Superseded: corrected
+  ActionFrozen --> [*]
+  Held --> [*]
+  Void --> [*]
+  Superseded --> [*]
+```
+
+A correction after `ActionFrozen` first supersedes or cancels the prior payment
+action under the rules below, then creates a new invoice revision and action
+against the same `obligationId`. The prior frozen revision remains immutable.
 
 ## Payment-action state machine
 
@@ -381,39 +457,82 @@ never changes a successful payment to failed or creates another transfer.
 stateDiagram-v2
   [*] --> Captured
   Captured --> Classified
-  Classified --> Authorized: current standing mandate
-  Classified --> AwaitingApprovals: exception policy
   Classified --> Rejected: deterministic block
+  Classified --> EvidenceSatisfied: verification NOT_REQUIRED
+  Classified --> VerificationQuoted: verification REQUIRED
+  VerificationQuoted --> VerificationPaid
+  VerificationPaid --> EvidenceSatisfied: signed MATCH
+  VerificationPaid --> Rejected: MISMATCH or UNKNOWN
+  EvidenceSatisfied --> Authorized: current standing mandate + cap reservation
+  EvidenceSatisfied --> AwaitingApprovals: exception policy
   AwaitingApprovals --> Authorized: delegate + fresh-human quorum
   AwaitingApprovals --> Rejected: policy refusal
-  Authorized --> VerificationQuoted
-  VerificationQuoted --> VerificationPaid
-  VerificationPaid --> Verified: signed MATCH
-  VerificationPaid --> Rejected: MISMATCH or UNKNOWN
-  Verified --> AuditCommitted: HCS authorization receipt
-  Verified --> RecoveryRequired: HCS precommit unavailable
+  Authorized --> AuditCommitted: HCS authorization receipt
+  Authorized --> AuthorizationRecovery: HCS precommit unavailable
+  AuthorizationRecovery --> AuditCommitted: HCS retry succeeds
   AuditCommitted --> SettlementPending
   SettlementPending --> Settled: consensus receipt
-  SettlementPending --> RecoveryRequired: timeout or uncertain result
-  RecoveryRequired --> Settled: network reconciliation
-  RecoveryRequired --> SettlementPending: safe retry of same transaction
+  SettlementPending --> SettlementRecovery: timeout or uncertain result
+  SettlementRecovery --> Settled: network reconciliation
+  SettlementRecovery --> SettlementPending: safe retry of same transaction
+  Settled --> Reconciling
+  Reconciling --> Reconciled
+  Reconciling --> ReconciliationException
   Captured --> Expired
   Classified --> Expired
   AwaitingApprovals --> Expired
   Authorized --> Expired
-  Verified --> Expired
-  Settled --> [*]
+  EvidenceSatisfied --> Expired
+  Captured --> Superseded
+  Classified --> Superseded
+  VerificationQuoted --> Superseded
+  VerificationPaid --> Superseded
+  EvidenceSatisfied --> Superseded
+  AwaitingApprovals --> Superseded
+  Authorized --> Superseded
+  AuthorizationRecovery --> Superseded
+  AuditCommitted --> Cancelled: HCS cancellation before signing
+  Reconciled --> [*]
+  ReconciliationException --> [*]
   Rejected --> [*]
   Expired --> [*]
+  Superseded --> [*]
+  Cancelled --> [*]
 ```
 
 No transition mutates the canonical action. Terminal actions cannot return to an
-executable state.
+executable state. Accounting write-back failure becomes
+`ReconciliationException`; it never changes a successful payment to failed or
+creates another transfer.
+
+`obligationId` is stable across invoice revisions. A database constraint permits
+only one non-terminal payment action for an obligation, and a separate unique
+settlement claim permits at most one successful payment. A correction may
+supersede an action only before the HCS authorization precommit. After that
+precommit, cancellation requires its own successful HCS record and is permitted
+only before signing or submission. After signing, submission, or settlement, a
+correction is a separately governed credit, refund, or adjustment obligation,
+never a replacement payable.
+
+Straight-through authorization also reserves mandate capacity atomically. In the
+same serializable transaction that admits an action, the control plane locks the
+mandate version and period ledger and requires:
+
+```text
+settledAtoms + reservedAtoms + candidateAtoms <= periodCapAtoms
+```
+
+Every term is denominated in the mandate's frozen settlement asset. The
+reservation is unique by action digest. Rejection, expiry, supersession, or
+cancellation releases it; settlement moves it from reserved to settled.
+Uncertain submission retains the reservation until reconciliation. Concurrent
+invoice tests must prove that aggregate reservations cannot exceed the mandate
+cap.
 
 ## Reliable external effects
 
-Database state and network effects cannot be one atomic transaction. CallGuard
-uses a transactional outbox and recoverable saga:
+Database state and network effects cannot be one atomic transaction.
+InvoiceGuard uses a transactional outbox and recoverable saga:
 
 1. lock the action row with optimistic version checking;
 2. write the intended effect and deterministic idempotency key in the same

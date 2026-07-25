@@ -29,7 +29,7 @@
 
 - Sponsor/package/version:
 - First-party documentation URL:
-- Documented fact versus CallGuard design choice:
+- Documented fact versus InvoiceGuard design choice:
 
 ## Operations
 

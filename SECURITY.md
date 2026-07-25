@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-CallGuard is pre-release hackathon software. Only the current `main` branch is
-supported.
+InvoiceGuard is pre-release hackathon software. Only the current `main` branch
+is supported.
 
 ## Reporting a vulnerability
 
