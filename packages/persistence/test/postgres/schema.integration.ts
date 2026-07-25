@@ -19,9 +19,16 @@ import {
   type PaymentAuthorizationContext,
 } from '@invoiceguard/domain';
 import {
+  createAuthorizationBundle,
+  createStandingMandate,
+} from '../../../protocol/src/hashing.js';
+import {
+  actionCore,
   activeMandateAggregate,
   authorization,
   humanAuthorization,
+  policyEvaluationForCore,
+  standingMandate,
 } from '../../../domain/test/fixtures/authorization.js';
 
 import {
@@ -208,6 +215,81 @@ function emptyMandateLedger() {
   return ledger.value;
 }
 
+const { mandateDigest: ignoredMandateDigest, ...standingMandateCore } =
+  standingMandate;
+void ignoredMandateDigest;
+const cappedMandate = createStandingMandate({
+  ...standingMandateCore,
+  mandateId: '019f939b-fe5e-7e92-b72e-8d4531958e02',
+  maximumSettlementInvoiceAmountAtoms: '6000000',
+  maximumSettlementPeriodAmountAtoms: '10000000',
+  maximumSourceInvoiceAmountAtoms: '6000000',
+});
+const cappedMandateAggregate = {
+  record: cappedMandate,
+  state: 'ACTIVE',
+} as const;
+
+function cappedAuthorization(index: 1 | 2) {
+  const suffix = index === 1 ? '1' : '2';
+  const core = {
+    ...actionCore,
+    actionId: `019f939b-fe5e-7e92-b72e-8d4531958e${suffix}1`,
+    nonce:
+      index === 1
+        ? '1123456789abcdef0123456789abcdef'
+        : '2123456789abcdef0123456789abcdef',
+    settlement: {
+      ...actionCore.settlement,
+      amountAtoms: '6000000',
+    },
+    sourceInvoice: {
+      ...actionCore.sourceInvoice,
+      amountAtoms: '6000000',
+      invoiceRevisionId: `019f939b-fe5e-7e92-b72e-8d4531958e${suffix}6`,
+      obligationId: `019f939b-fe5e-7e92-b72e-8d4531958e${suffix}3`,
+    },
+  } as const;
+  const evaluation = policyEvaluationForCore(core);
+  return createAuthorizationBundle(core, {
+    ...evaluation,
+    input: {
+      ...evaluation.input,
+      mandate: {
+        activeStatus: 'ACTIVE',
+        evidencePolicy: cappedMandate.requiredEvidencePolicy,
+        exactContainment: true,
+        periodCapAvailable: true,
+        reference: {
+          mandateDigest: cappedMandate.mandateDigest,
+          mandateId: cappedMandate.mandateId,
+          mandateVersion: cappedMandate.mandateVersion,
+        },
+        sourceRequirement: cappedMandate.sourceRequirement,
+        verificationMode: cappedMandate.verificationMode,
+      },
+    },
+  });
+}
+
+function emptyCappedLedger(
+  frozenAuthorization: ReturnType<typeof cappedAuthorization>,
+) {
+  const containment = validateMandateContainment(
+    frozenAuthorization,
+    cappedMandateAggregate,
+    '2026-07-25T10:00:03.000Z',
+  );
+  if (!containment.ok) {
+    throw new Error(`fixture containment failed: ${containment.error.code}`);
+  }
+  const ledger = createMandateReservationLedger(containment.value);
+  if (!ledger.ok) {
+    throw new Error(`fixture ledger failed: ${ledger.error.code}`);
+  }
+  return ledger.value;
+}
+
 function applyEvent(
   aggregate: PaymentActionAggregate,
   event: PaymentActionEvent,
@@ -221,7 +303,9 @@ function applyEvent(
 }
 
 async function resetPaymentData(): Promise<void> {
-  await sql.unsafe('TRUNCATE payment_actions CASCADE');
+  await sql.unsafe(
+    'TRUNCATE payment_actions, standing_mandate_versions CASCADE',
+  );
 }
 
 async function seedQuoteEvent(): Promise<PaymentActionTransition> {
@@ -488,6 +572,79 @@ describe('PostgreSQL payment repository', () => {
         ) AS challenges
     `;
     expect(counts).toEqual([{ approvals: '2', challenges: '3' }]);
+  });
+
+  it('serializes competing reservations so the mandate cap cannot be exceeded', async () => {
+    await resetPaymentData();
+    const candidates = [cappedAuthorization(1), cappedAuthorization(2)];
+    const ready: PaymentActionAggregate[] = [];
+    for (const candidate of candidates) {
+      const created = createPaymentActionAggregate(candidate);
+      if (!created.ok) {
+        throw new Error(`fixture aggregate failed: ${created.error.code}`);
+      }
+      await repository.create(created.value);
+      const classified = applyEvent(
+        created.value,
+        { type: 'CLASSIFY' },
+        '2026-07-25T10:00:01.000Z',
+      );
+      await repository.applyTransition(classified);
+      const evidenced = applyEvent(
+        classified.aggregate,
+        { type: 'SATISFY_EVIDENCE_NOT_REQUIRED' },
+        '2026-07-25T10:00:02.000Z',
+      );
+      await repository.applyTransition(evidenced);
+      ready.push(evidenced.aggregate);
+    }
+
+    const transitions = ready.map((aggregate, index) => {
+      const candidate = candidates[index];
+      if (candidate === undefined) {
+        throw new Error('capped authorization fixture is missing');
+      }
+      return applyEvent(
+        aggregate,
+        {
+          mandate: cappedMandateAggregate,
+          requestingAgent: requestingAgent(
+            candidate,
+            '2026-07-25T10:00:03.000Z',
+          ),
+          reservationLedger: emptyCappedLedger(candidate),
+          type: 'AUTHORIZE_MANDATE',
+        },
+        '2026-07-25T10:00:03.000Z',
+      );
+    });
+    const results = await Promise.allSettled(
+      transitions.map((transition) => repository.applyTransition(transition)),
+    );
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(
+      1,
+    );
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(
+      1,
+    );
+    const totals = await sql<
+      readonly Readonly<{
+        reservation_count: string;
+        reserved_atoms: string;
+      }>[]
+    >`
+      SELECT
+        count(reservation.action_digest)::text AS reservation_count,
+        ledger.reserved_atoms::text
+      FROM mandate_period_ledgers AS ledger
+      LEFT JOIN mandate_reservations AS reservation
+        USING (organization_id, mandate_id, mandate_version, period_key)
+      GROUP BY ledger.reserved_atoms
+    `;
+    expect(totals).toEqual([
+      { reservation_count: '1', reserved_atoms: '6000000' },
+    ]);
   });
 });
 
