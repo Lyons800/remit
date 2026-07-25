@@ -15,6 +15,9 @@
     "clean": "rm -rf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "@invoiceguard/protocol": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "catalog:"
   }

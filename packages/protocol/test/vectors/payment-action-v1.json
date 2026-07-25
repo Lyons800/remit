@@ -35,15 +35,25 @@
       "digest": "3333333333333333333333333333333333333333333333333333333333333333",
       "obligationId": "019f939b-fe5e-7e92-b72e-8d4531958c32"
     },
-    "supplierId": "019f939b-fe5e-7e92-b72e-8d4531958c34"
+    "supplierId": "019f939b-fe5e-7e92-b72e-8d4531958c34",
+    "supplierSnapshotDigest": "8888888888888888888888888888888888888888888888888888888888888888"
   },
   "decisionInput": {
+    "evidencePolicy": {
+      "digest": "9999999999999999999999999999999999999999999999999999999999999999",
+      "id": "routine-supplier-v1",
+      "version": 1
+    },
     "evaluatedAt": "2026-07-25T10:00:01.000Z",
     "expiresAt": "2026-07-25T11:00:00.000Z",
     "inputRoot": "4444444444444444444444444444444444444444444444444444444444444444",
     "policy": {
       "id": "routine-invoice-policy",
       "version": 1
+    },
+    "purchaseOrder": {
+      "mode": "EXACT_REFERENCE_AND_TOTAL",
+      "result": "EXACT_REFERENCE_AND_TOTAL_MATCH"
     },
     "reasonCodes": [
       "AMOUNT_WITHIN_MANDATE",
@@ -72,8 +82,8 @@
     "verificationMode": "NOT_REQUIRED"
   },
   "expected": {
-    "actionCoreDigest": "f54d3c590b93d0df39e92d26b5d221b790fbf376f22fae5775d73407fa27bb48",
-    "actionDigest": "436bb1b01d25e525570c269ecec5bd2fffde1f8d31ffd000ecb4e4d37d43845e",
-    "policyDecisionDigest": "34e2727e0dae99d0d9a8260f75c02b5dfbbb6b8c745367f209f68f020ebd1a53"
+    "actionCoreDigest": "8fb1564a3da19d29e6f4020e8344b1e1df3d6bf3c682bfb1852d7881724be82c",
+    "actionDigest": "e8ee0ebe0e8b2295bfab88fd7ed6051f72b3bbb61fa184004ad307ef24744252",
+    "policyDecisionDigest": "93560495966328de76ac4c9ad471163e9e29068d7cfe7a3d72be9d825fd4376b"
   }
 }

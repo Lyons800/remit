@@ -64,7 +64,11 @@ export default tseslint.config(
           patterns: [
             {
               group: [
-                '@invoiceguard/*',
+                '@invoiceguard/hedera-settlement-adapter',
+                '@invoiceguard/hedera-x402-adapter',
+                '@invoiceguard/persistence',
+                '@invoiceguard/runtime-config',
+                '@invoiceguard/world-adapter',
                 '@0gfoundation/*',
                 '@hashgraph/*',
                 '@hiero-ledger/*',
@@ -77,7 +81,7 @@ export default tseslint.config(
                 'react-dom',
               ],
               message:
-                'The domain package must remain pure and dependency-free.',
+                'The domain package may depend only on the sponsor-neutral protocol package.',
             },
           ],
         },

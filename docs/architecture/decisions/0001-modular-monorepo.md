@@ -28,6 +28,8 @@ Hedera dependency graphs.
 ## Consequences
 
 - Domain behavior can be tested without networks or frameworks.
+- Domain reducers revalidate canonical protocol envelopes and otherwise remain
+  free of persistence, framework, network, and sponsor dependencies.
 - Sponsor dependencies remain visible and replaceable.
 - The verifier and worker can fail independently.
 - Local development has several processes and needs Docker Compose.

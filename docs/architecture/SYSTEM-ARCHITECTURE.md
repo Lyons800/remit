@@ -97,8 +97,10 @@ packages/
 ```
 
 Dependencies point inward. Sponsor SDKs may be imported only by their dedicated
-adapter packages. Deployables consume validated adapter interfaces; the domain
-package has no network, database, framework, or sponsor dependencies.
+adapter packages. Deployables consume validated adapter interfaces. The domain
+package depends on the sponsor-neutral protocol verification surface so a
+deserialized action or mandate is revalidated before a transition; it has no
+network, database, framework, or sponsor dependency.
 
 ## Interface boundary
 

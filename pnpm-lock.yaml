@@ -145,6 +145,10 @@ importers:
         version: 6.0.3
 
   packages/domain:
+    dependencies:
+      '@invoiceguard/protocol':
+        specifier: workspace:*
+        version: link:../protocol
     devDependencies:
       typescript:
         specifier: 'catalog:'

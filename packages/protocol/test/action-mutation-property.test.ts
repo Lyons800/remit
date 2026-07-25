@@ -162,6 +162,13 @@ const mutations = [
       supplierId: '019f939b-fe5e-7e92-b72e-8d4531958c38',
     }),
   },
+  {
+    label: 'supplier snapshot',
+    mutate: (core) => ({
+      ...core,
+      supplierSnapshotDigest: '6'.repeat(64),
+    }),
+  },
 ] as const satisfies readonly CoreMutation[];
 
 describe('payment-action field mutation properties', () => {
