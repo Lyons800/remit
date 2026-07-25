@@ -253,6 +253,7 @@ export const policyDecisionV1Schema = z
     }
 
     if (
+      decision.route === 'HUMAN_APPROVAL' &&
       decision.reasonCodes.includes('BENEFICIARY_CHANGED') &&
       decision.verificationMode !== 'REQUIRED'
     ) {
