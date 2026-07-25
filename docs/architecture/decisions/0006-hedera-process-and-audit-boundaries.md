@@ -30,8 +30,21 @@ Use separate process and dependency boundaries:
    before signing;
 6. HCS `authorization.v1` is an explicit fail-closed precommit containing the
    hash of either standing-mandate or exception-quorum evidence; and
-7. HCS `execution.v1` is an at-least-once postcommit using one deterministic
-   event ID and an `audit-degraded` recovery state.
+7. queueing settlement atomically persists the aggregate-held exact attempt and
+   an initial `SETTLEMENT_SUBMISSION_REQUEST`; no poller infers first submission
+   from a pending state;
+8. the consensus settlement transaction atomically persists its receipt, one-use
+   consumption, any mandate mutation, and one deterministic
+   `EXECUTION_AUDIT_REQUEST`; and
+9. HCS `execution.v1` is an at-least-once postcommit using that event ID and
+   explicit `SETTLED_AUDIT_PENDING`, `SETTLED_AUDIT_DEGRADED`, and recovered
+   `SETTLED` states.
+
+The execution event ID is derived from the action digest and frozen attempt ID.
+Retry upserts the same logical outbox event. An accepted execution fact must
+bind the authorization audit, attempt, receipt and receipt digest, settlement
+transaction, signed-bytes hash, network, writer account, writer identity, and
+writer key.
 
 The x402 service payment uses HBAR. Final settlement uses the exact HBAR or
 allowlisted HTS fungible asset named by the payment action after the applicable
@@ -50,6 +63,8 @@ evidence.
 - Final settlement pauses when the HCS authorization precommit is unavailable.
 - A postcommit outage cannot reverse a settled transfer, so it is visible and
   recoverable rather than falsely reported as a failed payment.
+- Audit retry cannot recreate a consumption or mandate mutation and cannot
+  change the transfer result; recovery only adds the exact consensus fact.
 
 ## Fallback
 

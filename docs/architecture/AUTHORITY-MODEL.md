@@ -111,12 +111,16 @@ resolves the current tenant-scoped backing principal.
 Only then may the control API construct and persist an adapter-verified approval
 fact containing the exact action digest, decision, role, company subject,
 tenant-scoped agent principal, action-scoped human principal, verification time,
-expiry and the current status of all three authority facts. The domain never
-infers `CURRENT` or `VERIFIED`, and never accepts a browser claim, structural
-status tag or caller-computed quorum. It checks the fact's action, decision,
-role, time, status and independent distinctness again. Persistence must consume
-the underlying proof and approval-session identifiers under uniqueness
-constraints in the same serializable authorization transaction.
+expiry, adapter, approval and decision IDs, approval-session ID, World-proof ID,
+AgentKit challenge ID, signed-proof digest, and the current status of all three
+authority facts. The domain never infers `CURRENT` or `VERIFIED`, and never
+accepts a browser claim, structural status tag or caller-computed quorum. It
+checks the fact's action, decision, role, time, status and independent
+distinctness again. A refresh may advance `verifiedAt` and current status, but
+cannot substitute any proof identity or extend the originally admitted expiry.
+Persistence must consume the decision, proof, challenge, approval-session, and
+company-subject, AgentBook-principal, and action-human-principal claims under
+uniqueness constraints in the same serializable authorization transaction.
 
 ## Exact-agent execution
 
@@ -127,14 +131,17 @@ short-lived challenge containing the action digest. The gateway verifies the
 signature, exact URI, resource, statement, method, chain, nonce, expiry, and
 current AgentBook mapping.
 
-The frozen policy also names the required executor role, scope, audience,
-tenant-binding rule, subject-binding rule, and immutable grant ID, version and
-digest. An adapter-verified execution fact records those fields, the current
-grant status, the AgentBook registry and backing record, and its verification
-window. Hydration proves that a retained fact was valid at the transition that
-used it; it does not turn historical evidence into perpetual authority. Audit
-commit, settlement freeze, and retry each re-resolve the backing and grant and
-must match the frozen policy and original requesting-agent identity exactly.
+The frozen policy also names the executor adapter, required role, scope,
+audience, tenant-binding rule, subject-binding rule, and immutable grant ID,
+version and digest. An adapter-verified execution fact records those fields, the
+current grant status, the AgentBook registry and backing record, its AgentKit
+challenge and signed-proof digest, immutable fact ID, and verification window.
+Hydration proves that a retained fact was valid at the transition that used it;
+it does not turn historical evidence into perpetual authority. Authorization,
+audit commit, settlement freeze, and retry each re-resolve the backing and grant
+and must match the frozen adapter, policy, signed-proof identity, fact identity,
+and original validity ceiling exactly. A refresh may be newer and shorter lived;
+it cannot extend the original authorization.
 
 AgentKit proves that the wallet is registered to a World ID human. It does not
 prove that the backing human reviewed this payment at signing time; the
@@ -202,7 +209,8 @@ AND every required decision has a valid company role
 AND every used World proof, approval session, and agent challenge was atomically consumed once
 AND either:
     frozen verification mode is NOT_REQUIRED
-    OR the configured verification envelope is valid and MATCH
+    OR the configured verification envelope is valid, MATCH, and unexpired
+       at every transition that creates a new effect
 AND mandate or human decisions, verification mode or result, and agent execution bind the same digest and policy
 AND requested settlement is byte-for-byte within the authorized effect
 ```
