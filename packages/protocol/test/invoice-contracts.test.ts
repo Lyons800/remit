@@ -153,6 +153,9 @@ function validMandate() {
     requiredEvidencePolicy: {
       digest: DIGEST,
       id: 'routine-supplier-v1',
+      serviceId: 'supplier-verifier-v1',
+      serviceKeyId: 'supplier-verifier-key-1',
+      serviceNetworkId: 'hedera:296',
       version: 1,
     },
     schemaVersion: 1,

@@ -52,6 +52,9 @@ export const standingMandate = createStandingMandate({
   requiredEvidencePolicy: {
     digest: DIGESTS.evidencePolicy,
     id: 'routine-supplier-v1',
+    serviceId: 'supplier-verifier-v1',
+    serviceKeyId: 'supplier-verifier-key-1',
+    serviceNetworkId: 'hedera:296',
     version: 1,
   },
   schemaVersion: 1,
@@ -119,10 +122,26 @@ export function policyEvaluationForCore(
   const core = paymentActionCoreV1Schema.parse(coreInput);
   return {
     config: {
+      executorAuthority: {
+        agentBookRegistry: 'world-agentbook:eip155:480',
+        audience: 'invoiceguard:settlement',
+        grant: {
+          digest: '7'.repeat(64),
+          id: 'payment-executor-grant',
+          version: 1,
+        },
+        requiredRole: 'PAYMENT_EXECUTOR',
+        requiredScope: 'payments:execute',
+        subjectBinding: 'AGENT_ID',
+        tenantBinding: 'ACTION_ORGANIZATION',
+      },
       humanAuthority,
       humanEvidencePolicy: {
         digest: DIGESTS.evidencePolicy,
         id: 'changed-beneficiary-v1',
+        serviceId: 'supplier-verifier-v1',
+        serviceKeyId: 'supplier-verifier-key-1',
+        serviceNetworkId: 'hedera:296',
         version: 1,
       },
       humanVerificationMode: 'REQUIRED',

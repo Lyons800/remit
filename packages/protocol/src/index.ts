@@ -1,4 +1,5 @@
 export * from './errors.js';
+export * from './actions/authorization-references.v1.js';
 export * from './primitives.js';
 export * from './actions/payment-action-core.v1.js';
 export * from './actions/payment-authorization-intent.v1.js';

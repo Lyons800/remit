@@ -11,6 +11,10 @@ import {
   uuidV7Schema,
 } from '../primitives.js';
 import { verificationModeSchema } from '../invoices/standing-mandate.v1.js';
+import {
+  evidencePolicyReferenceSchema,
+  executorAuthorityPolicySchema,
+} from './authorization-references.v1.js';
 import { policyReferenceSchema } from './payment-action-core.v1.js';
 import { policyInputManifestV1Schema } from './policy-input.v1.js';
 
@@ -148,16 +152,11 @@ const authorityRequirementsSchema = z
 export const policyDecisionV1Schema = z
   .object({
     actionCoreDigest: sha256DigestSchema,
-    evidencePolicy: z
-      .object({
-        digest: sha256DigestSchema,
-        id: nonEmptyBoundedStringSchema,
-        version: positiveSafeIntegerSchema,
-      })
-      .strict(),
+    evidencePolicy: evidencePolicyReferenceSchema,
     evaluatedAt: utcInstantSchema,
     expiresAt: utcInstantSchema,
     inputManifest: policyInputManifestV1Schema,
+    requiredExecutor: executorAuthorityPolicySchema,
     policy: policyReferenceSchema,
     purchaseOrder: z
       .object({

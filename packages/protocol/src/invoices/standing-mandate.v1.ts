@@ -8,7 +8,6 @@ import {
   caip19Network,
   caip19Schema,
   caip2Schema,
-  nonEmptyBoundedStringSchema,
   positiveAtomsSchema,
   positiveSafeIntegerSchema,
   schemaVersionV1Schema,
@@ -16,6 +15,7 @@ import {
   utcInstantSchema,
   uuidV7Schema,
 } from '../primitives.js';
+import { evidencePolicyReferenceSchema } from '../actions/authorization-references.v1.js';
 
 export const verificationModeSchema = z.enum(['NOT_REQUIRED', 'REQUIRED']);
 
@@ -45,13 +45,7 @@ export const standingMandateCoreV1Schema = z
         ]),
       })
       .strict(),
-    requiredEvidencePolicy: z
-      .object({
-        digest: sha256DigestSchema,
-        id: nonEmptyBoundedStringSchema,
-        version: positiveSafeIntegerSchema,
-      })
-      .strict(),
+    requiredEvidencePolicy: evidencePolicyReferenceSchema,
     schemaVersion: schemaVersionV1Schema,
     settlementAssetId: caip19Schema,
     settlementBeneficiary: caip10Schema,
