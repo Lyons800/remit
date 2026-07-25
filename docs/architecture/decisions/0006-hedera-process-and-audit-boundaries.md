@@ -1,0 +1,68 @@
+# ADR 0006: Hedera process and audit boundaries
+
+- Status: accepted
+- Date: 2026-07-25
+
+## Context
+
+CallGuard uses Hedera both to purchase a verifier resource through x402 and to
+execute a later approved financial operation. Those effects are not atomic.
+Current `@x402/hedera` and Hedera Agent Kit releases also resolve different
+Hiero SDK versions, whose class instances must not be mixed.
+
+Agent Kit's built-in HCS hook runs after autonomous tool execution, does not
+cover `RETURN_BYTES`, and catches publication errors. It cannot be the
+settlement integrity gate.
+
+## Decision
+
+Use separate process and dependency boundaries:
+
+1. x402 buyer/resource/facilitator code pins `@x402/hedera@2.19.0`,
+   `@x402/core@2.19.0`, and `@hiero-ledger/sdk@2.85.0`;
+2. settlement code pins `@hashgraph/hedera-agent-kit@4.0.0` and
+   `@hiero-ledger/sdk@2.81.0`;
+3. the boundary exchanges only validated JSON, decimal strings, identifiers, and
+   base64 transaction bytes;
+4. a custom Agent Kit tool accepts only an action digest, loads the immutable
+   action itself, and returns unsigned frozen transaction bytes;
+5. a deterministic signing guard decodes and validates the entire transaction
+   before signing;
+6. HCS `approval.v1` is an explicit fail-closed precommit; and
+7. HCS `execution.v1` is an at-least-once postcommit using one deterministic
+   event ID and an `audit-degraded` recovery state.
+
+Both Hedera transfers carry a public digest-only memo. HCS contains hashes and
+public transaction references, never beneficiary data or private evidence.
+
+## Consequences
+
+- `/verify` is never treated as payment; the verifier waits for a `SUCCESS`
+  settlement receipt.
+- The x402 payment and company transfer are joined by protocol evidence and
+  durable state, not presented as an atomic ledger operation.
+- More processes are deployed, but key custody and incompatible SDK graphs
+  remain isolated.
+- Final settlement pauses when the HCS approval precommit is unavailable.
+- A postcommit outage cannot reverse a settled transfer, so it is visible and
+  recoverable rather than falsely reported as a failed payment.
+
+## Fallback
+
+If x402 2.19 fails its live signature/preflight smoke tests, use the official
+scaffold's locked `2.13.2 / 2.14.0 / 2.80.0` graph. Keep CallGuard's digest/memo
+checks, wait for the consensus receipt, and document that the older `/verify`
+discovers an invalid payer signature only during settlement.
+
+If Agent Kit v4 is unstable, construct the same transaction directly through the
+pinned Hiero SDK. Do not claim Agent Kit use unless it remains on the executed
+path.
+
+## First-party sources
+
+- [Official x402 scaffold](https://github.com/hedera-dev/scaffold-hbar/tree/templates/x402-pay-per-use)
+- [`@x402/hedera@2.19.0` manifest](https://registry.npmjs.org/@x402%2Fhedera/2.19.0)
+- [Hedera Agent Kit repository](https://github.com/hashgraph/hedera-agent-kit-js)
+- [Agent Kit `RETURN_BYTES` documentation](https://github.com/hashgraph/hedera-agent-kit-js/blob/main/docs/MCP.md)
+- [Agent Kit hooks and policies](https://github.com/hashgraph/hedera-agent-kit-js/blob/main/docs/HOOKS_AND_POLICIES.md)
+- [HCS message submission](https://docs.hedera.com/native/consensus/submit-message)
