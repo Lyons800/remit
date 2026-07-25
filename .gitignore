@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+.turbo/
+dist/
+build/
+coverage/
+playwright-report/
+test-results/
+
+# Runtime state
+*.log
+*.pid
+tmp/
+.cache/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.keystore
+*.mnemonic
+
+# Live evidence may contain identifiers or signed payloads.
+artifacts/live/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Package-manager debug logs
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
