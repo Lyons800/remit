@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    "declaration": false,
+    "declarationMap": false,
+    "lib": ["DOM", "DOM.Iterable", "ES2024"],
+    "noEmit": true
+  },
+  "include": ["tests/**/*.ts"]
+}

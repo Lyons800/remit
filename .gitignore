@@ -6,9 +6,12 @@ node_modules/
 .turbo/
 dist/
 build/
+!docs/build/
+!docs/build/**
 coverage/
 playwright-report/
 test-results/
+*.tsbuildinfo
 
 # Runtime state
 *.log
