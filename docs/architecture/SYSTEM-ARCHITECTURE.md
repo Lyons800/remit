@@ -479,6 +479,7 @@ stateDiagram-v2
   EvidenceSatisfied --> AwaitingApprovals: exception policy
   AwaitingApprovals --> Authorized: delegate + fresh-human quorum
   AwaitingApprovals --> Rejected: policy refusal
+  Authorized --> Rejected: authorization withdrawn + reservation release
   Authorized --> AuditCommitted: HCS authorization receipt
   Authorized --> AuthorizationRecovery: HCS precommit unavailable
   AuthorizationRecovery --> AuditCommitted: HCS retry succeeds
@@ -520,17 +521,37 @@ executable state. Accounting write-back failure becomes
 `ReconciliationException`; it never changes a successful payment to failed or
 creates another transfer.
 
-`obligationId` is stable across invoice revisions. A database constraint permits
-only one non-terminal payment action for an obligation, and a separate unique
-settlement claim permits at most one successful payment. A correction may
-supersede an action only before the HCS authorization precommit. After that
-precommit, cancellation requires its own successful HCS record and is permitted
-only before signing or submission. After signing, submission, or settlement, a
-correction is a separately governed credit, refund, or adjustment obligation,
-never a replacement payable.
+The persisted aggregate is not a state label beside an authorization. It carries
+the reverified authorization bundle, monotonic version and transition metadata,
+verification payment and evidence records, a discriminated human or mandate
+authorization basis, authorization precommit, fresh execution-authority facts,
+the original frozen settlement attempt, uncertainty, receipt, one-use
+consumption claim, and terminal record as required by its state. Hydration
+recomputes every record digest and rejects a state whose prerequisite records or
+last transition are absent.
 
-Straight-through authorization also reserves mandate capacity atomically. In the
-same serializable transaction that admits an action, the control plane locks the
+Both authorization routes revalidate the enrolled requesting agent's current
+company role and AgentBook backing before settlement is frozen. The human route
+also revalidates the exact originally counted approval identities and current
+statuses. The mandate route revalidates the active mandate version and original
+`RESERVED` claim against the current period ledger.
+
+`obligationId` is stable across invoice revisions. The persistence contract
+defines unique organization-scoped keys for action ID and digest, obligation,
+invoice revision, nonce, settlement idempotency key, attempt, receipt,
+consumption claim, mandate reservation, mandate version, approval, and approval
+consumption. It also requires one non-terminal action and at most one successful
+settlement per obligation. The physical PostgreSQL constraints arrive with the
+PR 3 persistence implementation; adapters must already satisfy this contract. A
+correction may supersede an action only before the HCS authorization precommit.
+After that precommit, cancellation requires its own successful HCS record and is
+permitted only before signing or submission. After signing, submission, or
+settlement, a correction is a separately governed credit, refund, or adjustment
+obligation, never a replacement payable.
+
+Straight-through authorization returns an explicit mandate reservation write
+alongside the new aggregate. Persistence must apply both atomically. In the same
+serializable transaction that admits an action, the control plane locks the
 mandate version and period ledger and requires:
 
 ```text
@@ -539,10 +560,11 @@ settledAtoms + reservedAtoms + candidateAtoms <= periodCapAtoms
 
 Every term is denominated in the mandate's frozen settlement asset. The
 reservation is unique by action digest. Rejection, expiry, supersession, or
-cancellation releases it; settlement moves it from reserved to settled.
-Uncertain submission retains the reservation until reconciliation. Concurrent
-invoice tests must prove that aggregate reservations cannot exceed the mandate
-cap.
+cancellation before an external effect returns a `RELEASE` write; settlement
+returns `SETTLE` with the receipt and one-use consumption write in the same
+atomic group. Uncertain submission returns no release and retains the
+reservation until reconciliation. Concurrent invoice tests must prove that
+aggregate reservations cannot exceed the mandate cap.
 
 ## Reliable external effects
 
@@ -553,12 +575,17 @@ InvoiceGuard uses a transactional outbox and recoverable saga:
 2. write the intended effect and deterministic idempotency key in the same
    database transaction as the state transition;
 3. have the worker claim the outbox item;
-4. freeze and persist the exact signed network transaction bytes before
-   submission, including its transaction ID and bytes hash;
+4. freeze and persist one attempt before submission, including attempt ID,
+   deterministic idempotency key, exact action and effect digest, transaction
+   ID, signed bytes hash, network, adapter, status, and time window;
 5. submit once and reconcile an uncertain result through the network/Mirror
    before any retry;
-6. resubmit only the same signed transaction when supported; and
-7. mark the action consumed only from a valid consensus receipt.
+6. resubmit only the aggregate-held original attempt when supported; a caller
+   cannot prove sameness by presenting two matching candidate hashes;
+7. accept a receipt only when its attempt, transaction, signed bytes, effect,
+   network, action, and idempotency fields all match that original; and
+8. mark the action consumed only by an exact receipt-bound claim in the same
+   serializable write as the aggregate and mandate ledger.
 
 Every request carries `actionId`, `actionDigest`, `attemptId`, `traceId`, and
 the source commit SHA.

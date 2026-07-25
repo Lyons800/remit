@@ -1,3 +1,8 @@
+import {
+  createAdapterRecord,
+  hasExactKeys,
+  hasValidAdapterRecordDigest,
+} from '../facts/adapter-record.js';
 import { accept, refuse, type DomainResult } from '../result.js';
 import { isCanonicalUtcInstant } from '../state/temporal.js';
 import {
@@ -13,30 +18,69 @@ export type ApprovalRequirement = Readonly<{
   roles: readonly Readonly<{ count: number; role: string }>[];
 }>;
 
-export type AdapterVerifiedApprovalFact = Readonly<{
+export type ApprovalBinding = Readonly<{
+  actionDigest: string;
+  actionId: string;
+  invoiceRevisionId: string;
+  minimumVerifiedAt: string;
+  nonce: string;
+  obligationId: string;
+  organizationId: string;
+}>;
+
+export type AdapterVerifiedApprovalFactCore = Readonly<{
   actionDigest: string;
   actionHumanPrincipal: string;
+  actionId: string;
+  adapterId: string;
+  agentBackingRecordId: string;
   agentBackingStatus: 'CURRENT' | 'STALE' | 'UNVERIFIED';
   agentTenantPrincipal: string;
+  approvalId: string;
   companyRoleStatus: 'CURRENT' | 'EXPIRED' | 'REVOKED' | 'UNVERIFIED';
+  consumptionClaimId: string;
   decision: 'APPROVE';
+  decisionId: string;
   expiresAt: string;
   humanDecisionStatus: 'REPLAYED' | 'STALE' | 'UNVERIFIED' | 'VERIFIED';
+  invoiceRevisionId: string;
+  kind: 'APPROVAL_FACT';
+  nonce: string;
+  obligationId: string;
+  organizationId: string;
   role: string;
+  roleCredentialId: string;
   subjectId: string;
   verifiedAt: string;
 }>;
 
+export type AdapterVerifiedApprovalFact = Readonly<
+  AdapterVerifiedApprovalFactCore & { recordDigest: string }
+>;
+
 const APPROVAL_KEYS = [
   'actionDigest',
   'actionHumanPrincipal',
+  'actionId',
+  'adapterId',
+  'agentBackingRecordId',
   'agentBackingStatus',
   'agentTenantPrincipal',
+  'approvalId',
   'companyRoleStatus',
+  'consumptionClaimId',
   'decision',
+  'decisionId',
   'expiresAt',
   'humanDecisionStatus',
+  'invoiceRevisionId',
+  'kind',
+  'nonce',
+  'obligationId',
+  'organizationId',
+  'recordDigest',
   'role',
+  'roleCredentialId',
   'subjectId',
   'verifiedAt',
 ] as const;
@@ -47,18 +91,15 @@ const REQUIREMENT_KEYS = [
   'roles',
 ] as const;
 const ROLE_REQUIREMENT_KEYS = ['count', 'role'] as const;
-
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
-): boolean {
-  const actual = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
-  return (
-    actual.length === sortedExpected.length &&
-    actual.every((key, index) => key === sortedExpected[index])
-  );
-}
+const BINDING_KEYS = [
+  'actionDigest',
+  'actionId',
+  'invoiceRevisionId',
+  'minimumVerifiedAt',
+  'nonce',
+  'obligationId',
+  'organizationId',
+] as const;
 
 function validateRequirement(
   input: unknown,
@@ -89,7 +130,7 @@ function validateRequirement(
     return refuse('APPROVAL_REQUIREMENT_INVALID');
   }
 
-  const roles: Readonly<{ count: number; role: string }>[] = [];
+  const roles: { count: number; role: string }[] = [];
   for (const candidate of input.roles) {
     if (
       !isRecord(candidate) ||
@@ -120,14 +161,56 @@ function validateRequirement(
   );
 }
 
-function parseApprovalFact(input: unknown): AdapterVerifiedApprovalFact | null {
+function parseBinding(input: unknown): ApprovalBinding | null {
   if (
     !isRecord(input) ||
-    !hasExactKeys(input, APPROVAL_KEYS) ||
+    !hasExactKeys(input, BINDING_KEYS) ||
+    !isSha256Digest(input.actionDigest) ||
+    !isNonEmptyBoundedString(input.actionId) ||
+    !isNonEmptyBoundedString(input.invoiceRevisionId) ||
+    !isCanonicalUtcInstant(
+      typeof input.minimumVerifiedAt === 'string'
+        ? input.minimumVerifiedAt
+        : '',
+    ) ||
+    !isNonEmptyBoundedString(input.nonce) ||
+    !isNonEmptyBoundedString(input.obligationId) ||
+    !isNonEmptyBoundedString(input.organizationId)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    actionDigest: input.actionDigest,
+    actionId: input.actionId,
+    invoiceRevisionId: input.invoiceRevisionId,
+    minimumVerifiedAt: input.minimumVerifiedAt as string,
+    nonce: input.nonce,
+    obligationId: input.obligationId,
+    organizationId: input.organizationId,
+  });
+}
+
+function parseApprovalCore(
+  input: unknown,
+): AdapterVerifiedApprovalFactCore | null {
+  if (
+    !isRecord(input) ||
+    input.kind !== 'APPROVAL_FACT' ||
     !isSha256Digest(input.actionDigest) ||
     !isNonEmptyBoundedString(input.actionHumanPrincipal) ||
+    !isNonEmptyBoundedString(input.actionId) ||
+    !isNonEmptyBoundedString(input.adapterId) ||
+    !isNonEmptyBoundedString(input.agentBackingRecordId) ||
     !isNonEmptyBoundedString(input.agentTenantPrincipal) ||
+    !isNonEmptyBoundedString(input.approvalId) ||
+    !isNonEmptyBoundedString(input.consumptionClaimId) ||
+    !isNonEmptyBoundedString(input.decisionId) ||
+    !isNonEmptyBoundedString(input.invoiceRevisionId) ||
+    !isNonEmptyBoundedString(input.nonce) ||
+    !isNonEmptyBoundedString(input.obligationId) ||
+    !isNonEmptyBoundedString(input.organizationId) ||
     !isNonEmptyBoundedString(input.role) ||
+    !isNonEmptyBoundedString(input.roleCredentialId) ||
     !isNonEmptyBoundedString(input.subjectId) ||
     !isCanonicalUtcInstant(
       typeof input.verifiedAt === 'string' ? input.verifiedAt : '',
@@ -154,25 +237,83 @@ function parseApprovalFact(input: unknown): AdapterVerifiedApprovalFact | null {
   return Object.freeze({
     actionDigest: input.actionDigest,
     actionHumanPrincipal: input.actionHumanPrincipal,
+    actionId: input.actionId,
+    adapterId: input.adapterId,
+    agentBackingRecordId: input.agentBackingRecordId,
     agentBackingStatus: input.agentBackingStatus,
     agentTenantPrincipal: input.agentTenantPrincipal,
+    approvalId: input.approvalId,
     companyRoleStatus: input.companyRoleStatus,
+    consumptionClaimId: input.consumptionClaimId,
     decision: input.decision,
+    decisionId: input.decisionId,
     expiresAt: input.expiresAt as string,
     humanDecisionStatus: input.humanDecisionStatus,
+    invoiceRevisionId: input.invoiceRevisionId,
+    kind: input.kind,
+    nonce: input.nonce,
+    obligationId: input.obligationId,
+    organizationId: input.organizationId,
     role: input.role,
+    roleCredentialId: input.roleCredentialId,
     subjectId: input.subjectId,
     verifiedAt: input.verifiedAt as string,
   });
 }
 
+export function createAdapterVerifiedApprovalFact(
+  coreInput: AdapterVerifiedApprovalFactCore,
+): AdapterVerifiedApprovalFact {
+  const core = parseApprovalCore(coreInput);
+  if (core === null) {
+    throw new Error('Invalid adapter-verified approval fact core.');
+  }
+  return createAdapterRecord('APPROVAL_FACT', core);
+}
+
+export function parseAdapterVerifiedApprovalFact(
+  input: unknown,
+): AdapterVerifiedApprovalFact | null {
+  if (
+    !isRecord(input) ||
+    !hasExactKeys(input, APPROVAL_KEYS) ||
+    !hasValidAdapterRecordDigest(input, 'APPROVAL_FACT')
+  ) {
+    return null;
+  }
+  const { recordDigest, ...candidateCore } = input;
+  const core = parseApprovalCore(candidateCore);
+  return core === null
+    ? null
+    : Object.freeze({ ...core, recordDigest: recordDigest as string });
+}
+
+function matchesBinding(
+  fact: AdapterVerifiedApprovalFact,
+  binding: ApprovalBinding,
+): boolean {
+  return (
+    fact.actionDigest === binding.actionDigest &&
+    fact.actionId === binding.actionId &&
+    fact.organizationId === binding.organizationId &&
+    fact.obligationId === binding.obligationId &&
+    fact.invoiceRevisionId === binding.invoiceRevisionId &&
+    fact.nonce === binding.nonce
+  );
+}
+
+function hasDuplicate(values: readonly string[]): boolean {
+  return new Set(values).size !== values.length;
+}
+
 export function validateApprovalQuorum(
-  actionDigest: string,
+  bindingInput: unknown,
   requirementInput: unknown,
   approvalsInput: unknown,
   now: string,
 ): DomainResult<readonly AdapterVerifiedApprovalFact[]> {
-  if (!isSha256Digest(actionDigest) || !isCanonicalUtcInstant(now)) {
+  const binding = parseBinding(bindingInput);
+  if (binding === null || !isCanonicalUtcInstant(now)) {
     return refuse('APPROVAL_FACT_INVALID');
   }
 
@@ -188,11 +329,15 @@ export function validateApprovalQuorum(
 
   const approvals: AdapterVerifiedApprovalFact[] = [];
   for (const input of approvalsInput) {
-    const approval = parseApprovalFact(input);
-    if (approval === null || approval.verifiedAt >= approval.expiresAt) {
+    const approval = parseAdapterVerifiedApprovalFact(input);
+    if (
+      approval === null ||
+      approval.verifiedAt >= approval.expiresAt ||
+      approval.verifiedAt < binding.minimumVerifiedAt
+    ) {
       return refuse('APPROVAL_FACT_INVALID');
     }
-    if (approval.actionDigest !== actionDigest) {
+    if (!matchesBinding(approval, binding)) {
       return refuse('ACTION_DIGEST_MISMATCH');
     }
     if (approval.companyRoleStatus === 'EXPIRED') {
@@ -217,6 +362,14 @@ export function validateApprovalQuorum(
       return refuse('APPROVAL_STALE');
     }
     approvals.push(approval);
+  }
+
+  if (
+    hasDuplicate(approvals.map(({ approvalId }) => approvalId)) ||
+    hasDuplicate(approvals.map(({ decisionId }) => decisionId)) ||
+    hasDuplicate(approvals.map(({ consumptionClaimId }) => consumptionClaimId))
+  ) {
+    return refuse('REPLAY_DETECTED');
   }
 
   const requiredRoles = new Set(requirement.roles.map(({ role }) => role));
@@ -257,11 +410,9 @@ export function validateApprovalQuorum(
   if (distinctSubjects.size < requirement.companySubjectQuorum) {
     return refuse('SUBJECT_NOT_DISTINCT');
   }
-
   if (distinctAgents.size < requirement.agentBookQuorum) {
     return refuse('AGENT_PRINCIPAL_NOT_DISTINCT');
   }
-
   if (distinctActionHumans.size < requirement.actionHumanQuorum) {
     return refuse('ACTION_HUMAN_NOT_DISTINCT');
   }
@@ -270,7 +421,7 @@ export function validateApprovalQuorum(
     (count, role) => count + role.count,
     0,
   );
-  if (approvals.length < requiredCount) {
+  if (approvals.length !== requiredCount) {
     return refuse('APPROVAL_QUORUM_NOT_MET');
   }
 

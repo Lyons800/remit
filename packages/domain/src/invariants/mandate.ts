@@ -39,6 +39,13 @@ export type MandateReservationMutation = Readonly<{
   totals: MandateReservationTotals;
 }>;
 
+export type MandateVersionBinding = Readonly<{
+  mandateDigest: string;
+  mandateId: string;
+  mandateVersion: number;
+  organizationId: string;
+}>;
+
 const CLAIM_KEYS = [
   'actionDigest',
   'mandateDigest',
@@ -59,6 +66,12 @@ const LEDGER_KEYS = [
 ] as const;
 const PERIOD_KEY_PATTERN =
   /^(?:UTC_DAY:\d{4}-\d{2}-\d{2}|UTC_MONTH:\d{4}-\d{2})$/u;
+const VERSION_BINDING_KEYS = [
+  'mandateDigest',
+  'mandateId',
+  'mandateVersion',
+  'organizationId',
+] as const;
 
 function hasExactKeys(
   value: Record<string, unknown>,
@@ -117,6 +130,25 @@ function parseEntry(input: unknown): MandateReservationEntry | null {
     actionDigest: input.actionDigest,
     amountAtoms: input.amountAtoms as string,
     status: input.status,
+  });
+}
+
+function parseVersionBinding(input: unknown): MandateVersionBinding | null {
+  if (
+    !isRecord(input) ||
+    !hasExactKeys(input, VERSION_BINDING_KEYS) ||
+    !isSha256Digest(input.mandateDigest) ||
+    !isNonEmptyBoundedString(input.mandateId) ||
+    !isPositiveSafeInteger(input.mandateVersion) ||
+    !isNonEmptyBoundedString(input.organizationId)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    mandateDigest: input.mandateDigest,
+    mandateId: input.mandateId,
+    mandateVersion: input.mandateVersion,
+    organizationId: input.organizationId,
   });
 }
 
@@ -441,4 +473,32 @@ export function validateActiveMandateReservation(
   }
 
   return accept(existing);
+}
+
+export function validateMandateVersionBinding(
+  existingInput: unknown,
+  candidateInput: unknown,
+): DomainResult<MandateVersionBinding> {
+  if (!Array.isArray(existingInput)) {
+    return refuse('MANDATE_RECORD_INVALID');
+  }
+  const candidate = parseVersionBinding(candidateInput);
+  if (candidate === null) {
+    return refuse('MANDATE_RECORD_INVALID');
+  }
+  for (const input of existingInput) {
+    const existing = parseVersionBinding(input);
+    if (existing === null) {
+      return refuse('MANDATE_RECORD_INVALID');
+    }
+    if (
+      existing.organizationId === candidate.organizationId &&
+      existing.mandateId === candidate.mandateId &&
+      existing.mandateVersion === candidate.mandateVersion &&
+      existing.mandateDigest !== candidate.mandateDigest
+    ) {
+      return refuse('MANDATE_VERSION_DIGEST_CONFLICT');
+    }
+  }
+  return accept(candidate);
 }
