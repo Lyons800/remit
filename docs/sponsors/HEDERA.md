@@ -1,8 +1,8 @@
 # Hedera integration contract
 
-Status: architecture contract pending live spikes.
+Status: AP-bound offline contract implemented; live spikes still pending.
 
-Checked: 2026-07-25.
+Checked: 2026-07-26.
 
 ## Why Hedera is load-bearing
 
@@ -42,23 +42,32 @@ The dependency graphs remain in separate workspace packages and processes.
 `@hashgraph/sdk` and `@hiero-ledger/sdk` are distinct packages, not aliases. No
 Hedera SDK object crosses a process boundary.
 
+The first offline integration slice lives in `packages/hedera-x402-adapter`. It
+converts the AP effect's CAIP-2 identifier `hedera:296` to the x402 SDK
+identifier `hedera:testnet`, validates only canonical Hedera entity IDs at the
+wire boundary, and emits raw lowercase 64-hex SHA-256 digests. Prefixed digest
+strings are rejected.
+
 ## x402 purchase
 
 The verifier endpoint is:
 
 ```text
-POST /v1/supplier-evidence-checks/{actionDigest}
+POST /v2/supplier-evidence-checks/{actionDigest}
 ```
 
-1. The service recomputes the body digest and matches it to the route.
+1. The adapter derives the request only from a revalidated
+   `AuthorizationBundleV1`, its exact `VerificationQuoteRequestEffect`, the
+   frozen invoice revision, and the verified supplier snapshot.
 2. Without payment, it returns HTTP 402 requirements for `hedera:testnet`, HBAR
    asset `0.0.0`, an exact tinybar amount, concrete service receiver, short
-   expiry, challenge ID, facilitator, and action digest.
+   expiry, challenge ID, facilitator fee payer, action digest, request digest,
+   evidence-policy digest, service identity, key, and AP network ID.
 3. The payment agent creates a native Hedera `TransferTransaction`, signs the
    buyer debit, and uses:
 
    ```text
-   invoiceguard:x402:v1:<64-hex-action-digest>
+   invoiceguard:x402:v2:<64-hex-request-digest>
    ```
 
    as its public memo.
@@ -69,11 +78,38 @@ POST /v1/supplier-evidence-checks/{actionDigest}
    and awaits its consensus receipt.
 6. The verifier releases the resource only after `/settle` returns a `SUCCESS`
    receipt. `/verify` alone is never proof of payment.
-7. A signed service attestation binds the action digest, result, policy, x402
-   transaction ID, payer, amount, issue time, and expiry.
+7. A signed facilitator attestation binds the AP action, request, quote,
+   challenge, resource, exact payment terms, payment attempt, transaction ID,
+   payer, and consensus time.
+8. A separately signed service result binds that accepted payment, the frozen
+   evidence root, result, reason codes, issue time, and expiry. Only then does
+   the adapter construct the domain's adapter-verified payment and evidence
+   facts.
+
+Both signed JSON boundaries reject missing or additional fields. Version 2 has
+fixed digest and Ed25519 vectors in the offline tests.
 
 Version 2.19 requires wiring the released payer-signature verifier and preflight
 callback. A live smoke test is a gate, not an assumption.
+
+## Recovery seam
+
+Offline recovery distinguishes `CLAIMED`, `PREPARED`, and `CONSENSUS` payment
+attempts. Once fully signed transaction bytes are prepared, retries must reuse
+their exact canonical Base64 bytes, SHA-256 byte hash, and transaction ID. A
+durable consensus record is loaded before applying live-window expiry, while a
+new payment cannot begin after the AP effect or quote expires.
+
+The adapter does not implement or duplicate the application persistence layer.
+`VerificationEffectIdentitySource` is the explicit prerequisite seam for the
+durable event identity that is not currently carried by
+`VerificationQuoteRequestEffect`; the adapter never invents one. The
+application-owned store must make claims and state advances durable before any
+submission.
+
+This slice performs no network calls, signs no live transaction, creates no
+runtime environment variables, and provides no G4 or G5 evidence. Consensus
+attestations still require a later live integration and smoke test.
 
 ## Supplier-evidence result
 
