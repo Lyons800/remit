@@ -17,6 +17,11 @@ import {
   transitionStandingMandate,
   type PaymentActionEvent,
 } from '../src/index.js';
+import {
+  MANDATE_EXPIRES_AT,
+  activeMandateAggregate,
+  standingMandate,
+} from './fixtures/authorization.js';
 
 const NOW = '2026-07-25T10:00:00.000Z';
 const LATER = '2026-07-25T11:00:00.000Z';
@@ -162,76 +167,126 @@ describe('invoice-revision lifecycle', () => {
 });
 
 describe('standing-mandate lifecycle', () => {
-  const activeWindow = {
-    expiresAt: LATER,
-    notBefore: BEFORE,
-    now: NOW,
+  const issuedMandate = {
+    record: standingMandate,
+    state: 'ISSUED',
   } as const;
 
   it('activates, pauses, resumes, and expires only inside its time window', () => {
     expect(
-      transitionStandingMandate('ISSUED', {
-        ...activeWindow,
-        type: 'ACTIVATE',
-      }),
-    ).toEqual({ ok: true, value: 'ACTIVE' });
-    expect(transitionStandingMandate('ACTIVE', { type: 'PAUSE' })).toEqual({
+      transitionStandingMandate(
+        issuedMandate,
+        { type: 'ACTIVATE' },
+        { now: NOW },
+      ),
+    ).toEqual({
       ok: true,
-      value: 'PAUSED',
+      value: { record: standingMandate, state: 'ACTIVE' },
     });
     expect(
-      transitionStandingMandate('PAUSED', {
-        ...activeWindow,
-        type: 'RESUME',
-      }),
-    ).toEqual({ ok: true, value: 'ACTIVE' });
+      transitionStandingMandate(
+        activeMandateAggregate,
+        { type: 'PAUSE' },
+        { now: NOW },
+      ),
+    ).toEqual({
+      ok: true,
+      value: { record: standingMandate, state: 'PAUSED' },
+    });
     expect(
-      transitionStandingMandate('ACTIVE', {
-        ...activeWindow,
-        now: LATER,
-        type: 'EXPIRE',
-      }),
-    ).toEqual({ ok: true, value: 'EXPIRED' });
+      transitionStandingMandate(
+        { record: standingMandate, state: 'PAUSED' },
+        { type: 'RESUME' },
+        { now: NOW },
+      ),
+    ).toEqual({
+      ok: true,
+      value: { record: standingMandate, state: 'ACTIVE' },
+    });
+    expect(
+      transitionStandingMandate(
+        activeMandateAggregate,
+        { type: 'EXPIRE' },
+        { now: MANDATE_EXPIRES_AT },
+      ),
+    ).toEqual({
+      ok: true,
+      value: { record: standingMandate, state: 'EXPIRED' },
+    });
   });
 
-  it('rejects early expiry, stale activation, and invalid instants', () => {
+  it('derives all time bounds from the verified mandate record', () => {
     expect(
-      transitionStandingMandate('ACTIVE', {
-        ...activeWindow,
-        type: 'EXPIRE',
-      }),
+      transitionStandingMandate(
+        activeMandateAggregate,
+        { type: 'EXPIRE' },
+        { now: NOW },
+      ),
     ).toMatchObject({
       error: { code: 'MANDATE_NOT_EXPIRED' },
       ok: false,
     });
     expect(
-      transitionStandingMandate('ISSUED', {
-        ...activeWindow,
-        now: LATER,
-        type: 'ACTIVATE',
-      }),
+      transitionStandingMandate(
+        issuedMandate,
+        { type: 'ACTIVATE' },
+        { now: MANDATE_EXPIRES_AT },
+      ),
     ).toMatchObject({
       error: { code: 'MANDATE_NOT_ACTIVE' },
       ok: false,
     });
     expect(
-      transitionStandingMandate('ISSUED', {
-        ...activeWindow,
-        now: 'not-an-instant',
-        type: 'ACTIVATE',
-      }),
+      transitionStandingMandate(
+        issuedMandate,
+        { type: 'ACTIVATE' },
+        { now: 'not-an-instant' },
+      ),
+    ).toMatchObject({
+      error: { code: 'MANDATE_TIME_INVALID' },
+      ok: false,
+    });
+    expect(
+      transitionStandingMandate(
+        issuedMandate,
+        {
+          expiresAt: '2999-01-01T00:00:00.000Z',
+          notBefore: BEFORE,
+          now: NOW,
+          type: 'ACTIVATE',
+        },
+        { now: NOW },
+      ),
     ).toMatchObject({
       error: { code: 'MANDATE_TIME_INVALID' },
       ok: false,
     });
   });
 
-  it('never reopens revoked or expired mandates', () => {
+  it('re-verifies the mandate envelope and never reopens terminal states', () => {
+    expect(
+      transitionStandingMandate(
+        {
+          ...issuedMandate,
+          record: { ...standingMandate, expiresAt: '2999-01-01T00:00:00.000Z' },
+        },
+        { type: 'ACTIVATE' },
+        { now: NOW },
+      ),
+    ).toMatchObject({
+      error: { code: 'MANDATE_RECORD_INVALID' },
+      ok: false,
+    });
+
     for (const state of standingMandateStates.filter(
       isTerminalStandingMandateState,
     )) {
       expect(
-        transitionStandingMandate(state, { type: 'REVOKE' }),
+        transitionStandingMandate(
+          { record: standingMandate, state },
+          { type: 'REVOKE' },
+          { now: NOW },
+        ),
       ).toMatchObject({
         error: { code: 'TERMINAL_STATE' },
         ok: false,
