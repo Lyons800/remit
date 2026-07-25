@@ -96,6 +96,18 @@ describe('non-circular payment authorization hash graph', () => {
     ).toThrow('another action core');
   });
 
+  it('rejects a policy evaluation that predates action creation', () => {
+    expect(() =>
+      createAuthorizationBundle(
+        {
+          ...vectorActionCore,
+          createdAt: '2026-07-25T10:00:02.000Z',
+        },
+        vectorStraightThroughDecision,
+      ),
+    ).toThrow('evaluation chronology');
+  });
+
   it('invalidates a final action mutation while retaining the old digest', () => {
     const bundle = createAuthorizationBundle(
       vectorActionCore,

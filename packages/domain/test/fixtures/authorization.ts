@@ -93,7 +93,7 @@ export const actionCore = {
 
 export const decisionInput = {
   evidencePolicy: standingMandate.requiredEvidencePolicy,
-  evaluatedAt: '2026-07-25T10:00:01.000Z',
+  evaluatedAt: NOW,
   expiresAt: ACTION_EXPIRES_AT,
   inputRoot: DIGESTS.inputRoot,
   policy: actionCore.policy,

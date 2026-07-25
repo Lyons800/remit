@@ -24,6 +24,10 @@ the purchase-order policy and result. The mandate directly binds the mapped
 settlement beneficiary. Domain policy compares these revalidated records rather
 than accepting caller assertions that they matched.
 
+Policy evaluation cannot predate action creation, and authorization cannot
+precede the frozen evaluation time. A mandate version cannot authorize an action
+created before that version's `notBefore`, even if every other field matches.
+
 Sponsor cryptography remains outside the domain. World approval adapters emit a
 separate verified-fact contract whose action, status, validity, role and
 distinctness semantics are checked by the domain.

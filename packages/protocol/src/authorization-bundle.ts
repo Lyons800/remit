@@ -64,9 +64,12 @@ export function createPolicyDecision(
 
   if (
     canonicalizeJson(decision.policy) !== canonicalizeJson(core.policy) ||
-    decision.expiresAt !== core.expiresAt
+    decision.expiresAt !== core.expiresAt ||
+    decision.evaluatedAt < core.createdAt
   ) {
-    throw bindingError('policy identity or expiry differs from action core');
+    throw bindingError(
+      'policy identity, expiry, or evaluation chronology differs from action core',
+    );
   }
 
   return decision;
@@ -85,9 +88,12 @@ export function createPaymentAuthorizationIntent(
 
   if (
     canonicalizeJson(decision.policy) !== canonicalizeJson(core.policy) ||
-    decision.expiresAt !== core.expiresAt
+    decision.expiresAt !== core.expiresAt ||
+    decision.evaluatedAt < core.createdAt
   ) {
-    throw bindingError('policy identity or expiry differs from action core');
+    throw bindingError(
+      'policy identity, expiry, or evaluation chronology differs from action core',
+    );
   }
 
   return paymentAuthorizationIntentV1Schema.parse({

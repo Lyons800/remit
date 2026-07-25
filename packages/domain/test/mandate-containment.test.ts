@@ -141,4 +141,35 @@ describe('exact standing-mandate containment', () => {
       ok: false,
     });
   });
+
+  it('refuses authorization before the frozen policy evaluation time', () => {
+    const futureDecision = createAuthorizationBundle(actionCore, {
+      ...decisionInput,
+      evaluatedAt: '2026-07-25T10:30:00.000Z',
+    });
+
+    expect(
+      validateMandateContainment(futureDecision, activeMandateAggregate, NOW),
+    ).toMatchObject({
+      error: { code: 'ACTION_TIME_INVALID' },
+      ok: false,
+    });
+  });
+
+  it('does not admit an action created before the mandate became effective', () => {
+    const oldAction = createAuthorizationBundle(
+      {
+        ...actionCore,
+        createdAt: '2026-06-30T23:59:59.999Z',
+      },
+      decisionInput,
+    );
+
+    expect(
+      validateMandateContainment(oldAction, activeMandateAggregate, NOW),
+    ).toMatchObject({
+      error: { code: 'MANDATE_CONTAINMENT_FAILED' },
+      ok: false,
+    });
+  });
 });

@@ -148,6 +148,20 @@ export function validateMandateContainment(
     return refuse('MANDATE_NOT_ACTIVE');
   }
 
+  if (now < decision.evaluatedAt) {
+    return refuse(
+      'ACTION_TIME_INVALID',
+      'policy decision is not current at the trusted transition time',
+    );
+  }
+
+  if (action.createdAt < mandate.notBefore) {
+    return refuse(
+      'MANDATE_CONTAINMENT_FAILED',
+      'action predates the referenced mandate version',
+    );
+  }
+
   if (
     now >= action.expiresAt ||
     decision.expiresAt !== action.expiresAt ||
