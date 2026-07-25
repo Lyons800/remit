@@ -10,7 +10,10 @@ import {
   type AuthorizationBundleV1,
 } from '@invoiceguard/protocol/hashing';
 
-import type { VersionedScopedWorldPrincipal } from './privacy.js';
+import type {
+  ScopedWorldPrincipal,
+  VersionedScopedWorldPrincipal,
+} from './privacy.js';
 
 export const WORLD_APPROVAL_ADAPTER_ID = 'world-approval-adapter' as const;
 
@@ -18,10 +21,10 @@ const WORLD_PRINCIPAL_PATTERN = /^hmac-sha256:[A-Za-z0-9_-]{43}$/u;
 const WORLD_PRINCIPAL_VERSION_PATTERN = /^v[1-9][0-9]{0,8}$/u;
 
 export type VerifiedWorldApprovalEvidence = Readonly<{
-  actionHumanPrincipal: string;
+  actionHumanPrincipal: ScopedWorldPrincipal;
   agentBackingRecordId: string;
   agentKitChallengeId: string;
-  agentTenantPrincipal: string;
+  agentTenantPrincipal: ScopedWorldPrincipal;
   approvalId: string;
   approvalSessionId: string;
   consumptionClaimId: string;
@@ -36,11 +39,11 @@ export type VerifiedWorldApprovalEvidence = Readonly<{
 }>;
 
 export type VerifiedWorldExecutorEvidence = Readonly<{
-  actionHumanPrincipal: string;
+  actionHumanPrincipal: ScopedWorldPrincipal;
   agentBackingRecordId: string;
   agentId: string;
   agentKitChallengeId: string;
-  agentTenantPrincipal: string;
+  agentTenantPrincipal: ScopedWorldPrincipal;
   expiresAt: string;
   factId: string;
   roleCredentialId: string;
@@ -96,6 +99,16 @@ function requireHumanApprovalRoute(
   }
 }
 
+function requireWorldPrincipal(
+  value: string,
+  name: string,
+): ScopedWorldPrincipal {
+  if (!WORLD_PRINCIPAL_PATTERN.test(value)) {
+    throw new Error(`${name} must be a scoped World HMAC principal.`);
+  }
+  return value as ScopedWorldPrincipal;
+}
+
 export function createWorldApprovalFact(
   authorizationInput: AuthorizationBundleV1,
   evidence: VerifiedWorldApprovalEvidence,
@@ -110,12 +123,18 @@ export function createWorldApprovalFact(
 
   return createAdapterVerifiedApprovalFact({
     ...actionFactBinding(authorization),
-    actionHumanPrincipal: evidence.actionHumanPrincipal,
+    actionHumanPrincipal: requireWorldPrincipal(
+      evidence.actionHumanPrincipal,
+      'actionHumanPrincipal',
+    ),
     adapterId: WORLD_APPROVAL_ADAPTER_ID,
     agentBackingRecordId: evidence.agentBackingRecordId,
     agentBackingStatus: 'CURRENT',
     agentKitChallengeId: evidence.agentKitChallengeId,
-    agentTenantPrincipal: evidence.agentTenantPrincipal,
+    agentTenantPrincipal: requireWorldPrincipal(
+      evidence.agentTenantPrincipal,
+      'agentTenantPrincipal',
+    ),
     approvalId: evidence.approvalId,
     approvalSessionId: evidence.approvalSessionId,
     companyRoleStatus: 'CURRENT',
@@ -147,14 +166,20 @@ export function createWorldRequestingAgentExecutionFact(
   );
 
   return createRequestingAgentExecutionFact(authorization, {
-    actionHumanPrincipal: evidence.actionHumanPrincipal,
+    actionHumanPrincipal: requireWorldPrincipal(
+      evidence.actionHumanPrincipal,
+      'actionHumanPrincipal',
+    ),
     adapterId: required.adapterId,
     agentBackingRecordId: evidence.agentBackingRecordId,
     agentBookRegistry: required.agentBookRegistry,
     agentBookStatus: 'CURRENT',
     agentId: evidence.agentId,
     agentKitChallengeId: evidence.agentKitChallengeId,
-    agentTenantPrincipal: evidence.agentTenantPrincipal,
+    agentTenantPrincipal: requireWorldPrincipal(
+      evidence.agentTenantPrincipal,
+      'agentTenantPrincipal',
+    ),
     audience: required.audience,
     companyRoleStatus: 'CURRENT',
     expiresAt: evidence.expiresAt,
