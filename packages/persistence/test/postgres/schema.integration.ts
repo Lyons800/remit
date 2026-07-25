@@ -6,17 +6,23 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   actionFactBinding,
   createAdapterVerifiedApprovalFact,
+  createAdapterVerifiedAuthorizationAudit,
   createAdapterVerifiedEvidenceResult,
+  createAdapterVerifiedSettlementReceipt,
   createAdapterVerifiedVerificationPayment,
+  createAtomicSettlementConsumptionClaim,
+  createFrozenSettlementAttempt,
   createMandateReservationLedger,
   createPaymentActionAggregate,
   createRequestingAgentExecutionFact,
+  encodeCanonicalSignedTransactionBytes,
   transitionPaymentAction,
   validateMandateContainment,
   type PaymentActionAggregate,
   type PaymentActionEvent,
   type PaymentActionTransition,
   type PaymentAuthorizationContext,
+  type FrozenSettlementAttempt,
 } from '@invoiceguard/domain';
 import {
   createAuthorizationBundle,
@@ -213,6 +219,19 @@ function emptyMandateLedger() {
     throw new Error(`fixture ledger failed: ${ledger.error.code}`);
   }
   return ledger.value;
+}
+
+function frozenAttempt(createdAt: string): FrozenSettlementAttempt {
+  return createFrozenSettlementAttempt(authorization, {
+    adapterId: 'hedera-settlement-adapter',
+    attemptId: 'settlement-attempt-1',
+    createdAt,
+    expiresAt: '2026-07-25T11:00:00.000Z',
+    signedTransactionBytes: encodeCanonicalSignedTransactionBytes(
+      Buffer.from('invoiceguard-frozen-settlement-transaction-1'),
+    ),
+    transactionId: 'hedera-frozen-transaction-1',
+  });
 }
 
 const { mandateDigest: ignoredMandateDigest, ...standingMandateCore } =
@@ -479,6 +498,170 @@ describe('PostgreSQL payment repository', () => {
         amount_atoms: authorization.actionCore.settlement.amountAtoms,
         reservation_status: 'RESERVED',
         reserved_atoms: authorization.actionCore.settlement.amountAtoms,
+      },
+    ]);
+  });
+
+  it('atomically persists settlement consumption, mandate settlement, and audit outbox', async () => {
+    await resetPaymentData();
+    let aggregate = mandateAggregate();
+    await repository.create(aggregate);
+    for (const [event, now] of [
+      [{ type: 'CLASSIFY' }, '2026-07-25T10:00:01.000Z'],
+      [{ type: 'SATISFY_EVIDENCE_NOT_REQUIRED' }, '2026-07-25T10:00:02.000Z'],
+    ] as const) {
+      const step = applyEvent(aggregate, event, now);
+      await repository.applyTransition(step);
+      aggregate = step.aggregate;
+    }
+    let step = applyEvent(
+      aggregate,
+      {
+        mandate: activeMandateAggregate,
+        requestingAgent: requestingAgent(
+          authorization,
+          '2026-07-25T10:00:03.000Z',
+        ),
+        reservationLedger: emptyMandateLedger(),
+        type: 'AUTHORIZE_MANDATE',
+      },
+      '2026-07-25T10:00:03.000Z',
+    );
+    await repository.applyTransition(step);
+    aggregate = step.aggregate;
+    const basis = aggregate.authorizationBasis;
+    if (basis === null || basis.kind !== 'MANDATE') {
+      throw new Error('authorized mandate basis is required');
+    }
+
+    const auditAuthority = requestingAgent(
+      authorization,
+      '2026-07-25T10:00:04.000Z',
+    );
+    const authorizationAudit = createAdapterVerifiedAuthorizationAudit(
+      authorization,
+      basis.basisDigest,
+      auditAuthority,
+      {
+        adapterId: 'hedera-consensus-adapter',
+        auditId: 'authorization-audit-1',
+        committedAt: '2026-07-25T10:00:04.000Z',
+        networkId: 'hedera:296',
+        topicId: '0.0.9000',
+        transactionId: '0.0.1000@1753437604.000000001',
+        writerAccountId: '0.0.1000',
+        writerId: 'authorization-audit-writer',
+        writerKeyId: 'hedera-audit-key-1',
+      },
+    );
+    step = applyEvent(
+      aggregate,
+      {
+        authorizationAudit,
+        requestingAgent: auditAuthority,
+        type: 'COMMIT_AUDIT',
+      },
+      '2026-07-25T10:00:04.000Z',
+    );
+    await repository.applyTransition(step);
+    aggregate = step.aggregate;
+
+    const attempt = frozenAttempt('2026-07-25T10:00:05.000Z');
+    step = applyEvent(
+      aggregate,
+      {
+        approvals: null,
+        attempt,
+        mandate: activeMandateAggregate,
+        requestingAgent: requestingAgent(
+          authorization,
+          '2026-07-25T10:00:05.000Z',
+        ),
+        reservationLedger: basis.reservedLedger,
+        type: 'QUEUE_SETTLEMENT',
+      },
+      '2026-07-25T10:00:05.000Z',
+    );
+    await repository.applyTransition(step);
+    aggregate = step.aggregate;
+
+    const receipt = createAdapterVerifiedSettlementReceipt(
+      authorization,
+      attempt,
+      {
+        adapterId: 'hedera-settlement-adapter',
+        receiptId: `settlement-receipt:${attempt.attemptId}`,
+        receiptSource: 'MIRROR_NODE',
+        settledAt: '2026-07-25T10:00:06.000Z',
+        sourceNodeId: 'hedera-mirror-node-testnet',
+      },
+    );
+    const claim = createAtomicSettlementConsumptionClaim(
+      authorization,
+      attempt,
+      receipt,
+      {
+        adapterId: 'postgres-atomic-payment-writer',
+        atomicGroupKey: `payment:${attempt.actionDigest}:v${
+          aggregate.metadata.version + 1
+        }`,
+        claimId: `settlement-consumption:${attempt.attemptId}`,
+        consumedAt: '2026-07-25T10:00:06.000Z',
+        expectedAggregateVersion: aggregate.metadata.version,
+        writerId: 'postgres-payment-writer',
+        writerVersion: 1,
+      },
+    );
+    const settled = applyEvent(
+      aggregate,
+      {
+        consumptionClaim: claim,
+        receipt,
+        reservationLedger: basis.reservedLedger,
+        type: 'SETTLE_CONSENSUS',
+      },
+      '2026-07-25T10:00:06.000Z',
+    );
+
+    await expect(repository.applyTransition(settled)).resolves.toBe('APPLIED');
+    await expect(repository.applyTransition(settled)).resolves.toBe(
+      'ALREADY_APPLIED',
+    );
+    const rows = await sql<
+      readonly Readonly<{
+        audit_events: string;
+        claims: string;
+        receipts: string;
+        reservation_status: string;
+        settled_atoms: string;
+        state: string;
+      }>[]
+    >`
+      SELECT
+        action.payment_state AS state,
+        ledger.settled_atoms::text,
+        reservation.reservation_status,
+        (SELECT count(*)::text FROM settlement_receipts) AS receipts,
+        (SELECT count(*)::text FROM settlement_consumptions) AS claims,
+        (
+          SELECT count(*)::text
+          FROM outbox_events
+          WHERE effect_family = 'EXECUTION_AUDIT'
+        ) AS audit_events
+      FROM payment_actions AS action
+      JOIN mandate_reservations AS reservation
+        USING (organization_id, action_digest)
+      JOIN mandate_period_ledgers AS ledger
+        USING (organization_id, mandate_id, mandate_version, period_key)
+    `;
+    expect(rows).toEqual([
+      {
+        audit_events: '1',
+        claims: '1',
+        receipts: '1',
+        reservation_status: 'SETTLED',
+        settled_atoms: authorization.actionCore.settlement.amountAtoms,
+        state: 'SETTLED_AUDIT_PENDING',
       },
     ]);
   });
