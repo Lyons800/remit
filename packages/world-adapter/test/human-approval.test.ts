@@ -14,6 +14,12 @@ const KEY = Uint8Array.from({ length: 32 }, (_value, index) => index + 1);
 const account = privateKeyToAccount(
   '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 );
+const LIVE_DEPLOYMENT = createTrustedWorldDeploymentContext({
+  appId: 'app_invoiceguard',
+  environment: 'production',
+  mode: 'live',
+  rpId: 'rp_invoiceguard',
+});
 
 function createBinding(
   overrides: Partial<
@@ -48,8 +54,8 @@ function createRequest(
   overrides: Partial<Parameters<typeof createWorldProofOfHumanRequest>[0]> = {},
 ) {
   return createWorldProofOfHumanRequest({
-    appId: 'app_invoiceguard',
     binding,
+    deployment: LIVE_DEPLOYMENT,
     rpContext: {
       created_at: Date.parse(binding.createdAt) / 1_000,
       expires_at: Date.parse(binding.expiresAt) / 1_000,
@@ -220,11 +226,33 @@ describe('World action-time approval binding', () => {
 
   it('accepts the documented staging app ID form explicitly', () => {
     const request = createRequest(createBinding(), {
-      appId: 'app_staging_invoiceguard',
-      environment: 'staging',
+      deployment: createTrustedWorldDeploymentContext({
+        appId: 'app_staging_invoiceguard',
+        environment: 'staging',
+        mode: 'test',
+        rpId: 'rp_invoiceguard',
+      }),
     });
 
     expect(request.config.app_id).toBe('app_staging_invoiceguard');
     expect(request.config.environment).toBe('staging');
+  });
+
+  it('rejects a relying party not owned by the trusted deployment', () => {
+    const binding = createBinding();
+
+    expect(() =>
+      createWorldProofOfHumanRequest({
+        binding,
+        deployment: LIVE_DEPLOYMENT,
+        rpContext: {
+          created_at: Date.parse(binding.createdAt) / 1_000,
+          expires_at: Date.parse(binding.expiresAt) / 1_000,
+          nonce: 'synthetic-rp-nonce',
+          rp_id: 'rp_substituted',
+          signature: '0xsynthetic-rp-signature',
+        },
+      }),
+    ).toThrow(/does not match the trusted deployment/u);
   });
 });
