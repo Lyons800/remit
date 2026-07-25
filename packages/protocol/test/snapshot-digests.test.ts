@@ -1,15 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  createExtractedInvoiceCandidate,
   createStandingMandate,
   createSupplierMasterSnapshot,
+  hashExtractedInvoiceCandidateCore,
   hashStandingMandateCore,
   hashSupplierMasterSnapshotCore,
+  verifyExtractedInvoiceCandidate,
+  verifyStandingMandate,
+  verifySupplierMasterSnapshot,
 } from '../src/hashing.js';
 
 const ID = {
+  candidate: '019f939b-fe5e-7e92-b72e-8d4531958c40',
   connection: '019f939b-fe5e-7e92-b72e-8d4531958c41',
   mandate: '019f939b-fe5e-7e92-b72e-8d4531958c42',
+  observation: '019f939b-fe5e-7e92-b72e-8d4531958c45',
   organization: '019f939b-fe5e-7e92-b72e-8d4531958c43',
   supplier: '019f939b-fe5e-7e92-b72e-8d4531958c44',
 } as const;
@@ -34,14 +41,77 @@ const supplierCore = {
   supplierId: ID.supplier,
 } as const;
 
+const candidateCore = {
+  candidateId: ID.candidate,
+  extractedAt: '2026-07-25T10:00:01.000Z',
+  extractor: { id: 'fixture-extractor', version: '1.0.0' },
+  fieldEvidence: [
+    {
+      confidenceBps: 9_900,
+      field: 'invoiceNumber',
+      sourceSpans: [
+        {
+          end: 16,
+          kind: 'TEXT_OFFSET',
+          observationId: ID.observation,
+          start: 1,
+        },
+      ],
+      warningCodes: [],
+    },
+  ],
+  fields: {
+    dueDate: null,
+    invoiceAssetId: null,
+    invoiceNumber: 'CG-2026-0718',
+    issueDate: null,
+    netAmountAtoms: null,
+    proposedBeneficiary: null,
+    purchaseOrderReferences: [],
+    supplierExternalReference: null,
+    supplierLegalName: null,
+    taxAmountAtoms: null,
+    totalAmountAtoms: null,
+  },
+  observationIds: [ID.observation],
+  organizationId: ID.organization,
+  parseWarningCodes: [],
+  schemaVersion: 1,
+} as const;
+
 describe('immutable record digest envelopes', () => {
+  it('recomputes extracted-candidate envelopes before use', () => {
+    const candidate = createExtractedInvoiceCandidate(candidateCore);
+
+    expect(candidate.candidateDigest).toBe(
+      hashExtractedInvoiceCandidateCore(candidateCore),
+    );
+    expect(verifyExtractedInvoiceCandidate(candidate)).toEqual(candidate);
+    expect(() =>
+      verifyExtractedInvoiceCandidate({
+        ...candidate,
+        fields: {
+          ...candidate.fields,
+          invoiceNumber: 'SUBSTITUTED',
+        },
+      }),
+    ).toThrow('does not recompute');
+  });
+
   it('computes the supplier digest from the core only', () => {
     const snapshot = createSupplierMasterSnapshot(supplierCore);
 
     expect(snapshot.snapshotDigest).toBe(
       hashSupplierMasterSnapshotCore(supplierCore),
     );
+    expect(verifySupplierMasterSnapshot(snapshot)).toEqual(snapshot);
     expect(() => hashSupplierMasterSnapshotCore(snapshot)).toThrow();
+    expect(() =>
+      verifySupplierMasterSnapshot({
+        ...snapshot,
+        externalSupplierReference: 'SUBSTITUTED',
+      }),
+    ).toThrow('does not recompute');
   });
 
   it('computes the mandate digest from the core only', () => {
@@ -75,6 +145,13 @@ describe('immutable record digest envelopes', () => {
     const mandate = createStandingMandate(mandateCore);
 
     expect(mandate.mandateDigest).toBe(hashStandingMandateCore(mandateCore));
+    expect(verifyStandingMandate(mandate)).toEqual(mandate);
     expect(() => hashStandingMandateCore(mandate)).toThrow();
+    expect(() =>
+      verifyStandingMandate({
+        ...mandate,
+        maximumSettlementInvoiceAmountAtoms: '5000001',
+      }),
+    ).toThrow('does not recompute');
   });
 });
