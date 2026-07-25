@@ -13,7 +13,7 @@ export type ApprovalRequirement = Readonly<{
   roles: readonly Readonly<{ count: number; role: string }>[];
 }>;
 
-export type VerifiedApprovalFact = Readonly<{
+export type AdapterVerifiedApprovalFact = Readonly<{
   actionDigest: string;
   actionHumanPrincipal: string;
   agentBackingStatus: 'CURRENT' | 'STALE' | 'UNVERIFIED';
@@ -66,7 +66,8 @@ function validateRequirement(
   if (
     !isRecord(input) ||
     !hasExactKeys(input, REQUIREMENT_KEYS) ||
-    !Array.isArray(input.roles)
+    !Array.isArray(input.roles) ||
+    input.roles.length > 255
   ) {
     return refuse('APPROVAL_REQUIREMENT_INVALID');
   }
@@ -119,7 +120,7 @@ function validateRequirement(
   );
 }
 
-function parseApprovalFact(input: unknown): VerifiedApprovalFact | null {
+function parseApprovalFact(input: unknown): AdapterVerifiedApprovalFact | null {
   if (
     !isRecord(input) ||
     !hasExactKeys(input, APPROVAL_KEYS) ||
@@ -170,7 +171,7 @@ export function validateApprovalQuorum(
   requirementInput: unknown,
   approvalsInput: unknown,
   now: string,
-): DomainResult<readonly VerifiedApprovalFact[]> {
+): DomainResult<readonly AdapterVerifiedApprovalFact[]> {
   if (!isSha256Digest(actionDigest) || !isCanonicalUtcInstant(now)) {
     return refuse('APPROVAL_FACT_INVALID');
   }
@@ -181,11 +182,11 @@ export function validateApprovalQuorum(
   }
   const requirement = validRequirement.value;
 
-  if (!Array.isArray(approvalsInput)) {
+  if (!Array.isArray(approvalsInput) || approvalsInput.length > 255) {
     return refuse('APPROVAL_FACT_INVALID');
   }
 
-  const approvals: VerifiedApprovalFact[] = [];
+  const approvals: AdapterVerifiedApprovalFact[] = [];
   for (const input of approvalsInput) {
     const approval = parseApprovalFact(input);
     if (approval === null || approval.verifiedAt >= approval.expiresAt) {

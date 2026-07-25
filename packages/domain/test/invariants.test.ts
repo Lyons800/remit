@@ -234,6 +234,38 @@ describe('approval quorum', () => {
       ok: false,
     });
   });
+
+  it('caps adapter-verified facts and role requirements', () => {
+    expect(
+      validateApprovalQuorum(
+        ACTION_DIGEST,
+        approvalRequirement,
+        Array.from({ length: 256 }, () => approvals[0]),
+        APPROVAL_NOW,
+      ),
+    ).toMatchObject({
+      error: { code: 'APPROVAL_FACT_INVALID' },
+      ok: false,
+    });
+
+    expect(
+      validateApprovalQuorum(
+        ACTION_DIGEST,
+        {
+          ...approvalRequirement,
+          roles: Array.from({ length: 256 }, (_, index) => ({
+            count: 1,
+            role: `ROLE_${index}`,
+          })),
+        },
+        approvals,
+        APPROVAL_NOW,
+      ),
+    ).toMatchObject({
+      error: { code: 'APPROVAL_REQUIREMENT_INVALID' },
+      ok: false,
+    });
+  });
 });
 
 describe('invoice and obligation invariants', () => {
