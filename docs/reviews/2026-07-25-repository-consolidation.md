@@ -55,8 +55,10 @@ improves the product rather than adding a prize-shaped side effect.
 The prototype's strict extraction schema and fail-closed result shape are useful
 references. They are not ready to port.
 
-A later catalog observation may satisfy the model-availability condition in ADR
-0005, but it does not resolve the remaining requirements for pinned provider
+A 2026-07-25 22:42 WEST catalog refresh did not reproduce the prototype's
+contradictory observation. The only healthy Testnet chatbot remained `TeeTLS`;
+the only `TeeML` model remained an image-editing service. Even a future catalog
+change would not resolve the remaining requirements for pinned provider
 selection, exact request and response binding, independently checked
 attestation, network admission, and reproducible live evidence. The prototype
 also uses a separate digest system and falls back to another eligible provider

@@ -2,7 +2,7 @@
 
 Decision: **NO-GO** for the current InvoiceGuard submission.
 
-Checked: 2026-07-25.
+Last refreshed: 2026-07-25 22:42 WEST.
 
 InvoiceGuard selects World and Hedera only. No 0G SDK, credential, funded
 wallet, or runtime is installed.
@@ -16,6 +16,12 @@ The live testnet Router catalog exposes:
 - `qwen-image-edit` as `TeeML`, but it is an image-editing model; and
 - `qwen2.5-omni` as a chatbot, but the healthy provider is classified `TeeTLS`,
   not private model-in-TEE inference.
+
+The refresh queried both the Testnet model catalog and the chatbot-provider
+catalog. The latter reported the sole chatbot provider as healthy and
+TEE-attested but still classified it as `TeeTLS`. The contradictory prototype
+probe was not reproducible; TEE-attested transport is not the `TeeML` execution
+class required by this admission record.
 
 Mainnet currently exposes healthy private text models, including
 `0gm-1.0-35b-a3b`, but using them would add an unreviewed funded 0G mainnet
