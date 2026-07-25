@@ -55,3 +55,38 @@ remains the source of truth for exact changes.
 
 GitHub device reauthentication is in progress. The public remote, ruleset, push,
 and PR wait for successful authentication and owner/org confirmation.
+
+## 2026-07-25 - GitHub delivery and security repair
+
+### Outcome
+
+- Reauthenticated the GitHub CLI as `Lyons800`.
+- Created `Lyons800/invoiceguard` privately, pushed the provenance-only `main`
+  and `chore/foundation`, and opened pull request 1.
+- Configured rebase-only merges, automatic branch cleanup, issues, delivery
+  labels, and repository topics.
+- Kept public visibility as an explicit source-disclosure decision.
+
+### CI findings
+
+- Granted the Gitleaks workflow read-only pull-request metadata after its first
+  private-repository run was denied by GitHub.
+- Retained GitHub's dependency-diff review for public operation and added a
+  locked production audit while the repository is private.
+- The audit found vulnerable transitive `sharp` and `postcss` versions beneath
+  Next.js.
+- Pinned `sharp` 0.35.3 and `postcss` 8.5.23 after their release-age and
+  registry records passed the repository policy.
+
+### Validation
+
+- The resolved graph contains one patched version of each package.
+- `pnpm audit --prod --audit-level=moderate` reports no known vulnerabilities.
+- Formatting, lint, 14 workspace type checks, test type checks, 33 tests, and
+  all 14 production builds pass with pnpm 11.17.0.
+
+### Remaining external step
+
+The repository cannot enable a ruleset while it is a private personal repository
+on the current GitHub plan. Public visibility requires explicit owner approval;
+the documented `main` ruleset follows immediately afterward.

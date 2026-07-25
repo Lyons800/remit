@@ -72,8 +72,16 @@ substitute for the explicit threat-model tests.
   `docs/plans/DELIVERY-PLAN.md`.
 - Keep a known-green demo tag and deployment while later branches continue.
 
-## Current blocker
+## Current state
 
-The local GitHub CLI is configured for `Lyons800`, but its token is invalid.
-Remote creation, rulesets, and the first PR remain blocked until the owner
-reauthenticates and confirms the repository owner or organization.
+- `https://github.com/Lyons800/invoiceguard` is the canonical remote.
+- `main` contains only the provenance root; delivery proceeds through pull
+  requests.
+- Pull request 1 carries the bounded repository foundation.
+- Rebase merge, automatic head-branch deletion, issue tracking, topics, and the
+  planned delivery labels are configured.
+- The repository remains private until the owner explicitly approves public
+  source disclosure.
+- GitHub does not expose rulesets for this private personal repository without a
+  paid plan. Apply the documented `main` ruleset immediately after public
+  visibility is approved.

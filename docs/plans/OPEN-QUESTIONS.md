@@ -5,7 +5,6 @@ here.
 
 | ID  | Question                                                                                                                                         | Owner                    | Resolve by              | Decision impact                        |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ | ----------------------- | -------------------------------------- |
-| Q01 | Which GitHub owner or organization should host the public repository? The local CLI account `Lyons800` currently has an invalid token.           | Repository owner         | Before remote creation  | Remote URL, CODEOWNERS, branch rules   |
 | Q02 | Is the team dashboard definitely Classic rather than Continuity?                                                                                 | Team lead                | Before submission       | Whole repository eligibility           |
 | Q03 | Did ETHGlobal separately announce a maximum of two awards? The supplied deck permits three selected partners but does not state a win cap.       | Team lead / ETHGlobal    | Before prize selection  | Portfolio ceiling, not architecture    |
 | Q04 | Can enough World-verified humans complete the AgentBook and exception-approval fixtures during the event?                                        | World integration owner  | G3                      | Distinct-human property and live demo  |
@@ -22,6 +21,10 @@ eligibility.
 
 ## Resolved
 
+- Q01: `Lyons800/invoiceguard` is the canonical remote. It was created as a
+  private repository on 2026-07-25 so source was not disclosed without explicit
+  approval. Public visibility and the public-repository ruleset remain G0
+  delivery steps.
 - Q07: ADR 0006 requires a successful HCS `authorization.v1` receipt before the
   final transfer. `execution.v1` is an at-least-once postcommit with a stable
   event ID and an explicit `audit-degraded` recovery state.
