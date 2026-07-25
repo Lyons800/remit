@@ -480,8 +480,11 @@ stateDiagram-v2
   Reconciling --> ReconciliationException
   Captured --> Expired
   Classified --> Expired
+  VerificationQuoted --> Expired
+  VerificationPaid --> Expired
   AwaitingApprovals --> Expired
   Authorized --> Expired
+  AuthorizationRecovery --> Expired
   EvidenceSatisfied --> Expired
   Captured --> Superseded
   Classified --> Superseded
