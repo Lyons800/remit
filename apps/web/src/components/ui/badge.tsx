@@ -26,7 +26,7 @@ export function Badge({ className, variant, ...properties }: BadgeProperties) {
   return (
     <span
       className={cn(badgeVariants({ className, variant }))}
-      style={{ fontFamily: 'var(--font-geist-mono), monospace' }}
+      style={{ fontFamily: 'var(--font-mono), monospace' }}
       {...properties}
     />
   );
