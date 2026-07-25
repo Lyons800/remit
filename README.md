@@ -31,6 +31,41 @@ Active build for ETHGlobal Lisbon 2026.
 InvoiceGuard does not detect deepfakes or prove caller identity, employment,
 beneficiary ownership, or the truth of external evidence.
 
+## Development
+
+Requirements:
+
+- Node.js `24.11.0`;
+- pnpm `11.17.0` through Corepack; and
+- no live financial or sponsor credentials for the foundation build.
+
+```bash
+corepack enable
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Development loads the safe defaults in `.env.example` and then an optional
+uncommitted `.env`. The foundation services run with sponsor adapters
+`inactive`; `/livez` reports process liveness and `/readyz` deliberately returns
+503 until the owning integration is implemented. No payment path is active.
+
+| Process           | Local port |
+| ----------------- | ---------: |
+| Web               |       3000 |
+| Control API       |       4100 |
+| Extraction worker |       4150 |
+| Verifier          |       4200 |
+| x402 facilitator  |       4300 |
+| Payment agent     |       4400 |
+| Settlement worker |       4500 |
+
+Run the complete local quality gate before every push:
+
+```bash
+pnpm check
+```
+
 ## Provenance
 
 Project-specific work began in this repository during ETHGlobal Lisbon 2026. See
