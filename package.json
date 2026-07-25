@@ -26,6 +26,7 @@
     "@eslint/js": "catalog:",
     "@types/node": "catalog:",
     "eslint": "catalog:",
+    "fast-check": "4.9.0",
     "prettier": "catalog:",
     "turbo": "catalog:",
     "typescript": "catalog:",
