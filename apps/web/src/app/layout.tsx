@@ -28,15 +28,15 @@ export default function RootLayout({
   return (
     <html className={`${hedvig.variable} ${mono.variable}`} lang="en">
       <body style={{ fontFamily: 'var(--font-sans), sans-serif' }}>
-        <div className="mx-auto flex min-h-screen max-w-6xl">
-          <Sidebar />
-          <main className="min-w-0 flex-1 border-l border-border px-4 py-6 md:px-8">
-            <p className="microlabel mb-6 border border-border px-3 py-1.5">
+        <Sidebar />
+        <main className="min-h-screen md:ml-[70px]">
+          <div className="mx-auto max-w-[1200px] px-4 py-6 md:px-8">
+            <p className="microlabel mb-6 inline-block border border-border px-3 py-1.5">
               Synthetic demo data · Hedera testnet only · no real funds
             </p>
             {children}
-          </main>
-        </div>
+          </div>
+        </main>
       </body>
     </html>
   );
