@@ -33,8 +33,15 @@ minimumReleaseAge: 1440
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
 trustPolicy: no-downgrade
+trustPolicyExclude:
+  # Reviewed legacy transitives in the pinned @hiero-ledger/sdk@2.85.0 graph.
+  # The lockfile pins their integrity; neither artifact publishes npm provenance.
+  - semver@6.3.1
+  - undici-types@6.19.8
 blockExoticSubdeps: true
 strictDepBuilds: true
 allowBuilds:
   esbuild: true
+  # Required by the pinned @hiero-ledger/proto dependency graph.
+  protobufjs: true
   sharp: true
