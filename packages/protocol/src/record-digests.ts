@@ -29,6 +29,10 @@ import {
 } from './manifests/digest-manifest.v1.js';
 import type { Sha256Digest } from './primitives.js';
 
+function digestMismatch(record: string): Error {
+  return new Error(`Protocol digest mismatch: ${record} does not recompute.`);
+}
+
 function createDigestEnvelope<
   TCore extends Readonly<Record<string, unknown>>,
   TEnvelope,
@@ -72,6 +76,19 @@ export function hashExtractedInvoiceCandidateCore(core: unknown): Sha256Digest {
   );
 }
 
+export function verifyExtractedInvoiceCandidate(
+  value: unknown,
+): ExtractedInvoiceCandidateV1 {
+  const candidate = extractedInvoiceCandidateV1Schema.parse(value);
+  const { candidateDigest, ...core } = candidate;
+
+  if (hashExtractedInvoiceCandidateCore(core) !== candidateDigest) {
+    throw digestMismatch('extracted invoice candidate');
+  }
+
+  return candidate;
+}
+
 export function createSupplierMasterSnapshot(
   core: unknown,
 ): SupplierMasterSnapshotV1 {
@@ -92,6 +109,19 @@ export function hashSupplierMasterSnapshotCore(core: unknown): Sha256Digest {
   );
 }
 
+export function verifySupplierMasterSnapshot(
+  value: unknown,
+): SupplierMasterSnapshotV1 {
+  const snapshot = supplierMasterSnapshotV1Schema.parse(value);
+  const { snapshotDigest, ...core } = snapshot;
+
+  if (hashSupplierMasterSnapshotCore(core) !== snapshotDigest) {
+    throw digestMismatch('supplier master snapshot');
+  }
+
+  return snapshot;
+}
+
 export function createStandingMandate(core: unknown): StandingMandateV1 {
   return createDigestEnvelope(
     standingMandateCoreV1Schema,
@@ -108,6 +138,17 @@ export function hashStandingMandateCore(core: unknown): Sha256Digest {
     standingMandateCoreV1Schema,
     core,
   );
+}
+
+export function verifyStandingMandate(value: unknown): StandingMandateV1 {
+  const mandate = standingMandateV1Schema.parse(value);
+  const { mandateDigest, ...core } = mandate;
+
+  if (hashStandingMandateCore(core) !== mandateDigest) {
+    throw digestMismatch('standing mandate');
+  }
+
+  return mandate;
 }
 
 export function hashDigestManifest(manifest: unknown): Sha256Digest {
