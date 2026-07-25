@@ -72,7 +72,8 @@ InvoiceGuard does not turn an uploaded document directly into a payment:
    metadata, content hash, and extraction provenance.
 2. **Invoice record:** normalized candidate fields, supplier and purchase-order
    matches, duplicate evidence, validation outcomes, and operator corrections.
-3. **Payment action:** the source invoice digest and amount plus the final
+3. **Payment action:** the exact invoice revision ID, stable obligation ID,
+   invoice digest, supplier-snapshot digest and source amount plus the final
    settlement recipient, asset, integer amount, network, deterministic mapping,
    evidence root, exact policy-decision digest, expiry, and nonce frozen under
    one digest.
@@ -90,8 +91,9 @@ updates the approved supplier record.
 
 A standing mandate is itself a governed object. It fixes supplier, source
 beneficiary, mapped settlement beneficiary, asset, per-invoice and period caps,
-required evidence, purchase-order rules, effective dates, and revocation state.
-A material change exits the mandate; it does not silently broaden it.
+the exact structured-or-independently-confirmed source requirement, required
+evidence, purchase-order rules, effective dates, and revocation state. A
+material change exits the mandate; it does not silently broaden it.
 
 Every frozen policy decision sets `verificationMode` to exactly `NOT_REQUIRED`
 or `REQUIRED`. Routine invoices do not buy circular evidence merely to create an

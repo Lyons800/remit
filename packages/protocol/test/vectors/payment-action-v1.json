@@ -33,6 +33,7 @@
       "amountAtoms": "2500000",
       "assetId": "iso4217:EUR",
       "digest": "3333333333333333333333333333333333333333333333333333333333333333",
+      "invoiceRevisionId": "019f939b-fe5e-7e92-b72e-8d4531958c35",
       "obligationId": "019f939b-fe5e-7e92-b72e-8d4531958c32"
     },
     "supplierId": "019f939b-fe5e-7e92-b72e-8d4531958c34",
@@ -82,8 +83,8 @@
     "verificationMode": "NOT_REQUIRED"
   },
   "expected": {
-    "actionCoreDigest": "8fb1564a3da19d29e6f4020e8344b1e1df3d6bf3c682bfb1852d7881724be82c",
-    "actionDigest": "e8ee0ebe0e8b2295bfab88fd7ed6051f72b3bbb61fa184004ad307ef24744252",
-    "policyDecisionDigest": "93560495966328de76ac4c9ad471163e9e29068d7cfe7a3d72be9d825fd4376b"
+    "actionCoreDigest": "4f34166bdca2dd2ea06e727e03db737c99c22e7084e486e2c3f2670bac8bb1ed",
+    "actionDigest": "b28bf8cffa3621bbbd90915b540ae598b128d463adefa5c1b001caf0ab7f1ec7",
+    "policyDecisionDigest": "9ae39427b1723dde4996d08e9b1d496e03657643d8f2fc6d0822d1d825d22f17"
   }
 }

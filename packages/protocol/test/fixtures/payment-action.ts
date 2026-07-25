@@ -4,6 +4,7 @@ import paymentActionVector from '../vectors/payment-action-v1.json' with { type:
 
 export const vectorIds = {
   action: '019f939b-fe5e-7e92-b72e-8d4531958c30',
+  invoiceRevision: '019f939b-fe5e-7e92-b72e-8d4531958c35',
   mandate: '019f939b-fe5e-7e92-b72e-8d4531958c31',
   obligation: '019f939b-fe5e-7e92-b72e-8d4531958c32',
   organization: '019f939b-fe5e-7e92-b72e-8d4531958c33',

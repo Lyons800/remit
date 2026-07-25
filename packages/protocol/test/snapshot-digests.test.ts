@@ -139,6 +139,9 @@ describe('immutable record digest envelopes', () => {
       settlementBeneficiary: 'hedera:296:0.0.1000',
       settlementNetworkId: 'hedera:296',
       sourceAssetId: 'iso4217:EUR',
+      sourceRequirement: {
+        mode: 'AUTHENTICATED_OR_INDEPENDENTLY_CONFIRMED',
+      },
       supplierId: ID.supplier,
       supplierSnapshotDigest: snapshot.snapshotDigest,
       verificationMode: 'NOT_REQUIRED',

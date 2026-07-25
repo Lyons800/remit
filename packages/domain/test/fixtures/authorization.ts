@@ -10,6 +10,7 @@ export const MANDATE_EXPIRES_AT = '2026-08-01T00:00:00.000Z';
 
 export const IDS = {
   action: '019f939b-fe5e-7e92-b72e-8d4531958d01',
+  invoiceRevision: '019f939b-fe5e-7e92-b72e-8d4531958d06',
   mandate: '019f939b-fe5e-7e92-b72e-8d4531958d02',
   obligation: '019f939b-fe5e-7e92-b72e-8d4531958d03',
   organization: '019f939b-fe5e-7e92-b72e-8d4531958d04',
@@ -53,6 +54,9 @@ export const standingMandate = createStandingMandate({
   settlementBeneficiary: BENEFICIARY.accountId,
   settlementNetworkId: 'hedera:296',
   sourceAssetId: 'iso4217:EUR',
+  sourceRequirement: {
+    mode: 'AUTHENTICATED_OR_INDEPENDENTLY_CONFIRMED',
+  },
   supplierId: IDS.supplier,
   supplierSnapshotDigest: DIGESTS.supplierSnapshot,
   verificationMode: 'NOT_REQUIRED',
@@ -86,6 +90,7 @@ export const actionCore = {
     amountAtoms: '2500000',
     assetId: standingMandate.sourceAssetId,
     digest: DIGESTS.invoice,
+    invoiceRevisionId: IDS.invoiceRevision,
     obligationId: IDS.obligation,
   },
   supplierId: IDS.supplier,

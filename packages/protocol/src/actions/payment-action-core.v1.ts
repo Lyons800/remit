@@ -56,6 +56,7 @@ export const paymentActionCoreV1Schema = z
         amountAtoms: positiveAtomsSchema,
         assetId: assetIdSchema,
         digest: sha256DigestSchema,
+        invoiceRevisionId: uuidV7Schema,
         obligationId: uuidV7Schema,
       })
       .strict(),
