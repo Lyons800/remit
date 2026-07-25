@@ -24,8 +24,12 @@ Use a pure deterministic policy engine. It evaluates:
 - one-use state.
 
 The policy route is explicit: `STRAIGHT_THROUGH`, `HUMAN_APPROVAL`, or `BLOCK`.
-`STRAIGHT_THROUGH` may require zero per-invoice human decisions only under the
-standing-mandate constraints in ADR 0008.
+The policy engine accepts only a strict, versioned configuration and strict,
+versioned normalized input. It hashes both into a canonical manifest and derives
+the route, reason codes, authority, purchase-order result, verification mode,
+and mandate reference. Callers cannot supply those outputs. `STRAIGHT_THROUGH`
+may require zero per-invoice human decisions only under the standing-mandate
+constraints in ADR 0008.
 
 AI may extract candidate fields or recommend a route. It cannot produce a
 supplier-evidence result, sign, mutate policy, or directly authorize settlement.

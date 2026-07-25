@@ -12,6 +12,7 @@ import {
 } from '../primitives.js';
 import { verificationModeSchema } from '../invoices/standing-mandate.v1.js';
 import { policyReferenceSchema } from './payment-action-core.v1.js';
+import { policyInputManifestV1Schema } from './policy-input.v1.js';
 
 export const policyRouteSchema = z.enum([
   'STRAIGHT_THROUGH',
@@ -156,7 +157,7 @@ export const policyDecisionV1Schema = z
       .strict(),
     evaluatedAt: utcInstantSchema,
     expiresAt: utcInstantSchema,
-    inputRoot: sha256DigestSchema,
+    inputManifest: policyInputManifestV1Schema,
     policy: policyReferenceSchema,
     purchaseOrder: z
       .object({
