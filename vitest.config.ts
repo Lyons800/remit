@@ -1,0 +1,15 @@
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    coverage: {
+      enabled: false,
+    },
+    include: [
+      'apps/**/*.test.{ts,tsx}',
+      'packages/**/*.test.{ts,tsx}',
+      'services/**/*.test.{ts,tsx}',
+      'tests/**/*.test.{ts,tsx}',
+    ],
+  },
+});
