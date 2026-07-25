@@ -1,1 +1,1 @@
-export {};
+export * from './payment-uniqueness-contract.js';
