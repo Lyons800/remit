@@ -176,6 +176,15 @@ describe('non-circular payment authorization hash graph', () => {
     ).toBe(false);
   });
 
+  it('blocks without purchasing evidence when a block reason takes precedence', () => {
+    expect(
+      policyDecisionV1Schema.safeParse({
+        ...createPolicyDecision(vectorActionCore, vectorBlockDecision),
+        reasonCodes: ['BENEFICIARY_CHANGED', 'DUPLICATE_ALREADY_PAID'],
+      }).success,
+    ).toBe(true);
+  });
+
   it('rejects unknown action semantics rather than hashing a stripped object', () => {
     expect(
       paymentActionCoreV1Schema.safeParse({
