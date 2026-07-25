@@ -524,15 +524,18 @@ creates another transfer.
 The persisted aggregate is not a state label beside an authorization. It carries
 the reverified authorization bundle, monotonic version and transition metadata,
 verification payment and evidence records, a discriminated human or mandate
-authorization basis, authorization precommit, fresh execution-authority facts,
-the original frozen settlement attempt, uncertainty, receipt, one-use
-consumption claim, and terminal record as required by its state. Hydration
-recomputes every record digest and rejects a state whose prerequisite records or
-last transition are absent.
+authorization basis, the authority fact and explicit writer context used by the
+authorization precommit, fresh execution-authority facts, the original frozen
+settlement attempt and exact signed transaction bytes, uncertainty, receipt,
+one-use consumption claim, and terminal record as required by its state.
+Hydration recomputes every record digest and rejects a state whose prerequisite
+records, policy-bound roles, grants, services, adapter identities, exact
+chronology, or last transition are absent.
 
 Both authorization routes revalidate the enrolled requesting agent's current
-company role and AgentBook backing before settlement is frozen. The human route
-also revalidates the exact originally counted approval identities and current
+company role, versioned execution grant, scope, audience, tenant, subject and
+AgentBook backing before settlement is frozen or retried. The human route also
+revalidates the exact originally counted approval identities and current
 statuses. The mandate route revalidates the active mandate version and original
 `RESERVED` claim against the current period ledger.
 
@@ -577,7 +580,8 @@ InvoiceGuard uses a transactional outbox and recoverable saga:
 3. have the worker claim the outbox item;
 4. freeze and persist one attempt before submission, including attempt ID,
    deterministic idempotency key, exact action and effect digest, transaction
-   ID, signed bytes hash, network, adapter, status, and time window;
+   ID, canonical base64url-encoded signed transaction bytes, their SHA-256 hash,
+   network, adapter, status, and time window;
 5. submit once and reconcile an uncertain result through the network/Mirror
    before any retry;
 6. resubmit only the aggregate-held original attempt when supported; a caller
@@ -586,6 +590,15 @@ InvoiceGuard uses a transactional outbox and recoverable saga:
    network, action, and idempotency fields all match that original; and
 8. mark the action consumed only by an exact receipt-bound claim in the same
    serializable write as the aggregate and mandate ledger.
+
+The repository that applies these effects is a security boundary, not a passive
+JSON store. It must authenticate the adapter or worker identity before creating
+an adapter-verified fact; lock the action and any mandate ledger; compare the
+claim's expected aggregate version; require the effect atomic-group key; and
+write the aggregate, outbox item, receipt consumption, uniqueness rows, and
+mandate mutation in one serializable transaction. A caller cannot self-assert a
+writer, service, adapter or `CURRENT` status merely because it can construct the
+same JSON shape.
 
 Every request carries `actionId`, `actionDigest`, `attemptId`, `traceId`, and
 the source commit SHA.
