@@ -8,8 +8,14 @@ import {
   actionCore,
   activeMandateAggregate,
   authorization,
-  decisionInput,
+  policyEvaluation,
+  policyEvaluationForCore,
 } from './fixtures/authorization.js';
+
+const evaluatedMandate = policyEvaluation.input.mandate;
+if (evaluatedMandate === null) {
+  throw new Error('The straight-through fixture must include a mandate.');
+}
 
 describe('exact standing-mandate containment', () => {
   it('accepts the verified action, decision, mandate, and period exactly', () => {
@@ -49,12 +55,13 @@ describe('exact standing-mandate containment', () => {
   });
 
   it('rejects a re-signed supplier snapshot substitution', () => {
+    const changedCore = {
+      ...actionCore,
+      supplierSnapshotDigest: '7'.repeat(64),
+    };
     const changed = createAuthorizationBundle(
-      {
-        ...actionCore,
-        supplierSnapshotDigest: '7'.repeat(64),
-      },
-      decisionInput,
+      changedCore,
+      policyEvaluationForCore(changedCore),
     );
 
     expect(
@@ -67,10 +74,16 @@ describe('exact standing-mandate containment', () => {
 
   it('rejects re-signed evidence-policy and purchase-order substitutions', () => {
     const evidenceChanged = createAuthorizationBundle(actionCore, {
-      ...decisionInput,
-      evidencePolicy: {
-        ...decisionInput.evidencePolicy,
-        digest: '7'.repeat(64),
+      config: policyEvaluation.config,
+      input: {
+        ...policyEvaluation.input,
+        mandate: {
+          ...evaluatedMandate,
+          evidencePolicy: {
+            ...evaluatedMandate.evidencePolicy,
+            digest: '7'.repeat(64),
+          },
+        },
       },
     });
     expect(
@@ -81,10 +94,13 @@ describe('exact standing-mandate containment', () => {
     });
 
     const purchaseOrderChanged = createAuthorizationBundle(actionCore, {
-      ...decisionInput,
-      purchaseOrder: {
-        mode: 'EXACT_REFERENCE',
-        result: 'EXACT_REFERENCE_MATCH',
+      config: policyEvaluation.config,
+      input: {
+        ...policyEvaluation.input,
+        purchaseOrder: {
+          mode: 'EXACT_REFERENCE',
+          result: 'EXACT_REFERENCE_MATCH',
+        },
       },
     });
     expect(
@@ -144,8 +160,11 @@ describe('exact standing-mandate containment', () => {
 
   it('refuses authorization before the frozen policy evaluation time', () => {
     const futureDecision = createAuthorizationBundle(actionCore, {
-      ...decisionInput,
-      evaluatedAt: '2026-07-25T10:30:00.000Z',
+      config: policyEvaluation.config,
+      input: {
+        ...policyEvaluation.input,
+        evaluatedAt: '2026-07-25T10:30:00.000Z',
+      },
     });
 
     expect(
@@ -157,12 +176,13 @@ describe('exact standing-mandate containment', () => {
   });
 
   it('does not admit an action created before the mandate became effective', () => {
+    const oldCore = {
+      ...actionCore,
+      createdAt: '2026-06-30T23:59:59.999Z',
+    };
     const oldAction = createAuthorizationBundle(
-      {
-        ...actionCore,
-        createdAt: '2026-06-30T23:59:59.999Z',
-      },
-      decisionInput,
+      oldCore,
+      policyEvaluationForCore(oldCore),
     );
 
     expect(

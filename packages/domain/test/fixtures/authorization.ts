@@ -1,8 +1,14 @@
 import {
   createAuthorizationBundle,
   createStandingMandate,
-  type PolicyDecisionInputV1,
+  hashPaymentActionCore,
 } from '@invoiceguard/protocol/hashing';
+import {
+  paymentActionCoreV1Schema,
+  type PaymentActionCoreV1,
+  type PaymentPolicyEvaluationRequestV1,
+  type PaymentPolicyInputV1,
+} from '@invoiceguard/protocol';
 
 export const NOW = '2026-07-25T10:00:00.000Z';
 export const ACTION_EXPIRES_AT = '2026-07-25T11:00:00.000Z';
@@ -21,7 +27,6 @@ export const DIGESTS = {
   evidencePolicy: '1'.repeat(64),
   evidenceRoot: '2'.repeat(64),
   invoice: '3'.repeat(64),
-  inputRoot: '4'.repeat(64),
   mappingPolicy: '5'.repeat(64),
   supplierSnapshot: '6'.repeat(64),
 } as const;
@@ -97,78 +102,100 @@ export const actionCore = {
   supplierSnapshotDigest: DIGESTS.supplierSnapshot,
 } as const;
 
-export const decisionInput = {
-  evidencePolicy: standingMandate.requiredEvidencePolicy,
-  evaluatedAt: NOW,
-  expiresAt: ACTION_EXPIRES_AT,
-  inputRoot: DIGESTS.inputRoot,
-  policy: actionCore.policy,
-  purchaseOrder: {
-    mode: standingMandate.purchaseOrderPolicy.mode,
-    result: 'EXACT_REFERENCE_AND_TOTAL_MATCH',
-  },
-  reasonCodes: [
-    'AMOUNT_WITHIN_MANDATE',
-    'BENEFICIARY_EXACT_MATCH',
-    'DUPLICATE_CLEAR',
-    'EVIDENCE_NOT_REQUIRED_BY_MANDATE',
-    'MANDATE_EXACT_CONTAINMENT',
-    'PERIOD_CAP_AVAILABLE',
-    'PURCHASE_ORDER_EXACT_MATCH',
-    'SOURCE_AUTHENTICATED_STRUCTURED',
-    'SUPPLIER_ACTIVE_EXACT_MATCH',
+const humanAuthority = {
+  actionHumanQuorum: 2,
+  agentBookQuorum: 2,
+  companySubjectQuorum: 2,
+  roles: [
+    { count: 1, role: 'FINANCE_APPROVER' },
+    { count: 1, role: 'TREASURY_APPROVER' },
   ],
-  requiredAuthority: {
-    actionHumanQuorum: 0,
-    agentBookQuorum: 0,
-    companySubjectQuorum: 0,
-    roles: [],
-  },
-  route: 'STRAIGHT_THROUGH',
-  schemaVersion: 1,
-  standingMandate: {
-    mandateDigest: standingMandate.mandateDigest,
-    mandateId: standingMandate.mandateId,
-    mandateVersion: standingMandate.mandateVersion,
-  },
-  verificationMode: standingMandate.verificationMode,
-} satisfies PolicyDecisionInputV1;
+};
+
+export function policyEvaluationForCore(
+  coreInput: PaymentActionCoreV1,
+  overrides: Partial<PaymentPolicyInputV1> = {},
+): PaymentPolicyEvaluationRequestV1 {
+  const core = paymentActionCoreV1Schema.parse(coreInput);
+  return {
+    config: {
+      humanAuthority,
+      humanEvidencePolicy: {
+        digest: DIGESTS.evidencePolicy,
+        id: 'changed-beneficiary-v1',
+        version: 1,
+      },
+      humanVerificationMode: 'REQUIRED',
+      policy: core.policy,
+      schemaVersion: 1,
+    },
+    input: {
+      actionCoreDigest: hashPaymentActionCore(core),
+      actionCreatedAt: core.createdAt,
+      actionExpiresAt: core.expiresAt,
+      amountStatus: 'WITHIN_MANDATE',
+      assetStatus: 'SUPPORTED',
+      beneficiaryStatus: 'EXACT_MATCH',
+      duplicateStatus: 'CLEAR',
+      evaluatedAt: NOW,
+      extractionConflict: false,
+      fieldsIndependentlyConfirmed: false,
+      mandate: {
+        activeStatus: 'ACTIVE',
+        evidencePolicy: standingMandate.requiredEvidencePolicy,
+        exactContainment: true,
+        periodCapAvailable: true,
+        reference: {
+          mandateDigest: standingMandate.mandateDigest,
+          mandateId: standingMandate.mandateId,
+          mandateVersion: standingMandate.mandateVersion,
+        },
+        sourceRequirement: standingMandate.sourceRequirement,
+        verificationMode: standingMandate.verificationMode,
+      },
+      mappingPolicyStatus: 'SUPPORTED',
+      networkStatus: 'SUPPORTED',
+      policyEnabled: true,
+      purchaseOrder: {
+        mode: standingMandate.purchaseOrderPolicy.mode,
+        result: 'EXACT_REFERENCE_AND_TOTAL_MATCH',
+      },
+      schemaVersion: 1,
+      sourceTrustClass: 'AUTHENTICATED_STRUCTURED',
+      supplierFirstPayment: false,
+      supplierMatch: 'EXACT',
+      supplierStatus: 'ACTIVE',
+      ...overrides,
+    },
+  };
+}
+
+export const policyEvaluation = policyEvaluationForCore(actionCore);
 
 export const authorization = createAuthorizationBundle(
   actionCore,
-  decisionInput,
+  policyEvaluation,
 );
 
-export const humanAuthorization = createAuthorizationBundle(actionCore, {
-  ...decisionInput,
-  reasonCodes: ['BENEFICIARY_CHANGED', 'EVIDENCE_REQUIRED'],
-  requiredAuthority: {
-    actionHumanQuorum: 2,
-    agentBookQuorum: 2,
-    companySubjectQuorum: 2,
-    roles: [
-      { count: 1, role: 'FINANCE_APPROVER' },
-      { count: 1, role: 'TREASURY_APPROVER' },
-    ],
-  },
-  route: 'HUMAN_APPROVAL',
-  standingMandate: null,
-  verificationMode: 'REQUIRED',
-});
+export const humanAuthorization = createAuthorizationBundle(
+  actionCore,
+  policyEvaluationForCore(actionCore, {
+    beneficiaryStatus: 'CHANGED',
+    mandate: null,
+  }),
+);
 
-export const blockAuthorization = createAuthorizationBundle(actionCore, {
-  ...decisionInput,
-  reasonCodes: ['DUPLICATE_ALREADY_PAID'],
-  requiredAuthority: {
-    actionHumanQuorum: 0,
-    agentBookQuorum: 0,
-    companySubjectQuorum: 0,
-    roles: [],
-  },
-  route: 'BLOCK',
-  standingMandate: null,
-  verificationMode: 'NOT_REQUIRED',
-});
+export const blockAuthorization = createAuthorizationBundle(
+  actionCore,
+  policyEvaluationForCore(actionCore, {
+    duplicateStatus: 'ALREADY_PAID',
+    mandate: null,
+    purchaseOrder: {
+      mode: 'NOT_REQUIRED',
+      result: 'NOT_REQUIRED',
+    },
+  }),
+);
 
 export const activeMandateAggregate = {
   record: standingMandate,

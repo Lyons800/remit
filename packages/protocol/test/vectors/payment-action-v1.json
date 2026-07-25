@@ -39,52 +39,82 @@
     "supplierId": "019f939b-fe5e-7e92-b72e-8d4531958c34",
     "supplierSnapshotDigest": "8888888888888888888888888888888888888888888888888888888888888888"
   },
-  "decisionInput": {
-    "evidencePolicy": {
-      "digest": "9999999999999999999999999999999999999999999999999999999999999999",
-      "id": "routine-supplier-v1",
-      "version": 1
+  "policyEvaluation": {
+    "config": {
+      "humanAuthority": {
+        "actionHumanQuorum": 2,
+        "agentBookQuorum": 2,
+        "companySubjectQuorum": 2,
+        "roles": [
+          {
+            "count": 1,
+            "role": "FINANCE_APPROVER"
+          },
+          {
+            "count": 1,
+            "role": "TREASURY_APPROVER"
+          }
+        ]
+      },
+      "humanEvidencePolicy": {
+        "digest": "9999999999999999999999999999999999999999999999999999999999999999",
+        "id": "changed-beneficiary-v1",
+        "version": 1
+      },
+      "humanVerificationMode": "REQUIRED",
+      "policy": {
+        "id": "routine-invoice-policy",
+        "version": 1
+      },
+      "schemaVersion": 1
     },
-    "evaluatedAt": "2026-07-25T10:00:01.000Z",
-    "expiresAt": "2026-07-25T11:00:00.000Z",
-    "inputRoot": "4444444444444444444444444444444444444444444444444444444444444444",
-    "policy": {
-      "id": "routine-invoice-policy",
-      "version": 1
-    },
-    "purchaseOrder": {
-      "mode": "EXACT_REFERENCE_AND_TOTAL",
-      "result": "EXACT_REFERENCE_AND_TOTAL_MATCH"
-    },
-    "reasonCodes": [
-      "AMOUNT_WITHIN_MANDATE",
-      "BENEFICIARY_EXACT_MATCH",
-      "DUPLICATE_CLEAR",
-      "EVIDENCE_NOT_REQUIRED_BY_MANDATE",
-      "MANDATE_EXACT_CONTAINMENT",
-      "PERIOD_CAP_AVAILABLE",
-      "PURCHASE_ORDER_EXACT_MATCH",
-      "SOURCE_AUTHENTICATED_STRUCTURED",
-      "SUPPLIER_ACTIVE_EXACT_MATCH"
-    ],
-    "requiredAuthority": {
-      "actionHumanQuorum": 0,
-      "agentBookQuorum": 0,
-      "companySubjectQuorum": 0,
-      "roles": []
-    },
-    "route": "STRAIGHT_THROUGH",
-    "schemaVersion": 1,
-    "standingMandate": {
-      "mandateDigest": "5555555555555555555555555555555555555555555555555555555555555555",
-      "mandateId": "019f939b-fe5e-7e92-b72e-8d4531958c31",
-      "mandateVersion": 1
-    },
-    "verificationMode": "NOT_REQUIRED"
+    "input": {
+      "actionCoreDigest": "4f34166bdca2dd2ea06e727e03db737c99c22e7084e486e2c3f2670bac8bb1ed",
+      "actionCreatedAt": "2026-07-25T10:00:00.000Z",
+      "actionExpiresAt": "2026-07-25T11:00:00.000Z",
+      "amountStatus": "WITHIN_MANDATE",
+      "assetStatus": "SUPPORTED",
+      "beneficiaryStatus": "EXACT_MATCH",
+      "duplicateStatus": "CLEAR",
+      "evaluatedAt": "2026-07-25T10:00:01.000Z",
+      "extractionConflict": false,
+      "fieldsIndependentlyConfirmed": false,
+      "mandate": {
+        "activeStatus": "ACTIVE",
+        "evidencePolicy": {
+          "digest": "9999999999999999999999999999999999999999999999999999999999999999",
+          "id": "routine-supplier-v1",
+          "version": 1
+        },
+        "exactContainment": true,
+        "periodCapAvailable": true,
+        "reference": {
+          "mandateDigest": "5555555555555555555555555555555555555555555555555555555555555555",
+          "mandateId": "019f939b-fe5e-7e92-b72e-8d4531958c31",
+          "mandateVersion": 1
+        },
+        "sourceRequirement": {
+          "mode": "AUTHENTICATED_OR_INDEPENDENTLY_CONFIRMED"
+        },
+        "verificationMode": "NOT_REQUIRED"
+      },
+      "mappingPolicyStatus": "SUPPORTED",
+      "networkStatus": "SUPPORTED",
+      "policyEnabled": true,
+      "purchaseOrder": {
+        "mode": "EXACT_REFERENCE_AND_TOTAL",
+        "result": "EXACT_REFERENCE_AND_TOTAL_MATCH"
+      },
+      "schemaVersion": 1,
+      "sourceTrustClass": "AUTHENTICATED_STRUCTURED",
+      "supplierFirstPayment": false,
+      "supplierMatch": "EXACT",
+      "supplierStatus": "ACTIVE"
+    }
   },
   "expected": {
     "actionCoreDigest": "4f34166bdca2dd2ea06e727e03db737c99c22e7084e486e2c3f2670bac8bb1ed",
-    "actionDigest": "b28bf8cffa3621bbbd90915b540ae598b128d463adefa5c1b001caf0ab7f1ec7",
-    "policyDecisionDigest": "9ae39427b1723dde4996d08e9b1d496e03657643d8f2fc6d0822d1d825d22f17"
+    "actionDigest": "34049542f12cc57d0c54a24fd99112de313c22028cac018e4707ccde8f5ed477",
+    "policyDecisionDigest": "10abbdd5b4cebbfb354310915dc4e7f4bbed0441458d57de7dfd31f7d8ac3543"
   }
 }

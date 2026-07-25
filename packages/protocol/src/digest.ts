@@ -12,7 +12,10 @@ export const digestDomains = {
   invoiceCandidate: 'invoiceguard:invoice-candidate:v1',
   paymentAction: 'invoiceguard:payment-action:v1',
   paymentActionCore: 'invoiceguard:payment-action-core:v1',
+  policyConfig: 'invoiceguard:policy-config:v1',
   policyDecision: 'invoiceguard:policy-decision:v1',
+  policyInput: 'invoiceguard:policy-input:v1',
+  policyInputManifest: 'invoiceguard:policy-input-manifest:v1',
   standingMandate: 'invoiceguard:standing-mandate:v1',
   supplierSnapshot: 'invoiceguard:supplier-snapshot:v1',
 } as const;

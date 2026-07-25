@@ -213,10 +213,13 @@ payable silently.
 
 ## Invoice routing
 
-A frozen policy evaluation binds the action core digest, input root, policy
-version, route, reason codes, required roles and quorums, and verification mode.
-The route is exactly `STRAIGHT_THROUGH`, `HUMAN_APPROVAL`, or `BLOCK`.
-`verificationMode` is exactly `NOT_REQUIRED` or `REQUIRED`.
+A frozen policy evaluation binds the action core digest, versioned policy
+configuration, versioned normalized inputs, evaluator identity, policy version,
+route, reason codes, required roles and quorums, and verification mode. The
+configuration and input digests form a canonical input manifest. The pure
+evaluator, never its caller, derives the route and reason codes. The route is
+exactly `STRAIGHT_THROUGH`, `HUMAN_APPROVAL`, or `BLOCK`. `verificationMode` is
+exactly `NOT_REQUIRED` or `REQUIRED`.
 
 `STRAIGHT_THROUGH` requires exact containment by a current standing mandate plus
 an enrolled, human-backed, company-authorized payment agent. A model score never
@@ -282,9 +285,11 @@ createdAt
   is never inferred from a market price or model output.
 - Policy evaluation is non-circular. InvoiceGuard first hashes the action core
   without `policyDecisionDigest`. The deterministic decision binds that core
-  digest, input root, route, verification mode, mandate ID and version, required
-  roles and quorums, reason codes, and validity. The final authorization intent
-  embeds the decision digest and is hashed again as `actionDigest`.
+  digest, a manifest of the canonical policy configuration and normalized
+  inputs, route, verification mode, mandate ID and version, required roles and
+  quorums, reason codes, and validity. Bundle verification re-runs the evaluator
+  from those exact inputs. The final authorization intent embeds the decision
+  digest and is hashed again as `actionDigest`.
 - JSON is canonicalized using RFC 8785 before SHA-256 hashing.
 - The hash input includes the domain separator `invoiceguard:payment-action:v1`.
 - The full action remains immutable. A changed field creates a new action and

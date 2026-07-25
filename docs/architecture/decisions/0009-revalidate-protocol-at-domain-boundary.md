@@ -19,10 +19,12 @@ authorization-bundle verifier. Every mandate transition or containment check
 re-runs the standing-mandate envelope verifier.
 
 The canonical action directly binds the supplier snapshot digest. The policy
-decision directly binds the evidence-policy identity, version and digest plus
-the purchase-order policy and result. The mandate directly binds the mapped
-settlement beneficiary. Domain policy compares these revalidated records rather
-than accepting caller assertions that they matched.
+decision binds a canonical manifest of the versioned policy configuration and
+normalized inputs, plus the derived evidence policy and purchase-order result.
+Bundle verification re-runs the pure evaluator and rejects any divergence in
+route, reasons, authority, verification, or mandate reference. The mandate
+directly binds the mapped settlement beneficiary. Domain policy compares these
+revalidated records rather than accepting caller assertions that they matched.
 
 Policy evaluation cannot predate action creation, and authorization cannot
 precede the frozen evaluation time. A mandate version cannot authorize an action

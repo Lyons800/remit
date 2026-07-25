@@ -17,11 +17,16 @@ import {
 } from '../src/hashing.js';
 import {
   vectorActionCore,
-  vectorBlockDecision,
+  vectorBlockEvaluation,
   vectorExpected,
-  vectorHumanDecision,
-  vectorStraightThroughDecision,
+  vectorHumanEvaluation,
+  vectorStraightThroughEvaluation,
 } from './fixtures/payment-action.js';
+
+const vectorMandate = vectorStraightThroughEvaluation.input.mandate;
+if (vectorMandate === null) {
+  throw new Error('The straight-through vector must include a mandate.');
+}
 
 describe('RFC 8785 canonical JSON', () => {
   it('sorts object properties recursively and preserves array order', () => {
@@ -46,7 +51,7 @@ describe('non-circular payment authorization hash graph', () => {
   it('matches the committed v1 vector', () => {
     const bundle = createAuthorizationBundle(
       vectorActionCore,
-      vectorStraightThroughDecision,
+      vectorStraightThroughEvaluation,
     );
 
     expect(hashPaymentActionCore(bundle.actionCore)).toBe(
@@ -61,7 +66,7 @@ describe('non-circular payment authorization hash graph', () => {
   it('binds core, decision, and final intent without circular fields', () => {
     const bundle = createAuthorizationBundle(
       vectorActionCore,
-      vectorHumanDecision,
+      vectorHumanEvaluation,
     );
 
     expect(bundle.decision).not.toHaveProperty('actionDigest');
@@ -81,7 +86,7 @@ describe('non-circular payment authorization hash graph', () => {
   it('rejects a policy decision copied to another action core', () => {
     const decision = createPolicyDecision(
       vectorActionCore,
-      vectorHumanDecision,
+      vectorHumanEvaluation,
     );
     const changedCore = {
       ...vectorActionCore,
@@ -103,15 +108,15 @@ describe('non-circular payment authorization hash graph', () => {
           ...vectorActionCore,
           createdAt: '2026-07-25T10:00:02.000Z',
         },
-        vectorStraightThroughDecision,
+        vectorStraightThroughEvaluation,
       ),
-    ).toThrow('evaluation chronology');
+    ).toThrow('policy input action, time window, or policy');
   });
 
   it('invalidates a final action mutation while retaining the old digest', () => {
     const bundle = createAuthorizationBundle(
       vectorActionCore,
-      vectorHumanDecision,
+      vectorHumanEvaluation,
     );
     const changedAction = {
       ...bundle.envelope.action,
@@ -135,25 +140,17 @@ describe('non-circular payment authorization hash graph', () => {
     ).toThrow('final action differs');
   });
 
-  it('changes the final digest when a compatible policy reason changes', () => {
+  it('changes the final digest when a canonical policy input changes', () => {
     const first = createAuthorizationBundle(
       vectorActionCore,
-      vectorStraightThroughDecision,
+      vectorStraightThroughEvaluation,
     );
     const changedDecision = createPolicyDecision(vectorActionCore, {
-      ...vectorStraightThroughDecision,
-      reasonCodes: [
-        'AMOUNT_WITHIN_MANDATE',
-        'BENEFICIARY_EXACT_MATCH',
-        'DUPLICATE_CLEAR',
-        'EVIDENCE_NOT_REQUIRED_BY_MANDATE',
-        'FIELDS_INDEPENDENTLY_CONFIRMED',
-        'MANDATE_EXACT_CONTAINMENT',
-        'PERIOD_CAP_AVAILABLE',
-        'PURCHASE_ORDER_EXACT_MATCH',
-        'SOURCE_AUTHENTICATED_STRUCTURED',
-        'SUPPLIER_ACTIVE_EXACT_MATCH',
-      ],
+      config: vectorStraightThroughEvaluation.config,
+      input: {
+        ...vectorStraightThroughEvaluation.input,
+        fieldsIndependentlyConfirmed: true,
+      },
     });
     const changedIntent = createPaymentAuthorizationIntent(
       vectorActionCore,
@@ -168,27 +165,36 @@ describe('non-circular payment authorization hash graph', () => {
     {
       label: 'evidence policy',
       mutate: {
-        ...vectorStraightThroughDecision,
-        evidencePolicy: {
-          ...vectorStraightThroughDecision.evidencePolicy,
-          digest: '8'.repeat(64),
+        config: vectorStraightThroughEvaluation.config,
+        input: {
+          ...vectorStraightThroughEvaluation.input,
+          mandate: {
+            ...vectorMandate,
+            evidencePolicy: {
+              ...vectorMandate.evidencePolicy,
+              digest: '8'.repeat(64),
+            },
+          },
         },
       },
     },
     {
       label: 'purchase-order result',
       mutate: {
-        ...vectorStraightThroughDecision,
-        purchaseOrder: {
-          mode: 'EXACT_REFERENCE' as const,
-          result: 'EXACT_REFERENCE_MATCH' as const,
+        config: vectorStraightThroughEvaluation.config,
+        input: {
+          ...vectorStraightThroughEvaluation.input,
+          purchaseOrder: {
+            mode: 'NOT_REQUIRED' as const,
+            result: 'NOT_REQUIRED' as const,
+          },
         },
       },
     },
   ])('changes the final digest for a substituted $label', ({ mutate }) => {
     const original = createAuthorizationBundle(
       vectorActionCore,
-      vectorStraightThroughDecision,
+      vectorStraightThroughEvaluation,
     );
     const changed = createAuthorizationBundle(vectorActionCore, mutate);
 
@@ -199,23 +205,25 @@ describe('non-circular payment authorization hash graph', () => {
 
   it('validates all three frozen policy routes', () => {
     expect(
-      createAuthorizationBundle(vectorActionCore, vectorStraightThroughDecision)
-        .decision.route,
+      createAuthorizationBundle(
+        vectorActionCore,
+        vectorStraightThroughEvaluation,
+      ).decision.route,
     ).toBe('STRAIGHT_THROUGH');
     expect(
-      createAuthorizationBundle(vectorActionCore, vectorHumanDecision).decision
-        .route,
+      createAuthorizationBundle(vectorActionCore, vectorHumanEvaluation)
+        .decision.route,
     ).toBe('HUMAN_APPROVAL');
     expect(
-      createAuthorizationBundle(vectorActionCore, vectorBlockDecision).decision
-        .route,
+      createAuthorizationBundle(vectorActionCore, vectorBlockEvaluation)
+        .decision.route,
     ).toBe('BLOCK');
   });
 
   it('rejects changed-beneficiary review without required verification', () => {
     expect(
       policyDecisionV1Schema.safeParse({
-        ...createPolicyDecision(vectorActionCore, vectorHumanDecision),
+        ...createPolicyDecision(vectorActionCore, vectorHumanEvaluation),
         verificationMode: 'NOT_REQUIRED',
       }).success,
     ).toBe(false);
@@ -226,7 +234,7 @@ describe('non-circular payment authorization hash graph', () => {
       policyDecisionV1Schema.safeParse({
         ...createPolicyDecision(
           vectorActionCore,
-          vectorStraightThroughDecision,
+          vectorStraightThroughEvaluation,
         ),
         reasonCodes: [
           'MANDATE_EXACT_CONTAINMENT',
@@ -239,7 +247,7 @@ describe('non-circular payment authorization hash graph', () => {
   it('blocks without purchasing evidence when a block reason takes precedence', () => {
     expect(
       policyDecisionV1Schema.safeParse({
-        ...createPolicyDecision(vectorActionCore, vectorBlockDecision),
+        ...createPolicyDecision(vectorActionCore, vectorBlockEvaluation),
         reasonCodes: ['BENEFICIARY_CHANGED', 'DUPLICATE_ALREADY_PAID'],
       }).success,
     ).toBe(true);
@@ -252,5 +260,40 @@ describe('non-circular payment authorization hash graph', () => {
         mutableRecipientOverride: 'hedera:296:0.0.9999',
       }).success,
     ).toBe(false);
+  });
+
+  it('does not let callers inject a route or reason trace', () => {
+    expect(() =>
+      createAuthorizationBundle(vectorActionCore, {
+        ...vectorHumanEvaluation,
+        route: 'STRAIGHT_THROUGH',
+      }),
+    ).toThrow();
+    expect(() =>
+      createAuthorizationBundle(vectorActionCore, {
+        ...vectorHumanEvaluation,
+        reasonCodes: ['DUPLICATE_CLEAR'],
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a policy-input mutation beneath a frozen decision', () => {
+    const bundle = createAuthorizationBundle(
+      vectorActionCore,
+      vectorStraightThroughEvaluation,
+    );
+
+    expect(() =>
+      verifyAuthorizationBundle({
+        ...bundle,
+        policyEvaluation: {
+          config: bundle.policyEvaluation.config,
+          input: {
+            ...bundle.policyEvaluation.input,
+            fieldsIndependentlyConfirmed: true,
+          },
+        },
+      }),
+    ).toThrow('deterministic evaluation inputs');
   });
 });

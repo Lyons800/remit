@@ -14,14 +14,18 @@ import {
   policyDecisionV1Schema,
   type PolicyDecisionV1,
 } from './actions/policy-decision.v1.js';
+import {
+  evaluatePaymentPolicy,
+  parsePaymentPolicyEvaluationRequest,
+  type PaymentPolicyEvaluationRequestV1,
+} from './actions/payment-policy-evaluator.v1.js';
 import type { Sha256Digest } from './primitives.js';
-
-export type PolicyDecisionInputV1 = Omit<PolicyDecisionV1, 'actionCoreDigest'>;
 
 export type AuthorizationBundleV1 = Readonly<{
   actionCore: PaymentActionCoreV1;
   decision: PolicyDecisionV1;
   envelope: PaymentActionEnvelopeV1;
+  policyEvaluation: PaymentPolicyEvaluationRequestV1;
 }>;
 
 function bindingError(message: string): Error {
@@ -54,11 +58,24 @@ export function hashPaymentAuthorizationIntent(intent: unknown): Sha256Digest {
 
 export function createPolicyDecision(
   actionCore: unknown,
-  input: PolicyDecisionInputV1,
+  evaluationInput: unknown,
 ): PolicyDecisionV1 {
   const core = paymentActionCoreV1Schema.parse(actionCore);
+  const policyEvaluation = parsePaymentPolicyEvaluationRequest(evaluationInput);
+  if (
+    policyEvaluation.input.actionCoreDigest !== hashPaymentActionCore(core) ||
+    policyEvaluation.input.actionCreatedAt !== core.createdAt ||
+    policyEvaluation.input.actionExpiresAt !== core.expiresAt ||
+    canonicalizeJson(policyEvaluation.config.policy) !==
+      canonicalizeJson(core.policy)
+  ) {
+    throw bindingError(
+      'policy input action, time window, or policy differs from action core',
+    );
+  }
+  const evaluated = evaluatePaymentPolicy(policyEvaluation);
   const decision = policyDecisionV1Schema.parse({
-    ...input,
+    ...evaluated,
     actionCoreDigest: hashPaymentActionCore(core),
   });
 
@@ -114,13 +131,21 @@ export function createPaymentActionEnvelope(
 
 export function createAuthorizationBundle(
   actionCoreInput: unknown,
-  decisionInput: PolicyDecisionInputV1,
+  policyEvaluationInput: unknown,
 ): AuthorizationBundleV1 {
   const actionCore = paymentActionCoreV1Schema.parse(actionCoreInput);
-  const decision = createPolicyDecision(actionCore, decisionInput);
+  const policyEvaluation = parsePaymentPolicyEvaluationRequest(
+    policyEvaluationInput,
+  );
+  const decision = createPolicyDecision(actionCore, policyEvaluation);
   const action = createPaymentAuthorizationIntent(actionCore, decision);
   const envelope = createPaymentActionEnvelope(action);
-  return Object.freeze({ actionCore, decision, envelope });
+  return Object.freeze({
+    actionCore,
+    decision,
+    envelope,
+    policyEvaluation,
+  });
 }
 
 export function verifyAuthorizationBundle(
@@ -129,6 +154,15 @@ export function verifyAuthorizationBundle(
   const actionCore = paymentActionCoreV1Schema.parse(bundleInput.actionCore);
   const decision = policyDecisionV1Schema.parse(bundleInput.decision);
   const envelope = paymentActionEnvelopeV1Schema.parse(bundleInput.envelope);
+  const policyEvaluation = parsePaymentPolicyEvaluationRequest(
+    bundleInput.policyEvaluation,
+  );
+  const expectedDecision = createPolicyDecision(actionCore, policyEvaluation);
+  if (canonicalizeJson(expectedDecision) !== canonicalizeJson(decision)) {
+    throw bindingError(
+      'policy decision differs from deterministic evaluation inputs',
+    );
+  }
   const expectedIntent = createPaymentAuthorizationIntent(actionCore, decision);
 
   if (canonicalizeJson(expectedIntent) !== canonicalizeJson(envelope.action)) {
@@ -141,5 +175,10 @@ export function verifyAuthorizationBundle(
     throw bindingError('final action digest does not recompute');
   }
 
-  return Object.freeze({ actionCore, decision, envelope });
+  return Object.freeze({
+    actionCore,
+    decision,
+    envelope,
+    policyEvaluation,
+  });
 }
