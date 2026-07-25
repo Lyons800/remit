@@ -147,10 +147,33 @@ const authorityRequirementsSchema = z
 export const policyDecisionV1Schema = z
   .object({
     actionCoreDigest: sha256DigestSchema,
+    evidencePolicy: z
+      .object({
+        digest: sha256DigestSchema,
+        id: nonEmptyBoundedStringSchema,
+        version: positiveSafeIntegerSchema,
+      })
+      .strict(),
     evaluatedAt: utcInstantSchema,
     expiresAt: utcInstantSchema,
     inputRoot: sha256DigestSchema,
     policy: policyReferenceSchema,
+    purchaseOrder: z
+      .object({
+        mode: z.enum([
+          'NOT_REQUIRED',
+          'EXACT_REFERENCE',
+          'EXACT_REFERENCE_AND_TOTAL',
+        ]),
+        result: z.enum([
+          'NOT_REQUIRED',
+          'EXACT_REFERENCE_MATCH',
+          'EXACT_REFERENCE_AND_TOTAL_MATCH',
+          'MISMATCH',
+          'UNKNOWN',
+        ]),
+      })
+      .strict(),
     reasonCodes: z.array(policyReasonCodeSchema).min(1).max(64),
     requiredAuthority: authorityRequirementsSchema,
     route: policyRouteSchema,
@@ -198,6 +221,13 @@ export const policyDecisionV1Schema = z
       decision.requiredAuthority.agentBookQuorum,
       decision.requiredAuthority.companySubjectQuorum,
     ];
+    const purchaseOrderSatisfied =
+      (decision.purchaseOrder.mode === 'NOT_REQUIRED' &&
+        decision.purchaseOrder.result === 'NOT_REQUIRED') ||
+      (decision.purchaseOrder.mode === 'EXACT_REFERENCE' &&
+        decision.purchaseOrder.result === 'EXACT_REFERENCE_MATCH') ||
+      (decision.purchaseOrder.mode === 'EXACT_REFERENCE_AND_TOTAL' &&
+        decision.purchaseOrder.result === 'EXACT_REFERENCE_AND_TOTAL_MATCH');
 
     if (decision.route === 'STRAIGHT_THROUGH') {
       const confirmedSource = decision.reasonCodes.some(
@@ -205,9 +235,13 @@ export const policyDecisionV1Schema = z
           code === 'SOURCE_AUTHENTICATED_STRUCTURED' ||
           code === 'FIELDS_INDEPENDENTLY_CONFIRMED',
       );
-      const purchaseOrderSatisfied =
-        decision.reasonCodes.includes('PURCHASE_ORDER_NOT_REQUIRED') !==
-        decision.reasonCodes.includes('PURCHASE_ORDER_EXACT_MATCH');
+      const purchaseOrderReasonSatisfied =
+        (decision.purchaseOrder.mode === 'NOT_REQUIRED' &&
+          decision.reasonCodes.includes('PURCHASE_ORDER_NOT_REQUIRED') &&
+          !decision.reasonCodes.includes('PURCHASE_ORDER_EXACT_MATCH')) ||
+        (decision.purchaseOrder.mode !== 'NOT_REQUIRED' &&
+          !decision.reasonCodes.includes('PURCHASE_ORDER_NOT_REQUIRED') &&
+          decision.reasonCodes.includes('PURCHASE_ORDER_EXACT_MATCH'));
       const requiredReasons = [
         'SUPPLIER_ACTIVE_EXACT_MATCH',
         'BENEFICIARY_EXACT_MATCH',
@@ -223,6 +257,7 @@ export const policyDecisionV1Schema = z
         hasHumanReviewReason ||
         hasBlockReason ||
         !confirmedSource ||
+        !purchaseOrderReasonSatisfied ||
         !purchaseOrderSatisfied ||
         requiredReasons.some(
           (reason) => !decision.reasonCodes.includes(reason),

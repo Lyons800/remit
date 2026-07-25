@@ -1,4 +1,5 @@
 import { accept, refuse, type DomainResult } from '../result.js';
+import { parseCanonicalAtoms, parsePositiveAtoms } from '../values/atoms.js';
 
 export type MandateCapacity = Readonly<{
   candidateAtoms: string;
@@ -13,30 +14,17 @@ export type ReservedMandateCapacity = Readonly<{
   settledAtoms: string;
 }>;
 
-const MAX_UINT_256 = (1n << 256n) - 1n;
-const CANONICAL_ATOMS = /^(?:0|[1-9]\d{0,77})$/u;
-
-function parseAtoms(value: string): bigint | null {
-  if (!CANONICAL_ATOMS.test(value)) {
-    return null;
-  }
-
-  const atoms = BigInt(value);
-  return atoms <= MAX_UINT_256 ? atoms : null;
-}
-
 function parseCapacity(
   capacity: ReservedMandateCapacity,
 ): Readonly<{ cap: bigint; reserved: bigint; settled: bigint }> | null {
-  const cap = parseAtoms(capacity.periodCapAtoms);
-  const reserved = parseAtoms(capacity.reservedAtoms);
-  const settled = parseAtoms(capacity.settledAtoms);
+  const cap = parsePositiveAtoms(capacity.periodCapAtoms);
+  const reserved = parseCanonicalAtoms(capacity.reservedAtoms);
+  const settled = parseCanonicalAtoms(capacity.settledAtoms);
 
   if (
     cap === null ||
     reserved === null ||
     settled === null ||
-    cap === 0n ||
     settled + reserved > cap
   ) {
     return null;
@@ -49,9 +37,9 @@ export function reserveMandateCapacity(
   capacity: MandateCapacity,
 ): DomainResult<ReservedMandateCapacity> {
   const parsed = parseCapacity(capacity);
-  const candidate = parseAtoms(capacity.candidateAtoms);
+  const candidate = parsePositiveAtoms(capacity.candidateAtoms);
 
-  if (parsed === null || candidate === null || candidate === 0n) {
+  if (parsed === null || candidate === null) {
     return refuse('MANDATE_RESERVATION_CONFLICT');
   }
 
@@ -74,14 +62,9 @@ export function settleMandateReservation(
   actionAtoms: string,
 ): DomainResult<ReservedMandateCapacity> {
   const parsed = parseCapacity(capacity);
-  const action = parseAtoms(actionAtoms);
+  const action = parsePositiveAtoms(actionAtoms);
 
-  if (
-    parsed === null ||
-    action === null ||
-    action === 0n ||
-    action > parsed.reserved
-  ) {
+  if (parsed === null || action === null || action > parsed.reserved) {
     return refuse('MANDATE_RESERVATION_CONFLICT');
   }
 
@@ -99,14 +82,9 @@ export function releaseMandateReservation(
   actionAtoms: string,
 ): DomainResult<ReservedMandateCapacity> {
   const parsed = parseCapacity(capacity);
-  const action = parseAtoms(actionAtoms);
+  const action = parsePositiveAtoms(actionAtoms);
 
-  if (
-    parsed === null ||
-    action === null ||
-    action === 0n ||
-    action > parsed.reserved
-  ) {
+  if (parsed === null || action === null || action > parsed.reserved) {
     return refuse('MANDATE_RESERVATION_CONFLICT');
   }
 

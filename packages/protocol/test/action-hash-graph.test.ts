@@ -152,6 +152,39 @@ describe('non-circular payment authorization hash graph', () => {
     expect(changedEnvelope.actionDigest).not.toBe(first.envelope.actionDigest);
   });
 
+  it.each([
+    {
+      label: 'evidence policy',
+      mutate: {
+        ...vectorStraightThroughDecision,
+        evidencePolicy: {
+          ...vectorStraightThroughDecision.evidencePolicy,
+          digest: '8'.repeat(64),
+        },
+      },
+    },
+    {
+      label: 'purchase-order result',
+      mutate: {
+        ...vectorStraightThroughDecision,
+        purchaseOrder: {
+          mode: 'EXACT_REFERENCE' as const,
+          result: 'EXACT_REFERENCE_MATCH' as const,
+        },
+      },
+    },
+  ])('changes the final digest for a substituted $label', ({ mutate }) => {
+    const original = createAuthorizationBundle(
+      vectorActionCore,
+      vectorStraightThroughDecision,
+    );
+    const changed = createAuthorizationBundle(vectorActionCore, mutate);
+
+    expect(changed.envelope.actionDigest).not.toBe(
+      original.envelope.actionDigest,
+    );
+  });
+
   it('validates all three frozen policy routes', () => {
     expect(
       createAuthorizationBundle(vectorActionCore, vectorStraightThroughDecision)

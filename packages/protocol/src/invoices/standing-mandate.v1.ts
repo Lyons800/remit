@@ -3,6 +3,8 @@ import { z } from 'zod';
 import {
   assetIdSchema,
   beneficiarySchema,
+  caip10Network,
+  caip10Schema,
   caip19Network,
   caip19Schema,
   caip2Schema,
@@ -52,6 +54,7 @@ export const standingMandateCoreV1Schema = z
       .strict(),
     schemaVersion: schemaVersionV1Schema,
     settlementAssetId: caip19Schema,
+    settlementBeneficiary: caip10Schema,
     settlementNetworkId: caip2Schema,
     sourceAssetId: assetIdSchema,
     supplierId: uuidV7Schema,
@@ -86,6 +89,17 @@ export const standingMandateCoreV1Schema = z
         code: 'custom',
         message: 'settlement asset must belong to the settlement network',
         path: ['settlementAssetId'],
+      });
+    }
+
+    if (
+      caip10Network(mandate.settlementBeneficiary) !==
+      mandate.settlementNetworkId
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'settlement beneficiary must belong to the settlement network',
+        path: ['settlementBeneficiary'],
       });
     }
   });

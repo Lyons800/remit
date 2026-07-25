@@ -128,6 +128,7 @@ sourceAssetId
 maximumSourceInvoiceAmountAtoms
 settlementAssetId
 settlementNetworkId
+settlementBeneficiary
 mappingPolicyHash
 maximumSettlementInvoiceAmountAtoms
 maximumSettlementPeriodAmountAtoms

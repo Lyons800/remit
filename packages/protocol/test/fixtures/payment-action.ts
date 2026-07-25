@@ -20,10 +20,19 @@ export const vectorStraightThroughDecision =
 export const vectorExpected = paymentActionVector.expected;
 
 export const vectorHumanDecision = {
+  evidencePolicy: {
+    digest: '9'.repeat(64),
+    id: 'changed-beneficiary-v1',
+    version: 1,
+  },
   evaluatedAt: '2026-07-25T10:00:01.000Z',
   expiresAt: vectorActionCore.expiresAt,
   inputRoot: '6'.repeat(64),
   policy: vectorActionCore.policy,
+  purchaseOrder: {
+    mode: 'EXACT_REFERENCE_AND_TOTAL',
+    result: 'EXACT_REFERENCE_AND_TOTAL_MATCH',
+  },
   reasonCodes: ['BENEFICIARY_CHANGED', 'EVIDENCE_REQUIRED'],
   requiredAuthority: {
     actionHumanQuorum: 2,
@@ -41,10 +50,19 @@ export const vectorHumanDecision = {
 } as const satisfies PolicyDecisionInputV1;
 
 export const vectorBlockDecision = {
+  evidencePolicy: {
+    digest: '9'.repeat(64),
+    id: 'blocked-action-v1',
+    version: 1,
+  },
   evaluatedAt: '2026-07-25T10:00:01.000Z',
   expiresAt: vectorActionCore.expiresAt,
   inputRoot: '7'.repeat(64),
   policy: vectorActionCore.policy,
+  purchaseOrder: {
+    mode: 'NOT_REQUIRED',
+    result: 'NOT_REQUIRED',
+  },
   reasonCodes: ['DUPLICATE_ALREADY_PAID'],
   requiredAuthority: {
     actionHumanQuorum: 0,

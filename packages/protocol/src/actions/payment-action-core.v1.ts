@@ -60,6 +60,7 @@ export const paymentActionCoreV1Schema = z
       })
       .strict(),
     supplierId: uuidV7Schema,
+    supplierSnapshotDigest: sha256DigestSchema,
   })
   .strict()
   .superRefine((action, context) => {

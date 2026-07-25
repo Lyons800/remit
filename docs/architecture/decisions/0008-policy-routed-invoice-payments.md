@@ -38,11 +38,11 @@ so.
 
 `STRAIGHT_THROUGH` may set the per-invoice human quorum to zero only when every
 field is contained by an unexpired, unrevoked standing mandate. The mandate
-fixes supplier, supplier snapshot, beneficiary, source asset and cap, settlement
-network and asset, mapping-policy hash, settlement invoice and period caps,
-source/evidence requirements, purchase-order policy, validity, and version. It
-is issued through a separate company-governance flow and cannot be created or
-broadened by an invoice or payment agent.
+fixes supplier, supplier snapshot, source beneficiary, source asset and cap,
+settlement network, asset and beneficiary, mapping-policy hash, settlement
+invoice and period caps, source/evidence requirements, purchase-order policy,
+validity, and version. It is issued through a separate company-governance flow
+and cannot be created or broadened by an invoice or payment agent.
 
 Email, upload, and model-extracted fields remain untrusted candidate data.
 Unstructured extraction alone cannot enter the straight-through lane.

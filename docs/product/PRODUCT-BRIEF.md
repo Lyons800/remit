@@ -88,10 +88,10 @@ updates the approved supplier record.
 | Review           | New supplier, changed beneficiary, unusual amount, first payment, missing evidence, cap breach, or configured high-value threshold                      | Configured evidence when the frozen policy says `REQUIRED`, plus the fresh World-bound company-role approvals specified for the exception | Hold until the exact exception reaches quorum |
 | Blocked          | Duplicate, `MISMATCH`, `UNKNOWN`, unavailable required evidence, altered action, expired/revoked authority, or replay                                   | No agent or operator override on the existing action                                                                                      | No value movement                             |
 
-A standing mandate is itself a governed object. It fixes supplier, beneficiary,
-asset, per-invoice and period caps, required evidence, purchase-order rules,
-effective dates, and revocation state. A material change exits the mandate; it
-does not silently broaden it.
+A standing mandate is itself a governed object. It fixes supplier, source
+beneficiary, mapped settlement beneficiary, asset, per-invoice and period caps,
+required evidence, purchase-order rules, effective dates, and revocation state.
+A material change exits the mandate; it does not silently broaden it.
 
 Every frozen policy decision sets `verificationMode` to exactly `NOT_REQUIRED`
 or `REQUIRED`. Routine invoices do not buy circular evidence merely to create an
