@@ -7,9 +7,15 @@
  * burn, replaying a fully valid authorization is not rejected by a database —
  * the token that authorized payment no longer exists on the ledger.
  *
- *   authorization complete -> mint(metadata = action digest)
- *   settlement             -> transfer
- *   consumption            -> burn (irreversible)
+ * CUSTODY MODEL — the payable never leaves gateway treasury. TokenBurn only
+ * burns treasury-held tokens; destroying an NFT anywhere else requires a wipe
+ * key, i.e. an issuer-confiscation key we refuse to hold. Treasury custody is
+ * also conceptually right: this is a control object, not a collectible. The
+ * money (IGEUR / HBAR) moves at settlement; the payable does not.
+ *
+ *   authorization complete -> mint(metadata = action digest)  [treasury]
+ *   settlement             -> money moves; payable unchanged  [treasury]
+ *   consumption            -> burn (irreversible)             [treasury]
  *
  * Same plan→evidence discipline as the synthetic-EUR spike: pure planning and
  * validation here, live transactions in the operator-gated tooling, and mint
@@ -25,6 +31,28 @@ export const HEDERA_TESTNET_NETWORK = 'hedera:testnet';
 export const PAYABLE_COLLECTION_NAME = 'InvoiceGuard Payables - NO VALUE';
 export const PAYABLE_COLLECTION_SYMBOL = 'IGPAY';
 export const PAYABLE_METADATA_MAX_BYTES = 100;
+
+/**
+ * Collection key policy: SUPPLY KEY ONLY.
+ *
+ * - no admin key    -> token configuration is immutable forever, and absent
+ *                      keys can never be added later (define-a-token rule);
+ * - no wipe key     -> nobody can destroy or confiscate a held token;
+ * - no metadata key -> NFT metadata is immutable after mint (HIP-657);
+ * - no freeze/kyc/pause keys -> no issuer control over holders.
+ *
+ * The only lifecycle operations that can ever exist are mint and
+ * treasury-held burn. Judges can verify all of this from the token info.
+ */
+export const PAYABLE_COLLECTION_KEY_POLICY = Object.freeze({
+  adminKey: false,
+  freezeKey: false,
+  kycKey: false,
+  metadataKey: false,
+  pauseKey: false,
+  supplyKey: true,
+  wipeKey: false,
+} as const);
 
 const ENTITY_ID_PATTERN = /^\d+\.\d+\.\d+$/u;
 const TRANSACTION_ID_PATTERN = /^\d+\.\d+\.\d+@\d{10}\.\d{9}$/u;
