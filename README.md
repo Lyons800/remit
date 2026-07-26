@@ -212,6 +212,39 @@ The demo **refuses to invent a human identity**. Unregistered agents are marked
 `[SIMULATED]` on every line they touch, and `--simulate-humans` makes that
 explicit for rehearsal. A rehearsal can never be mistaken for a proof.
 
+## World: what is live, and what is simulated
+
+Worth separating precisely, because they are different claims.
+
+**Live on World Chain mainnet.** Two agent wallets are registered in AgentBook
+and both resolve to the same anonymous human:
+
+```
+A1  0xA03F5F37…6f34  ->  0x157f9bb0a0a52ceab5931798d421683ae5bff28b5e956c9588b3eea88bb160c0
+A2  0x4EaB3ef9…275B  ->  0x157f9bb0a0a52ceab5931798d421683ae5bff28b5e956c9588b3eea88bb160c0
+```
+
+`pnpm gate:agentbook` reproduces that in about ten seconds. It is the claim the
+product rests on: two wallets, two company roles, **one person** — so
+`validateApprovalQuorum` refuses `ACTION_HUMAN_NOT_DISTINCT` on real identities,
+not invented ones.
+
+**Simulated.** The approval _events_ themselves. Nobody is prompted on a phone;
+the demo constructs approval facts and asks World only the question it truly
+answers — who is behind these wallets. `signedProofDigest` and `worldProofId`
+are placeholders, and the demo marks the affected lines.
+
+**Why.** Completing it means World App proving a human approved _this_ payment,
+with the action digest carried as the World ID signal. That flow is built and
+signed against our real `app_id` and `rp_id` on the `demo/world-phone-approval`
+branch — action derivation, signal binding and a locally-signed `rp_context` all
+validate. It stops at the transport: IDKit initialises a WASM module and expects
+a browser, so a terminal script can never open World App. Finishing it needs a
+client component in `/approvals/[id]`.
+
+It is kept off `main` on purpose. A half-wired login is worse than an honest
+simulation, and this repository would rather say what it has not done.
+
 ## What we do not claim
 
 Remit proves the integrity of the **authorisation path**. It does not prove that
