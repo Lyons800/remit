@@ -26,8 +26,9 @@ export default async function OnboardingPage() {
           <p className="microlabel">One last step</p>
           <CardTitle>Create your company workspace</CardTitle>
           <p className="text-sm text-muted-foreground">
-            This keeps invoices, suppliers, policies, and audit evidence scoped
-            to the correct company.
+            This creates the company boundary for your private roster. The
+            invoice and payment screens in this hackathon build remain clearly
+            labelled synthetic.
           </p>
         </CardHeader>
         <CardContent>

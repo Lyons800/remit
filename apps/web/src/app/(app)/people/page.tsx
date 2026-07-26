@@ -186,16 +186,16 @@ export default function PeoplePage() {
 
   async function changeRole(id: string, next: PersonRole): Promise<void> {
     if (!canManage) return;
-    setPeople((current) =>
-      current.map((person) =>
-        person.id === id ? { ...person, role: next } : person,
-      ),
-    );
-    await fetch('/api/people', {
+    setError(null);
+    const response = await fetch('/api/people', {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ personId: id, role: next }),
     });
+    if (!response.ok) {
+      const body = (await response.json()) as { error?: string };
+      setError(body.error ?? 'Could not update that role.');
+    }
     await loadRoster();
   }
 
