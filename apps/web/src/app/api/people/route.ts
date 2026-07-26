@@ -32,6 +32,13 @@ export const dynamic = 'force-dynamic';
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const ROLES = new Set(['FINANCE_APPROVER', 'TREASURY_APPROVER']);
 
+function accessErrorResponse(error: WorkspaceAccessError): Response {
+  return Response.json(
+    { code: error.code, error: error.message },
+    { status: error.status },
+  );
+}
+
 /** The agents the demo narrative uses, inserted once so the page is never empty. */
 const SEED = [
   {
@@ -96,6 +103,19 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  let organizationId: string;
+  try {
+    ({ organizationId } = await requireManagedOrganization(await headers()));
+  } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      return accessErrorResponse(error);
+    }
+    return Response.json(
+      { error: 'authorization unavailable' },
+      { status: 503 },
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();
@@ -117,6 +137,11 @@ export async function POST(request: Request): Promise<Response> {
       { error: 'agentAddress is required' },
       { status: 400 },
     );
+  }
+  if (role !== undefined && role !== null) {
+    if (typeof role !== 'string' || !ROLES.has(role)) {
+      return Response.json({ error: 'role is invalid' }, { status: 400 });
+    }
   }
 
   // An ENS name is accepted in place of an address. Resolving it here means an
@@ -146,23 +171,14 @@ export async function POST(request: Request): Promise<Response> {
     typeof role === 'string' && ROLES.has(role) ? (role as PersonRole) : null;
 
   try {
-    const { organizationId } = await requireManagedOrganization(
-      await headers(),
-    );
     const person = await addWorkspacePerson(db(), organizationId, {
-      personId: `p-${resolvedAddress.slice(2, 10).toLowerCase()}`,
+      personId: `p-${resolvedAddress.slice(2).toLowerCase()}`,
       displayName,
       agentAddress: resolvedAddress,
       role: nextRole,
     });
     return Response.json({ person }, { status: 201 });
   } catch (error) {
-    if (error instanceof WorkspaceAccessError) {
-      return Response.json(
-        { code: error.code, error: error.message },
-        { status: error.status },
-      );
-    }
     const message = error instanceof Error ? error.message : 'insert failed';
     // A duplicate agent is a client mistake, not a server fault.
     const status = /unique|duplicate/i.test(message) ? 409 : 500;
@@ -171,7 +187,7 @@ export async function POST(request: Request): Promise<Response> {
         error:
           status === 409
             ? 'That agent wallet is already in the workspace.'
-            : message,
+            : 'The person could not be added.',
       },
       { status },
     );
@@ -179,6 +195,19 @@ export async function POST(request: Request): Promise<Response> {
 }
 
 export async function PATCH(request: Request): Promise<Response> {
+  let organizationId: string;
+  try {
+    ({ organizationId } = await requireManagedOrganization(await headers()));
+  } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      return accessErrorResponse(error);
+    }
+    return Response.json(
+      { error: 'authorization unavailable' },
+      { status: 503 },
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();
@@ -190,13 +219,13 @@ export async function PATCH(request: Request): Promise<Response> {
   if (typeof personId !== 'string' || personId === '') {
     return Response.json({ error: 'personId is required' }, { status: 400 });
   }
+  if (role !== null && (typeof role !== 'string' || !ROLES.has(role))) {
+    return Response.json({ error: 'role is invalid' }, { status: 400 });
+  }
   const nextRole: PersonRole =
     typeof role === 'string' && ROLES.has(role) ? (role as PersonRole) : null;
 
   try {
-    const { organizationId } = await requireManagedOrganization(
-      await headers(),
-    );
     const person = await setWorkspacePersonRole(
       db(),
       organizationId,
@@ -207,15 +236,9 @@ export async function PATCH(request: Request): Promise<Response> {
       return Response.json({ error: 'no such person' }, { status: 404 });
     }
     return Response.json({ person });
-  } catch (error) {
-    if (error instanceof WorkspaceAccessError) {
-      return Response.json(
-        { code: error.code, error: error.message },
-        { status: error.status },
-      );
-    }
+  } catch {
     return Response.json(
-      { error: error instanceof Error ? error.message : 'update failed' },
+      { error: 'The role could not be updated.' },
       { status: 500 },
     );
   }
