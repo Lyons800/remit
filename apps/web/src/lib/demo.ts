@@ -198,6 +198,7 @@ export function theatreReducer(
       if (state.phase === 'VOIDED') return state;
       return {
         ...state,
+        counted: [],
         digest: TAMPERED_DIGEST,
         log: [
           ...state.log,
