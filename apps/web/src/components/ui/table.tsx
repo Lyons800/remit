@@ -16,7 +16,9 @@ export function Table({
   );
 }
 
-export function TableHeader(properties: HTMLAttributes<HTMLTableSectionElement>) {
+export function TableHeader(
+  properties: HTMLAttributes<HTMLTableSectionElement>,
+) {
   return <thead {...properties} />;
 }
 

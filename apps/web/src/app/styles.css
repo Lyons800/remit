@@ -2,11 +2,11 @@
 
 /* midday's actual dark tokens (packages/ui/src/globals.css, hsl -> hex) */
 :root {
-  --background: #0d0d0d;   /* 0 0% 5% */
-  --foreground: #fafafa;   /* 0 0% 98% */
-  --card: #121212;         /* 0 0% 7% */
+  --background: #0d0d0d; /* 0 0% 5% */
+  --foreground: #fafafa; /* 0 0% 98% */
+  --card: #121212; /* 0 0% 7% */
   --card-foreground: #fafafa;
-  --muted: #1c1c1c;        /* 0 0% 11% */
+  --muted: #1c1c1c; /* 0 0% 11% */
   --muted-foreground: #616161; /* 0 0% 38% */
   --accent: #1c1c1c;
   --accent-foreground: #fafafa;
@@ -16,7 +16,7 @@
   --primary-foreground: #18181b;
   --secondary: #121212;
   --secondary-foreground: #fafafa;
-  --destructive: #ff3838;  /* 359 100% 61% */
+  --destructive: #ff3838; /* 359 100% 61% */
   --destructive-foreground: #ffffff;
   --ring: #d4d4d8;
   --radius: 0px;
