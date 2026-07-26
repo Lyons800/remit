@@ -1,7 +1,6 @@
-const AUTH_ENVIRONMENT_NAMES = [
+const AUTH_IDENTITY_ENVIRONMENT_NAMES = [
   'BETTER_AUTH_SECRET',
   'BETTER_AUTH_URL',
-  'DATABASE_URL',
   'GOOGLE_CLIENT_ID',
   'GOOGLE_CLIENT_SECRET',
 ] as const;
@@ -13,13 +12,20 @@ export type AuthConfigurationState = 'absent' | 'configured' | 'partial';
 export function authConfigurationState(
   source: EnvironmentSource = process.env,
 ): AuthConfigurationState {
-  const configured = AUTH_ENVIRONMENT_NAMES.filter((name) => {
+  const configured = AUTH_IDENTITY_ENVIRONMENT_NAMES.filter((name) => {
     const value = source[name];
     return value !== undefined && value.trim() !== '';
   }).length;
 
   if (configured === 0) return 'absent';
-  if (configured === AUTH_ENVIRONMENT_NAMES.length) return 'configured';
+  const databaseUrl =
+    source['DATABASE_URL_UNPOOLED'] ?? source['DATABASE_URL'] ?? '';
+  if (
+    configured === AUTH_IDENTITY_ENVIRONMENT_NAMES.length &&
+    databaseUrl.trim() !== ''
+  ) {
+    return 'configured';
+  }
   return 'partial';
 }
 
