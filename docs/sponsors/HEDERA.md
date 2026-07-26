@@ -91,7 +91,7 @@ POST /v2/supplier-evidence-checks/{actionDigest}
    buyer debit, and uses:
 
    ```text
-   remit:x402:v2:<64-hex-request-digest>
+   invoiceguard:x402:v2:<64-hex-request-digest>
    ```
 
    as its public memo.
@@ -199,7 +199,7 @@ The deterministic signing guard decodes the returned transaction and requires:
 - one explicitly allowlisted two-decimal synthetic-EUR HTS fungible test token
   after its live transfer spike passes;
 - no token, contract, schedule, allowance, or additional operation;
-- exact `remit:exec:v1:<digest>` memo;
+- exact `invoiceguard:exec:v1:<digest>` memo;
 - exact source invoice, settlement effect, and `mappingPolicyHash`;
 - current signed `MATCH` attestation when the frozen verification mode is
   `REQUIRED`, or an explicit `NOT_REQUIRED` policy marker with no substituted

@@ -17,7 +17,7 @@ import { resolve } from 'node:path';
 import {
   applyPaymentEffectContractsMigration,
   applyWorkspacePeopleMigration,
-} from '@invoiceguard/persistence';
+} from '@remit/persistence';
 import postgres from 'postgres';
 
 function databaseUrl(): string {

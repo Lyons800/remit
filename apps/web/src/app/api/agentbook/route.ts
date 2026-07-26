@@ -1,4 +1,4 @@
-import { lookupAgentHumanBackings } from '@invoiceguard/world-adapter';
+import { lookupAgentHumanBackings } from '@remit/world-adapter';
 
 /**
  * Resolve agent wallets to the anonymous humans backing them.

@@ -79,6 +79,9 @@ importers:
       '@remit/domain':
         specifier: workspace:*
         version: link:packages/domain
+      '@remit/persistence':
+        specifier: workspace:*
+        version: link:packages/persistence
       '@remit/protocol':
         specifier: workspace:*
         version: link:packages/protocol
@@ -100,6 +103,9 @@ importers:
       fast-check:
         specifier: 4.9.0
         version: 4.9.0
+      postgres:
+        specifier: 'catalog:'
+        version: 3.4.9
       prettier:
         specifier: 'catalog:'
         version: 3.9.6
@@ -146,6 +152,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@remit/persistence':
+        specifier: workspace:*
+        version: link:../../packages/persistence
+      '@remit/world-adapter':
+        specifier: workspace:*
+        version: link:../../packages/world-adapter
       '@tailwindcss/postcss':
         specifier: ^4.3.3
         version: 4.3.3
@@ -161,6 +173,9 @@ importers:
       next:
         specifier: 16.2.11
         version: 16.2.11(@babel/core@7.29.7(supports-color@8.1.1))(@types/node@24.13.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      postgres:
+        specifier: 'catalog:'
+        version: 3.4.9
       react:
         specifier: 'catalog:'
         version: 19.2.8

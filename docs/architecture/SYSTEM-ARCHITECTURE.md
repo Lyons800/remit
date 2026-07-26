@@ -291,7 +291,9 @@ createdAt
   exact inputs. The final authorization intent embeds the decision digest and is
   hashed again as `actionDigest`.
 - JSON is canonicalized using RFC 8785 before SHA-256 hashing.
-- The hash input includes the domain separator `remit:payment-action:v1`.
+- The hash input includes the legacy domain separator
+  `invoiceguard:payment-action:v1`. Brand changes do not rewrite signed or
+  persisted protocol facts.
 - The full action remains immutable. A changed field creates a new action and
   invalidates prior approvals and verification responses.
 - Every approval, verifier response, HCS record, outbox effect, and settlement
