@@ -135,18 +135,24 @@ export const ORIGINAL_DIGEST =
 export const TAMPERED_DIGEST =
   '3e78d90c145ab2f6e01c74d3982bf6541da0c8e26b95f31708ecd44a1f52c903';
 
-export const initialTheatre: TheatreState = {
-  counted: [],
-  digest: ORIGINAL_DIGEST,
-  log: [],
-  phase: 'QUORUM_PENDING',
-  tampered: false,
-};
+export function createInitialTheatre(
+  digest: string = ORIGINAL_DIGEST,
+): TheatreState {
+  return {
+    counted: [],
+    digest,
+    log: [],
+    phase: 'QUORUM_PENDING',
+    tampered: false,
+  };
+}
+
+export const initialTheatre = createInitialTheatre();
 
 export type TheatreAction =
   | { readonly approver: ApproverId; readonly type: 'approve' }
-  | { readonly type: 'reset' }
-  | { readonly type: 'tamper' };
+  | { readonly digest: string; readonly type: 'reset' }
+  | { readonly digest: string; readonly type: 'tamper' };
 
 export function theatreReducer(
   state: TheatreState,
@@ -193,13 +199,13 @@ export function theatreReducer(
       };
     }
     case 'reset':
-      return initialTheatre;
+      return createInitialTheatre(action.digest);
     case 'tamper':
       if (state.phase === 'VOIDED') return state;
       return {
         ...state,
         counted: [],
-        digest: TAMPERED_DIGEST,
+        digest: action.digest,
         log: [
           ...state.log,
           'Simulation: one beneficiary character changed, producing a new digest. Prior simulated approvals no longer apply; no external effect ran.',

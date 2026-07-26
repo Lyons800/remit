@@ -96,38 +96,65 @@ export default async function DashboardPage() {
           <Badge variant="destructive">{held.length} review</Badge>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Invoice</TableHead>
-                <TableHead>Supplier</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Why it stopped</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {held.map((invoice) => (
-                <TableRow className="bg-destructive/5" key={invoice.id}>
-                  <TableCell className="font-medium">{invoice.id}</TableCell>
-                  <TableCell>{invoice.supplier}</TableCell>
-                  <TableCell className="tabular text-right">
+          <div className="divide-y divide-border sm:hidden">
+            {held.map((invoice) => (
+              <div className="bg-destructive/5 p-4" key={invoice.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      {invoice.id}
+                    </p>
+                    <p className="font-medium">{invoice.supplier}</p>
+                  </div>
+                  <p className="tabular font-medium whitespace-nowrap">
                     {invoice.amount}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {invoice.handledBy}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Link href={`/approvals/${invoice.id}`}>
-                      <Button size="sm" variant="secondary">
-                        Review
-                      </Button>
-                    </Link>
-                  </TableCell>
+                  </p>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {invoice.handledBy}
+                </p>
+                <Link className="mt-3 block" href={`/approvals/${invoice.id}`}>
+                  <Button className="w-full" size="sm" variant="secondary">
+                    Review {invoice.id}
+                  </Button>
+                </Link>
+              </div>
+            ))}
+          </div>
+          <div className="hidden sm:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice</TableHead>
+                  <TableHead>Supplier</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Why it stopped</TableHead>
+                  <TableHead />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {held.map((invoice) => (
+                  <TableRow className="bg-destructive/5" key={invoice.id}>
+                    <TableCell className="font-medium">{invoice.id}</TableCell>
+                    <TableCell>{invoice.supplier}</TableCell>
+                    <TableCell className="tabular text-right">
+                      {invoice.amount}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {invoice.handledBy}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Link href={`/approvals/${invoice.id}`}>
+                        <Button size="sm" variant="secondary">
+                          Review
+                        </Button>
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
