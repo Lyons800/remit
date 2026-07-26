@@ -106,6 +106,16 @@ their exact canonical Base64 bytes, SHA-256 byte hash, and transaction ID. A
 durable consensus record is loaded before applying live-window expiry, while a
 new payment cannot begin after the AP effect or quote expires.
 
+Before recovery returns stored `CONSENSUS`, it re-inspects the prepared
+transaction and cryptographically verifies the complete strict facilitator
+attestation envelope against `trustedFacilitator` from application composition.
+The envelope's key ID never selects its own trust anchor. Receipt status,
+network, asset, amount, receiver, payer, facilitator fee payer, challenge,
+resource, service, action, request, quote, attempt, transaction ID, and `paidAt`
+must all match the re-derived quote and inspected transaction. Recovery returns
+a newly frozen, verified consensus value rather than the untrusted stored
+object.
+
 `PREPARED` is admitted only after the pinned Hiero SDK decodes and exactly
 re-serializes the real transaction bytes. Inspection requires one frozen HBAR
 `TransferTransaction` with at least two serialized signature entries, one

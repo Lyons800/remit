@@ -22,6 +22,21 @@ The separate research workspace used to select the concept was also produced
 during the event. Relevant decisions will be restated in this repository so the
 submitted history is complete and auditable.
 
+## Third-party integration provenance
+
+The Hedera x402 slice consumes these exact public packages. pnpm installs their
+published artifacts under the repository lockfile; no third-party package source
+is copied, vendored, patched, or modified.
+
+| Package             | Exact version | Published source                                                               | Upstream source                                                      | License    | Modifications                           |
+| ------------------- | ------------: | ------------------------------------------------------------------------------ | -------------------------------------------------------------------- | ---------- | --------------------------------------- |
+| `@x402/core`        |      `2.19.0` | [npm registry manifest](https://registry.npmjs.org/@x402%2Fcore/2.19.0)        | [x402 Foundation `x402`](https://github.com/x402-foundation/x402)    | Apache-2.0 | None; installed artifact is unmodified. |
+| `@x402/hedera`      |      `2.19.0` | [npm registry manifest](https://registry.npmjs.org/@x402%2Fhedera/2.19.0)      | [x402 Foundation `x402`](https://github.com/x402-foundation/x402)    | Apache-2.0 | None; installed artifact is unmodified. |
+| `@hiero-ledger/sdk` |      `2.85.0` | [npm registry manifest](https://registry.npmjs.org/@hiero-ledger%2Fsdk/2.85.0) | [Hiero JavaScript SDK](https://github.com/hiero-ledger/hiero-sdk-js) | Apache-2.0 | None; installed artifact is unmodified. |
+
+InvoiceGuard's adapter, trust-policy checks, canonical bindings, recovery seam,
+and tests are original event-window code outside those packages.
+
 ## AI-assisted development
 
 AI tools may assist research, planning, implementation, testing, and review. The

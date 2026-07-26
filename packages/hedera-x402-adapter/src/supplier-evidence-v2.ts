@@ -1148,13 +1148,15 @@ function signedEnvelopeDigest(
   return digest(domain, envelope as unknown as CanonicalJsonValue);
 }
 
-export function createVerificationPaymentFact(
+function verifyFacilitatorPaymentAttestationForContext(
   context: SupplierEvidenceBindingContextV2,
   signedPayment: SignedFacilitatorPaymentAttestationV2,
   trustedFacilitator: TrustedEd25519Key,
-): AdapterVerifiedVerificationPayment {
-  const { authorization, quote, request } =
-    verifySupplierEvidenceBindingContextV2(context);
+): ReturnType<typeof verifySupplierEvidenceBindingContextV2> & {
+  body: FacilitatorPaymentAttestationBodyV2;
+} {
+  const binding = verifySupplierEvidenceBindingContextV2(context);
+  const { quote, request } = binding;
   validatePaymentBody(signedPayment.body);
   verifyEnvelope(PAYMENT_ATTESTATION_DOMAIN, signedPayment, trustedFacilitator);
   const body = signedPayment.body;
@@ -1178,6 +1180,41 @@ export function createVerificationPaymentFact(
       'Facilitator payment does not bind the issued supplier evidence quote.',
     );
   }
+  return {
+    ...binding,
+    body: Object.freeze({ ...body }),
+  };
+}
+
+/**
+ * Revalidates the complete strict facilitator envelope against an
+ * application-configured trust anchor and the fully re-derived AP quote.
+ *
+ * The envelope key ID is descriptive only; it never selects its own trust
+ * anchor.
+ */
+export function verifyFacilitatorPaymentAttestationV2(
+  context: SupplierEvidenceBindingContextV2,
+  signedPayment: SignedFacilitatorPaymentAttestationV2,
+  trustedFacilitator: TrustedEd25519Key,
+): FacilitatorPaymentAttestationBodyV2 {
+  return verifyFacilitatorPaymentAttestationForContext(
+    context,
+    signedPayment,
+    trustedFacilitator,
+  ).body;
+}
+
+export function createVerificationPaymentFact(
+  context: SupplierEvidenceBindingContextV2,
+  signedPayment: SignedFacilitatorPaymentAttestationV2,
+  trustedFacilitator: TrustedEd25519Key,
+): AdapterVerifiedVerificationPayment {
+  const { authorization, body } = verifyFacilitatorPaymentAttestationForContext(
+    context,
+    signedPayment,
+    trustedFacilitator,
+  );
   return createAdapterVerifiedVerificationPayment(authorization, {
     adapterId: HEDERA_X402_ADAPTER_ID,
     paidAt: body.paidAt,
