@@ -1,65 +1,52 @@
+import { HederaEvidenceDetail } from '../../components/hedera-evidence';
 import { Badge } from '../../components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../components/ui/table';
-import { settlements } from '../../lib/demo';
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '../../components/ui/card';
+import { loadHederaEvidence } from '../../lib/mirror-evidence.server';
 
-export default function PaymentsPage() {
+export const dynamic = 'force-dynamic';
+
+export default async function PaymentsPage() {
+  const evidence = await loadHederaEvidence();
+
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Payments</h1>
-        <p className="text-sm text-muted-foreground">
-          Every settlement happens exactly once. A consumed payment can never
-          settle again — the payable token is burned on the ledger.
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Payments & ledger evidence
+        </h1>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Public Hedera Testnet facts are live. Supplier invoice settlement is
+          not: the x402 HBAR transfer paid a test verification service, and the
+          HTS NFT is a no-value lifecycle marker experiment.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Settlements</CardTitle>
+          <CardTitle>Claim boundary</CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Invoice</TableHead>
-                <TableHead>Supplier</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Rail</TableHead>
-                <TableHead>Transaction</TableHead>
-                <TableHead>State</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {settlements.map((settlement) => (
-                <TableRow key={settlement.invoiceId}>
-                  <TableCell className="font-medium">
-                    {settlement.invoiceId}
-                  </TableCell>
-                  <TableCell>{settlement.supplier}</TableCell>
-                  <TableCell className="tabular text-right">
-                    {settlement.amount}
-                  </TableCell>
-                  <TableCell className="text-xs">{settlement.rail}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {settlement.txId}
-                  </TableCell>
-                  <TableCell>
-                    <Badge>Consumed — payable burned</Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <CardContent className="grid gap-3 text-sm md:grid-cols-3">
+          <div className="border border-border p-3">
+            <Badge>Demonstrated</Badge>
+            <p className="mt-2">Three-party x402 HBAR transfer on Testnet</p>
+          </div>
+          <div className="border border-border p-3">
+            <Badge>Demonstrated</Badge>
+            <p className="mt-2">Treasury-held HTS NFT create, mint, and burn</p>
+          </div>
+          <div className="border border-border p-3">
+            <Badge variant="destructive">Not demonstrated</Badge>
+            <p className="mt-2">Supplier payment or canonical AP execution</p>
+          </div>
         </CardContent>
       </Card>
+
+      <HederaEvidenceDetail result={evidence} />
     </div>
   );
 }

@@ -1,11 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '../../components/ui/card';
 import {
   Table,
   TableBody,
@@ -23,29 +28,11 @@ import {
 
 export default function QueuePage() {
   const [rows, setRows] = useState<readonly QueueInvoice[]>(initialQueue);
-  const [running, setRunning] = useState(false);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  useEffect(() => {
-    const pending = timers.current;
-    return () => pending.forEach(clearTimeout);
-  }, []);
-
-  const runDay = useCallback(() => {
-    if (running) return;
-    setRunning(true);
-    dayInvoices.forEach((invoice, index) => {
-      timers.current.push(
-        setTimeout(() => {
-          setRows((current) => [invoice, ...current]);
-          if (index === dayInvoices.length - 1) setRunning(false);
-        }, 700 * (index + 1)),
-      );
-    });
-  }, [running]);
-
-  const paid = rows.filter((row) => row.status === 'paid').length;
-  const held = rows.filter((row) => row.status === 'held').length;
+  const loaded = rows.length > initialQueue.length;
+  const eligible = rows.filter(
+    (row) => row.status === 'policy_eligible',
+  ).length;
+  const held = rows.filter((row) => row.status === 'review_required').length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -53,42 +40,53 @@ export default function QueuePage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Queue</h1>
           <p className="text-sm text-muted-foreground">
-            The agent pays routine invoices. Only risky changes wait for people.
+            Synthetic AP records show which lane deterministic policy would
+            select. No row is a live payment.
           </p>
         </div>
-        <Button disabled={running} onClick={runDay}>
-          {running ? 'Agent working…' : 'Run the day'}
+        <Button
+          disabled={loaded}
+          onClick={() => setRows([...dayInvoices, ...initialQueue])}
+        >
+          {loaded ? 'Scenario batch loaded' : 'Load full scenario'}
         </Button>
       </div>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <Card>
           <CardContent className="py-3">
-            <p className="text-xs text-muted-foreground">Paid by agent</p>
-            <p className="tabular text-2xl font-semibold">{paid}</p>
+            <p className="text-xs text-muted-foreground">Policy eligible</p>
+            <p className="tabular text-2xl font-semibold">{eligible}</p>
+            <p className="text-xs text-muted-foreground">
+              payment not initiated
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="py-3">
-            <p className="text-xs text-muted-foreground">
-              Held for human authority
-            </p>
+            <p className="text-xs text-muted-foreground">Review required</p>
             <p className="tabular text-2xl font-semibold">{held}</p>
           </CardContent>
         </Card>
         <Card className="col-span-2 md:col-span-1">
           <CardContent className="py-3">
             <p className="text-xs text-muted-foreground">
-              Human minutes on routine invoices
+              Live supplier payments
             </p>
             <p className="tabular text-2xl font-semibold">0</p>
+            <p className="text-xs text-muted-foreground">none demonstrated</p>
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Invoices</CardTitle>
+          <div>
+            <CardTitle>Invoices</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Synthetic scenario · browser state only
+            </p>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -104,7 +102,9 @@ export default function QueuePage() {
             <TableBody>
               {rows.map((row) => (
                 <TableRow
-                  className={row.status === 'held' ? 'bg-destructive/5' : ''}
+                  className={
+                    row.status === 'review_required' ? 'bg-destructive/5' : ''
+                  }
                   key={row.id}
                 >
                   <TableCell className="font-medium">
@@ -124,10 +124,10 @@ export default function QueuePage() {
                     {row.amount}
                   </TableCell>
                   <TableCell>
-                    {row.status === 'paid' ? (
-                      <Badge>Paid</Badge>
+                    {row.status === 'policy_eligible' ? (
+                      <Badge>Policy eligible</Badge>
                     ) : (
-                      <Badge variant="destructive">Held</Badge>
+                      <Badge variant="destructive">Review required</Badge>
                     )}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">

@@ -1,8 +1,14 @@
 import Link from 'next/link';
 
+import { HederaEvidenceSummary } from '../components/hedera-evidence';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '../components/ui/card';
 import {
   Table,
   TableBody,
@@ -11,17 +17,47 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
-import { auditEvents, initialQueue, settlements } from '../lib/demo';
+import { auditEvents, dayInvoices, initialQueue } from '../lib/demo';
+import { loadHederaEvidence } from '../lib/mirror-evidence.server';
 
-const kpis = [
-  { hint: 'this month', label: 'Paid by agent', value: '990' },
-  { hint: 'awaiting people', label: 'Held for approval', value: '2' },
-  { hint: 'on Hedera Testnet', label: 'Settled volume', value: '€142,380' },
-  { hint: 'routine invoices', label: 'Human minutes', value: '0' },
-] as const;
+export const dynamic = 'force-dynamic';
 
-export default function DashboardPage() {
-  const held = initialQueue.filter((invoice) => invoice.status === 'held');
+export default async function DashboardPage() {
+  const evidence = await loadHederaEvidence();
+  const scenario = [...dayInvoices, ...initialQueue];
+  const held = scenario.filter(
+    (invoice) => invoice.status === 'review_required',
+  );
+  const eligible = scenario.filter(
+    (invoice) => invoice.status === 'policy_eligible',
+  );
+  const evidenceLabel = {
+    mismatch: 'Mismatch',
+    unavailable: 'Unavailable',
+    verified: 'Live',
+  }[evidence.status];
+  const kpis = [
+    {
+      hint: 'clearly labelled fixtures',
+      label: 'Scenario invoices',
+      value: String(scenario.length),
+    },
+    {
+      hint: 'no payment initiated',
+      label: 'Policy eligible',
+      value: String(eligible.length),
+    },
+    {
+      hint: 'awaiting scenario review',
+      label: 'Review required',
+      value: String(held.length),
+    },
+    {
+      hint: 'public Mirror Node',
+      label: 'Live evidence',
+      value: evidence.status === 'verified' ? 'Verified' : evidenceLabel,
+    },
+  ] as const;
 
   return (
     <div className="flex flex-col gap-6">
@@ -29,7 +65,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            The agent handles the volume. This page shows what needs you.
+            A product scenario beside independently verified public evidence.
           </p>
         </div>
         <Link href="/invoices">
@@ -51,8 +87,13 @@ export default function DashboardPage() {
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>Needs your decision</CardTitle>
-          <Badge variant="destructive">{held.length} held</Badge>
+          <div>
+            <CardTitle>Needs a decision</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Synthetic product scenario · no live authority or payment
+            </p>
+          </div>
+          <Badge variant="destructive">{held.length} review</Badge>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -90,42 +131,17 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
+      <HederaEvidenceSummary result={evidence} />
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Recent settlements</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Invoice</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {settlements.slice(0, 4).map((settlement) => (
-                  <TableRow key={settlement.invoiceId}>
-                    <TableCell className="font-medium">
-                      {settlement.invoiceId}
-                    </TableCell>
-                    <TableCell className="tabular text-right">
-                      {settlement.amount}
-                    </TableCell>
-                    <TableCell>
-                      <Badge>Consumed</Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Latest control decisions</CardTitle>
+            <div>
+              <CardTitle>Scenario control trace</CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Illustrative outcomes, not an audit export
+              </p>
+            </div>
           </CardHeader>
           <CardContent>
             <ol className="flex flex-col gap-2 text-sm">
@@ -145,7 +161,40 @@ export default function DashboardPage() {
             </ol>
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>What is connected today</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 text-sm">
+            <StatusRow label="Hedera x402 transfer" status={evidenceLabel} />
+            <StatusRow label="HTS marker lifecycle" status={evidenceLabel} />
+            <StatusRow label="World authority" status="Offline contract" />
+            <StatusRow label="Supplier settlement" status="Not demonstrated" />
+          </CardContent>
+        </Card>
       </div>
+    </div>
+  );
+}
+
+function StatusRow({
+  label,
+  status,
+}: Readonly<{ label: string; status: string }>) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-border pb-3 last:border-b-0 last:pb-0">
+      <span>{label}</span>
+      <Badge
+        variant={
+          status === 'Live'
+            ? 'default'
+            : status === 'Mismatch'
+              ? 'destructive'
+              : 'outline'
+        }
+      >
+        {status}
+      </Badge>
     </div>
   );
 }

@@ -1,5 +1,10 @@
 import { Badge } from '../../components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '../../components/ui/card';
 import {
   Table,
   TableBody,
@@ -22,14 +27,19 @@ export default function SuppliersPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Suppliers</h1>
         <p className="text-sm text-muted-foreground">
-          The baseline the agent pays against. Change anything here and the
-          next invoice stops for people.
+          Synthetic supplier snapshots used to explain deterministic routing.
+          They are not connected vendor-master records.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Baselines</CardTitle>
+          <div>
+            <CardTitle>Scenario baselines</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Illustrative records only
+            </p>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -37,8 +47,8 @@ export default function SuppliersPage() {
               <TableRow>
                 <TableHead>Supplier</TableHead>
                 <TableHead>Account on file</TableHead>
-                <TableHead className="text-right">Times paid</TableHead>
-                <TableHead>Last paid</TableHead>
+                <TableHead className="text-right">Scenario history</TableHead>
+                <TableHead>Last scenario activity</TableHead>
                 <TableHead className="text-right">Unattended limit</TableHead>
                 <TableHead>Standing</TableHead>
               </TableRow>
@@ -58,11 +68,13 @@ export default function SuppliersPage() {
                       {supplier.accountOnFile}
                     </TableCell>
                     <TableCell className="tabular text-right">
-                      {supplier.timesPaid}
+                      {supplier.scenarioInvoiceCount}
                     </TableCell>
-                    <TableCell className="text-xs">{supplier.lastPaid}</TableCell>
+                    <TableCell className="text-xs">
+                      {supplier.lastScenarioActivity}
+                    </TableCell>
                     <TableCell className="tabular text-right text-xs">
-                      {supplier.autonomousLimit}
+                      {supplier.unattendedCap}
                     </TableCell>
                     <TableCell>
                       <Badge variant={variant}>{label}</Badge>
