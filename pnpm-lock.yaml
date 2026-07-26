@@ -27,9 +27,6 @@ catalogs:
     hono:
       specifier: 4.12.32
       version: 4.12.32
-    next:
-      specifier: 16.2.11
-      version: 16.2.11
     postgres:
       specifier: 3.4.9
       version: 3.4.9
@@ -162,7 +159,7 @@ importers:
         specifier: ^1.26.0
         version: 1.26.0(react@19.2.8)
       next:
-        specifier: 'catalog:'
+        specifier: 16.2.11
         version: 16.2.11(@babel/core@7.29.7(supports-color@8.1.1))(@types/node@24.13.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react:
         specifier: 'catalog:'
