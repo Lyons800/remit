@@ -1,14 +1,13 @@
 'use client';
 
-/* eslint-disable no-restricted-imports -- IDKit initialises a WASM module and
-   only runs in the browser, so it cannot be proxied through the adapter the
-   way every other sponsor SDK is. The signing key stays on the server; this
-   component receives an already-signed request and never sees key material. */
-import { CredentialRequest, IDKit } from '@worldcoin/idkit-core';
+/* eslint-disable no-restricted-imports -- IDKit owns the browser-only World App
+   transport. The RP signing key and proof verification stay on the server. */
+import type {
+  IDKitRequestConfig,
+  ProofOfHumanPreset,
+} from '@worldcoin/idkit-core';
 /* eslint-enable no-restricted-imports */
-
-import QRCode from 'qrcode';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
@@ -21,7 +20,8 @@ import { Button } from '../../../../components/ui/button';
  * a different payment fails validation rather than quietly counting.
  */
 
-type Phase = 'error' | 'idle' | 'opening' | 'verified' | 'waiting';
+type Phase =
+  'error' | 'idle' | 'opening' | 'verified' | 'verifying' | 'waiting';
 
 interface Properties {
   readonly actionDigest: string;
@@ -38,12 +38,25 @@ export function WorldApproval({
   const [qr, setQr] = useState<string | null>(null);
   const [uri, setUri] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [humanNote, setHumanNote] = useState<string | null>(null);
+  const [verifiedAt, setVerifiedAt] = useState<string | null>(null);
+  const activeRequest = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      activeRequest.current?.abort();
+    },
+    [],
+  );
 
   const start = useCallback(async () => {
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
     setPhase('opening');
     setMessage(null);
     setQr(null);
+    setUri(null);
+    setVerifiedAt(null);
 
     try {
       const minted = await fetch('/api/approvals/request', {
@@ -52,27 +65,39 @@ export function WorldApproval({
         body: JSON.stringify({ actionDigest, agentAddress }),
       });
       const payload = (await minted.json()) as {
-        config?: unknown;
+        approvalSessionId?: string;
+        config?: IDKitRequestConfig;
         error?: string;
+        expiresAt?: string;
+        preset?: ProofOfHumanPreset;
       };
-      if (!minted.ok || payload.config === undefined) {
+      if (
+        !minted.ok ||
+        payload.approvalSessionId === undefined ||
+        payload.config === undefined ||
+        payload.expiresAt === undefined ||
+        payload.preset === undefined
+      ) {
         setPhase('error');
         setMessage(payload.error ?? 'Could not open an approval.');
         return;
       }
 
-      // IDKit builds the request; the session flow takes constraints rather
-      // than a preset.
-      const request = await (
-        IDKit.createSession(
-          payload.config as Parameters<typeof IDKit.createSession>[0],
-        ) as unknown as {
-          constraints(node: unknown): Promise<{
-            connectorURI: string;
-            pollUntilCompletion(): Promise<unknown>;
-          }>;
-        }
-      ).constraints(CredentialRequest('proof_of_human'));
+      /*
+       * IDKit and its WASM bridge are loaded only when the user asks to connect
+       * World App. Keeping them out of the initial approval-page bundle avoids
+       * making every local page compile the sponsor transport.
+       *
+       * The signing key stays on the server. The browser receives the exact
+       * action-bound config and proof-of-human preset built by the adapter.
+       */
+      const [{ IDKit }, { default: QRCode }] = await Promise.all([
+        import('@worldcoin/idkit-core'),
+        import('qrcode'),
+      ]);
+      const request = await IDKit.request(payload.config).preset(
+        payload.preset,
+      );
 
       setUri(request.connectorURI);
       setQr(
@@ -83,14 +108,59 @@ export function WorldApproval({
       );
       setPhase('waiting');
 
-      const result = await request.pollUntilCompletion();
-      setPhase('verified');
-      setHumanNote(
-        typeof result === 'object' && result !== null
-          ? JSON.stringify(result).slice(0, 160)
-          : String(result),
+      const remaining = Date.parse(payload.expiresAt) - Date.now();
+      const completion = await request.pollUntilCompletion({
+        signal: controller.signal,
+        timeout: Math.max(1_000, Math.min(5 * 60_000, remaining)),
+      });
+      if (controller.signal.aborted) return;
+      if (!completion.success) {
+        setPhase('error');
+        setMessage(
+          `World App did not complete the approval (${completion.error.replaceAll(
+            '_',
+            ' ',
+          )}).`,
+        );
+        return;
+      }
+
+      setPhase('verifying');
+      const verified = await fetch(
+        `/api/approvals/verify?session=${encodeURIComponent(
+          payload.approvalSessionId,
+        )}`,
+        {
+          body: JSON.stringify(completion.result),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+          signal: controller.signal,
+        },
       );
+      const verification = (await verified.json()) as {
+        actionDigest?: string;
+        error?: string;
+        success?: boolean;
+        verifiedAt?: string;
+      };
+      if (
+        !verified.ok ||
+        verification.success !== true ||
+        verification.actionDigest !== actionDigest ||
+        verification.verifiedAt === undefined
+      ) {
+        setPhase('error');
+        setMessage(
+          verification.error ??
+            'World returned a response, but the server could not verify it.',
+        );
+        return;
+      }
+
+      setVerifiedAt(verification.verifiedAt);
+      setPhase('verified');
     } catch (cause) {
+      if (controller.signal.aborted) return;
       setPhase('error');
       setMessage(cause instanceof Error ? cause.message : 'Approval failed.');
     }
@@ -111,7 +181,7 @@ export function WorldApproval({
       {phase === 'idle' || phase === 'error' ? (
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={() => void start()}>
-            Request approval from {approverLabel}
+            Connect World App for {approverLabel}
           </Button>
           {message === null ? null : (
             <span className="text-xs text-destructive">{message}</span>
@@ -136,8 +206,8 @@ export function WorldApproval({
           <div className="flex flex-col gap-2 text-xs">
             <Badge variant="warning">Waiting for approval in World App</Badge>
             <p className="text-muted-foreground">
-              Scan with World App. The session expires in five minutes — an
-              approval left open is an approval.
+              Scan with World App. The session expires in five minutes; an
+              uncompleted request never counts as an approval.
             </p>
             {uri === null ? null : (
               <a className="break-all underline" href={uri}>
@@ -148,19 +218,26 @@ export function WorldApproval({
         </div>
       ) : null}
 
+      {phase === 'verifying' ? (
+        <p className="text-sm text-muted-foreground">
+          World App responded. Verifying the proof on the server…
+        </p>
+      ) : null}
+
       {phase === 'verified' ? (
         <div className="flex flex-col gap-2">
-          <Badge variant="default">Approved and verified</Badge>
+          <Badge variant="default">World proof verified</Badge>
           <p className="text-xs text-muted-foreground">
-            A proof came back bound to this action digest. It still counts as
-            one human: a second approval from the same person is refused as
-            ACTION_HUMAN_NOT_DISTINCT.
+            World verified a proof-of-human response bound to this payment
+            action and its single-use approval session
+            {verifiedAt === null
+              ? '.'
+              : ` at ${new Date(verifiedAt).toLocaleTimeString()}.`}
           </p>
-          {humanNote === null ? null : (
-            <code className="tabular text-[10px] break-all text-muted-foreground">
-              {humanNote}
-            </code>
-          )}
+          <p className="text-xs text-muted-foreground">
+            The local demo consumes the session in memory. It does not claim
+            that the proof has been admitted to the durable payment quorum.
+          </p>
         </div>
       ) : null}
     </div>

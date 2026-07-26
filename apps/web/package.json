@@ -7,7 +7,7 @@
     "auth:migrate": "node --env-file-if-exists=.env.local scripts/migrate-auth.mjs",
     "build": "next build",
     "clean": "rm -rf .next",
-    "dev": "next dev --port 3000",
+    "dev": "next dev --webpack --port 3000",
     "start": "next start --port 3000",
     "typecheck": "next typegen && tsc -p tsconfig.typecheck.json --noEmit"
   },

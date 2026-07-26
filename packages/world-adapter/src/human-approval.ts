@@ -3,8 +3,10 @@ import { createHash } from 'node:crypto';
 import {
   hashSignal,
   proofOfHuman,
+  type IDKitResult,
   type IDKitRequestConfig,
   type ProofOfHumanPreset,
+  type ResponseItemV4,
   type RpContext,
 } from '@worldcoin/idkit-core';
 import { signRequest } from '@worldcoin/idkit-core/signing';
@@ -18,12 +20,15 @@ import type {
 const ACTION_DIGEST_PATTERN = /^[0-9a-f]{64}$/u;
 const APP_ID_PATTERN = /^app_(?:staging_)?[A-Za-z0-9]{1,128}$/u;
 const DERIVATION_VERSION_PATTERN = /^v[1-9][0-9]{0,8}$/u;
+const HEX_IDENTIFIER_PATTERN = /^0x[0-9a-fA-F]+$/u;
 const RP_ID_PATTERN = /^rp_[A-Za-z0-9]{1,128}$/u;
 const SCOPED_PRINCIPAL_PATTERN = /^hmac-sha256:[A-Za-z0-9_-]{43}$/u;
 const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/u;
 const SUBJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/u;
 const TOKEN_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const MAXIMUM_APPROVAL_SESSION_TTL_SECONDS = 300;
+const MAXIMUM_UINT256 = (1n << 256n) - 1n;
+const PROOF_OF_HUMAN_ISSUER_SCHEMA_ID = 1;
 const trustedWorldDeploymentBrand = Symbol('trusted-world-deployment');
 const trustedWorldDeployments = new WeakSet<object>();
 
@@ -96,6 +101,31 @@ export type WorldProofOfHumanRequestValidationResult =
       reason: WorldProofOfHumanRequestValidationReason;
     }>;
 
+type WorldIdKitResultV4 = Extract<
+  IDKitResult,
+  { action: string; protocol_version: '4.0' }
+>;
+
+export type WorldProofOfHumanResultValidationReason =
+  | 'ACTION_MISMATCH'
+  | 'CREDENTIAL_INVALID'
+  | 'ENVIRONMENT_MISMATCH'
+  | 'NONCE_MISMATCH'
+  | 'PROTOCOL_MISMATCH'
+  | 'SIGNAL_MISMATCH'
+  | 'USER_PRESENCE_MISSING';
+
+export type WorldProofOfHumanResultValidationResult =
+  | Readonly<{
+      ok: true;
+      proof: WorldIdKitResultV4;
+      response: ResponseItemV4;
+    }>
+  | Readonly<{
+      ok: false;
+      reason: WorldProofOfHumanResultValidationReason;
+    }>;
+
 type CreateWorldHumanApprovalBindingInput = Readonly<{
   actionDigest: string;
   agentAddress: string;
@@ -150,6 +180,15 @@ function cloneValue(value: unknown): unknown {
   } catch {
     return undefined;
   }
+}
+
+function parseNonzeroUint256(value: unknown): string | null {
+  if (typeof value !== 'string' || !HEX_IDENTIFIER_PATTERN.test(value)) {
+    return null;
+  }
+
+  const integer = BigInt(value);
+  return integer > 0n && integer <= MAXIMUM_UINT256 ? value : null;
 }
 
 function requireDate(value: Date, name: string): Date {
@@ -692,6 +731,76 @@ export function validateWorldProofOfHumanRequest(
   });
 
   return Object.freeze({ ok: true, request });
+}
+
+/**
+ * Validate the exact IDKit result before a composition root forwards it to
+ * World's verifier.
+ *
+ * IDKit polling only reports that the phone completed the bridge exchange. It
+ * does not establish that the returned proof is valid, action-bound, or safe to
+ * count. This check is intentionally local and structural; a successful result
+ * must still be verified by the Developer Portal and atomically consumed by the
+ * owning repository before it can become authority.
+ */
+export function validateWorldProofOfHumanResult(
+  value: unknown,
+  request: WorldProofOfHumanRequest,
+): WorldProofOfHumanResultValidationResult {
+  const proof = cloneValue(value);
+
+  if (
+    !isRecord(proof) ||
+    proof.protocol_version !== '4.0' ||
+    'session_id' in proof
+  ) {
+    return Object.freeze({ ok: false, reason: 'PROTOCOL_MISMATCH' });
+  }
+
+  if (proof.action !== request.binding.worldActionId) {
+    return Object.freeze({ ok: false, reason: 'ACTION_MISMATCH' });
+  }
+  if (proof.nonce !== request.config.rp_context.nonce) {
+    return Object.freeze({ ok: false, reason: 'NONCE_MISMATCH' });
+  }
+  if (proof.environment !== request.environment) {
+    return Object.freeze({ ok: false, reason: 'ENVIRONMENT_MISMATCH' });
+  }
+  if (proof.user_presence_completed !== true) {
+    return Object.freeze({ ok: false, reason: 'USER_PRESENCE_MISSING' });
+  }
+  if (!Array.isArray(proof.responses) || proof.responses.length !== 1) {
+    return Object.freeze({ ok: false, reason: 'CREDENTIAL_INVALID' });
+  }
+
+  const response = proof.responses[0];
+  if (!isRecord(response)) {
+    return Object.freeze({ ok: false, reason: 'CREDENTIAL_INVALID' });
+  }
+  if (response.signal_hash !== request.expectedSignalHash) {
+    return Object.freeze({ ok: false, reason: 'SIGNAL_MISMATCH' });
+  }
+  if (
+    response.identifier !== 'proof_of_human' ||
+    response.issuer_schema_id !== PROOF_OF_HUMAN_ISSUER_SCHEMA_ID ||
+    parseNonzeroUint256(response.nullifier) === null ||
+    typeof response.expires_at_min !== 'number' ||
+    !Number.isSafeInteger(response.expires_at_min) ||
+    response.expires_at_min <= 0 ||
+    !Array.isArray(response.proof) ||
+    response.proof.length !== 5 ||
+    !response.proof.every(
+      (item) => typeof item === 'string' && HEX_IDENTIFIER_PATTERN.test(item),
+    )
+  ) {
+    return Object.freeze({ ok: false, reason: 'CREDENTIAL_INVALID' });
+  }
+
+  return Object.freeze({
+    ok: true,
+    proof: proof as unknown as WorldIdKitResultV4,
+    response: response as unknown as ResponseItemV4,
+  });
 }
 
 export function createWorldProofOfHumanRequest({

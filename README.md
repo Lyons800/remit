@@ -228,21 +228,24 @@ product rests on: two wallets, two company roles, **one person** — so
 `validateApprovalQuorum` refuses `ACTION_HUMAN_NOT_DISTINCT` on real identities,
 not invented ones.
 
-**Simulated.** The approval _events_ themselves. Nobody is prompted on a phone;
-the demo constructs approval facts and asks World only the question it truly
-answers — who is behind these wallets. `signedProofDigest` and `worldProofId`
-are placeholders, and the demo marks the affected lines.
+**Live browser path on the demo branch.** `/approvals/INV-2026-0912` can open
+World App for A1 using `IDKit.request`, with the exact payment action and signal
+signed by the configured relying party. The browser returns the unmodified IDKit
+result to Remit's server, which first checks the action, signal, nonce,
+environment, user presence, credential and proof shape, then sends it to World's
+v4 verification endpoint. A success consumes that short-lived session and
+action-human combination in the running demo process.
 
-**Why.** Completing it means World App proving a human approved _this_ payment,
-with the action digest carried as the World ID signal. That flow is built and
-signed against our real `app_id` and `rp_id` on the `demo/world-phone-approval`
-branch — action derivation, signal binding and a locally-signed `rp_context` all
-validate. It stops at the transport: IDKit initialises a WASM module and expects
-a browser, so a terminal script can never open World App. Finishing it needs a
-client component in `/approvals/[id]`.
+**Still simulated.** The three quorum buttons and their approval events remain a
+local reducer. The verified phone proof is not yet admitted to the durable AP
+repository or payment quorum, and the page says so. Completing a phone scan
+demonstrates World's action-bound proof and server verification, not settlement
+authority.
 
-It is kept off `main` on purpose. A half-wired login is worse than an honest
-simulation, and this repository would rather say what it has not done.
+**Why.** World proves that a unique human approved _this_ payment. Remit still
+has to prove that the person's agent has the correct company role and atomically
+store the verified approval before settlement. Keeping those claims separate is
+the product's authority boundary, not an unfinished UI detail.
 
 ## What we do not claim
 
@@ -281,13 +284,21 @@ _do_ make are believable.
 
 ## Development
 
-Node.js `24.11.0`, pnpm `11.17.0` via Corepack.
+Node.js `24.11.0`, pnpm `11.17.0` via Corepack. The root demo launcher finds the
+required Node binary when the current shell is on another version, starts only
+the web app under Webpack, isolates its cache, and caps the V8 heap at 2 GiB.
 
 ```bash
 pnpm check     # format, lint, typecheck, test, build
 pnpm migrate   # apply persistence migrations
-pnpm dev
+pnpm dev       # resource-bounded web demo on http://localhost:3000
+pnpm dev:reset # also discard the isolated demo cache
+pnpm dev:all   # all seven long-running services; only when needed
 ```
+
+`pnpm dev` is the normal judge/demo command. It deliberately does not start the
+control API and five workers because the browser walkthrough does not need them.
+`pnpm dev:all` starts the complete development topology:
 
 | Process           | Port |
 | ----------------- | ---: |

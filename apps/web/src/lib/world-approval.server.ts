@@ -5,11 +5,16 @@ import { randomUUID } from 'node:crypto';
 import {
   createTrustedWorldDeploymentContext,
   createWorldHumanApprovalBinding,
-  createWorldPrincipalKeyring,
   createWorldProofOfHumanRequest,
-  deriveAgentTenantPrincipal,
   signApprovalRequest,
-} from '@remit/world-adapter';
+  validateWorldProofOfHumanResult,
+  type WorldProofOfHumanRequest,
+} from '@remit/world-adapter/human-approval';
+import {
+  createWorldPrincipalKeyring,
+  deriveActionHumanPrincipal,
+  deriveAgentTenantPrincipal,
+} from '@remit/world-adapter/privacy';
 
 /**
  * Mint a World App approval request for one exact payment.
@@ -40,6 +45,8 @@ export interface ApprovalRequestInput {
 export interface MintedApprovalRequest {
   /** Handed to IDKit in the browser. Contains no secret material. */
   readonly config: unknown;
+  /** Exact action-bound credential preset created by the trusted adapter. */
+  readonly preset: unknown;
   /** What a returned proof's signal must hash to. Checked on the way back. */
   readonly expectedSignalHash: string;
   readonly worldActionId: string;
@@ -47,8 +54,103 @@ export interface MintedApprovalRequest {
   readonly expiresAt: string;
 }
 
-/** Sessions are short-lived by design; an approval left open is an approval. */
+/** Sessions are short-lived; an open request never counts as an approval. */
 const APPROVAL_TTL_MS = 5 * 60_000;
+const WORLD_VERIFY_TIMEOUT_MS = 12_000;
+const MAXIMUM_PENDING_APPROVALS = 64;
+
+type ApprovalStatus = 'failed' | 'pending' | 'verified' | 'verifying';
+
+interface PendingWorldApproval {
+  readonly actionDigest: string;
+  readonly organizationId: string;
+  readonly request: WorldProofOfHumanRequest;
+  status: ApprovalStatus;
+}
+
+interface WorldApprovalStore {
+  readonly pending: Map<string, PendingWorldApproval>;
+  readonly usedActionHumans: Map<string, number>;
+}
+
+type WorldApprovalGlobal = typeof globalThis & {
+  __remitWorldApprovalStore?: WorldApprovalStore;
+};
+
+export type WorldApprovalVerificationResult =
+  | Readonly<{
+      ok: true;
+      actionDigest: string;
+      approvalSessionId: string;
+      verifiedAt: string;
+    }>
+  | Readonly<{
+      ok: false;
+      reason:
+        | 'PROOF_MISMATCH'
+        | 'PROOF_REPLAYED'
+        | 'SESSION_EXPIRED'
+        | 'SESSION_NOT_FOUND'
+        | 'SESSION_REPLAYED'
+        | 'WORLD_REJECTED'
+        | 'WORLD_UNAVAILABLE';
+    }>;
+
+function approvalStore(): WorldApprovalStore {
+  const shared = globalThis as WorldApprovalGlobal;
+  shared.__remitWorldApprovalStore ??= {
+    pending: new Map(),
+    usedActionHumans: new Map(),
+  };
+  return shared.__remitWorldApprovalStore;
+}
+
+function purgeExpiredApprovals(now: number): void {
+  const store = approvalStore();
+  for (const [sessionId, approval] of store.pending) {
+    if (Date.parse(approval.request.binding.expiresAt) <= now) {
+      store.pending.delete(sessionId);
+    }
+  }
+  for (const [principal, expiresAt] of store.usedActionHumans) {
+    if (expiresAt <= now) store.usedActionHumans.delete(principal);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isRetryableWorldStatus(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+function portalVerified(
+  value: unknown,
+  request: WorldProofOfHumanRequest,
+  nullifier: string,
+): boolean {
+  if (
+    !isRecord(value) ||
+    value.success !== true ||
+    (value.action !== undefined &&
+      value.action !== request.binding.worldActionId) ||
+    (value.environment !== undefined &&
+      value.environment !== request.environment) ||
+    !Array.isArray(value.results)
+  ) {
+    return false;
+  }
+
+  return value.results.some(
+    (result) =>
+      isRecord(result) &&
+      result.identifier === 'proof_of_human' &&
+      result.success === true &&
+      typeof result.nullifier === 'string' &&
+      result.nullifier.toLowerCase() === nullifier.toLowerCase(),
+  );
+}
 
 function need(key: string): string {
   const value = process.env[key];
@@ -127,11 +229,144 @@ export function mintApprovalRequest(
     },
   });
 
+  const store = approvalStore();
+  purgeExpiredApprovals(Date.now());
+  if (store.pending.size >= MAXIMUM_PENDING_APPROVALS) {
+    throw new Error('Too many World approval sessions are already open.');
+  }
+  store.pending.set(binding.approvalSessionId, {
+    actionDigest: binding.actionDigest,
+    organizationId: binding.organizationId,
+    request,
+    status: 'pending',
+  });
+
   return {
     approvalSessionId: binding.approvalSessionId,
     config: request.config,
     expectedSignalHash: request.expectedSignalHash,
     expiresAt: binding.expiresAt,
+    preset: request.preset,
     worldActionId: binding.worldActionId,
   };
+}
+
+/**
+ * Verify one completed IDKit result with World and consume its local demo
+ * session.
+ *
+ * This proves the phone returned a valid proof for the exact World action and
+ * signal. The in-memory store prevents replay inside one dev process, but it is
+ * deliberately not presented as durable payment authority: production still
+ * requires the serializable repository admission described in WORLD.md.
+ */
+export async function verifyWorldApprovalProof(input: {
+  readonly approvalSessionId: string;
+  readonly organizationId: string;
+  readonly proof: unknown;
+  readonly fetcher?: typeof fetch;
+  readonly now?: Date;
+}): Promise<WorldApprovalVerificationResult> {
+  const now = input.now ?? new Date();
+  const nowMilliseconds = now.getTime();
+  if (!Number.isFinite(nowMilliseconds)) {
+    return { ok: false, reason: 'PROOF_MISMATCH' };
+  }
+
+  const store = approvalStore();
+  const pending = store.pending.get(input.approvalSessionId);
+  if (
+    pending === undefined ||
+    pending.organizationId !== input.organizationId
+  ) {
+    return { ok: false, reason: 'SESSION_NOT_FOUND' };
+  }
+  if (nowMilliseconds >= Date.parse(pending.request.binding.expiresAt)) {
+    store.pending.delete(input.approvalSessionId);
+    purgeExpiredApprovals(nowMilliseconds);
+    return { ok: false, reason: 'SESSION_EXPIRED' };
+  }
+  if (pending.status !== 'pending') {
+    return { ok: false, reason: 'SESSION_REPLAYED' };
+  }
+
+  const validated = validateWorldProofOfHumanResult(
+    input.proof,
+    pending.request,
+  );
+  if (!validated.ok) {
+    pending.status = 'failed';
+    return { ok: false, reason: 'PROOF_MISMATCH' };
+  }
+
+  pending.status = 'verifying';
+  const fetcher = input.fetcher ?? fetch;
+  let portalResponse: Response;
+  try {
+    portalResponse = await fetcher(
+      `https://developer.world.org/api/v4/verify/${encodeURIComponent(
+        pending.request.config.rp_context.rp_id,
+      )}`,
+      {
+        body: JSON.stringify(validated.proof),
+        cache: 'no-store',
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+        signal: AbortSignal.timeout(WORLD_VERIFY_TIMEOUT_MS),
+      },
+    );
+  } catch {
+    pending.status = 'pending';
+    return { ok: false, reason: 'WORLD_UNAVAILABLE' };
+  }
+
+  let portalResult: unknown;
+  try {
+    portalResult = await portalResponse.json();
+  } catch {
+    const retryable = isRetryableWorldStatus(portalResponse.status);
+    pending.status = retryable ? 'pending' : 'failed';
+    return {
+      ok: false,
+      reason: retryable ? 'WORLD_UNAVAILABLE' : 'WORLD_REJECTED',
+    };
+  }
+
+  if (
+    !portalResponse.ok ||
+    !portalVerified(portalResult, pending.request, validated.response.nullifier)
+  ) {
+    const retryable = isRetryableWorldStatus(portalResponse.status);
+    pending.status = retryable ? 'pending' : 'failed';
+    return {
+      ok: false,
+      reason: retryable ? 'WORLD_UNAVAILABLE' : 'WORLD_REJECTED',
+    };
+  }
+
+  const principalKey = Buffer.from(need('WORLD_PRINCIPAL_HMAC_KEY'), 'hex');
+  const actionHumanPrincipal = deriveActionHumanPrincipal({
+    actionDigest: pending.actionDigest,
+    key: principalKey,
+    nullifier: validated.response.nullifier,
+    organizationId: pending.organizationId,
+    worldActionId: pending.request.binding.worldActionId,
+  });
+  if (store.usedActionHumans.has(actionHumanPrincipal)) {
+    pending.status = 'failed';
+    return { ok: false, reason: 'PROOF_REPLAYED' };
+  }
+
+  pending.status = 'verified';
+  store.usedActionHumans.set(
+    actionHumanPrincipal,
+    Date.parse(pending.request.binding.expiresAt),
+  );
+
+  return Object.freeze({
+    actionDigest: pending.actionDigest,
+    approvalSessionId: input.approvalSessionId,
+    ok: true,
+    verifiedAt: now.toISOString(),
+  });
 }

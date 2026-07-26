@@ -12,6 +12,7 @@
   },
   "include": [
     "apps/**/*.test.ts",
+    "apps/web/src/types/**/*.d.ts",
     "packages/**/*.test.ts",
     "services/**/*.test.ts",
     "tests/**/*.ts"

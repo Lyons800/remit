@@ -7,6 +7,7 @@ import {
   createWorldProofOfHumanRequest,
   deriveAgentTenantPrincipal,
   validateTrustedWorldDeploymentContext,
+  validateWorldProofOfHumanResult,
   validateWorldProofOfHumanRequest,
 } from '../src/index.js';
 
@@ -66,6 +67,26 @@ function createRequest(
     },
     ...overrides,
   });
+}
+
+function createProof(request = createRequest()) {
+  return {
+    action: request.binding.worldActionId,
+    environment: request.environment,
+    nonce: request.config.rp_context.nonce,
+    protocol_version: '4.0',
+    responses: [
+      {
+        expires_at_min: 1_900_000_000,
+        identifier: 'proof_of_human',
+        issuer_schema_id: 1,
+        nullifier: '0x1234',
+        proof: ['0x01', '0x02', '0x03', '0x04', '0x05'],
+        signal_hash: request.expectedSignalHash,
+      },
+    ],
+    user_presence_completed: true,
+  } as const;
 }
 
 describe('World action-time approval binding', () => {
@@ -190,6 +211,65 @@ describe('World action-time approval binding', () => {
       type: 'ProofOfHuman',
     });
     expect(request.expectedSignalHash).toMatch(/^0x[0-9a-f]{64}$/u);
+  });
+
+  it('accepts only the exact action-bound proof-of-human response', () => {
+    const request = createRequest();
+    const proof = createProof(request);
+
+    expect(validateWorldProofOfHumanResult(proof, request)).toEqual({
+      ok: true,
+      proof,
+      response: proof.responses[0],
+    });
+  });
+
+  it.each([
+    ['action', { action: `invoiceguard-approval-v1-${'0'.repeat(64)}` }],
+    ['nonce', { nonce: 'substituted-nonce' }],
+    ['environment', { environment: 'staging' }],
+    ['user presence', { user_presence_completed: false }],
+  ])('rejects a World result with substituted %s', (_label, mutation) => {
+    const request = createRequest();
+
+    expect(
+      validateWorldProofOfHumanResult(
+        { ...createProof(request), ...mutation },
+        request,
+      ),
+    ).toMatchObject({ ok: false });
+  });
+
+  it.each([
+    ['signal', { signal_hash: `0x${'0'.repeat(64)}` }],
+    ['credential', { identifier: 'selfie' }],
+    ['issuer', { issuer_schema_id: 11 }],
+    ['nullifier', { nullifier: '0x0' }],
+    ['proof', { proof: ['0x01'] }],
+  ])('rejects a World response with substituted %s', (_label, mutation) => {
+    const request = createRequest();
+    const proof = createProof(request);
+
+    expect(
+      validateWorldProofOfHumanResult(
+        {
+          ...proof,
+          responses: [{ ...proof.responses[0], ...mutation }],
+        },
+        request,
+      ),
+    ).toMatchObject({ ok: false });
+  });
+
+  it('rejects a session proof for an exact-action request', () => {
+    const request = createRequest();
+
+    expect(
+      validateWorldProofOfHumanResult(
+        { ...createProof(request), session_id: `session_${'a'.repeat(128)}` },
+        request,
+      ),
+    ).toEqual({ ok: false, reason: 'PROTOCOL_MISMATCH' });
   });
 
   it.each([

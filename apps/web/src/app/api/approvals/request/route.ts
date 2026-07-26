@@ -1,4 +1,4 @@
-import { lookupAgentHumanBackings } from '@remit/world-adapter';
+import { lookupAgentHumanBackings } from '@remit/world-adapter/agentbook';
 import { listWorkspacePeople } from '@remit/persistence';
 import { headers } from 'next/headers';
 
@@ -111,6 +111,7 @@ export async function POST(request: Request): Promise<Response> {
         approvalSessionId: minted.approvalSessionId,
         config: minted.config,
         expiresAt: minted.expiresAt,
+        preset: minted.preset,
         // Returned so the UI can show what the proof will be checked against.
         // Verification happens server-side regardless.
         expectedSignalHash: minted.expectedSignalHash,

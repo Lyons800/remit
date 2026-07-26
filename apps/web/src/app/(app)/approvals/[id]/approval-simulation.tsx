@@ -49,9 +49,10 @@ export function ApprovalSimulation({
       </div>
 
       <div className="border border-border bg-muted/30 px-4 py-3 text-sm">
-        <b>Scenario only.</b>{' '}
+        <b>Synthetic payment; live World proof.</b>{' '}
         <span className="text-muted-foreground">
-          These controls run a local reducer. They do not call World, purchase
+          The simulation controls run a local reducer. The Connect World App
+          section opens and verifies a real World proof, but does not purchase
           verification, submit to Hedera, or move value.
         </span>
       </div>
@@ -124,8 +125,8 @@ export function ApprovalSimulation({
           </div>
           <p className="text-xs text-muted-foreground">
             A1 and A2 deliberately share one synthetic backing class. This
-            demonstrates the intended refusal rule; live World authority remains
-            an offline integration contract.
+            demonstrates the intended refusal rule. The phone flow separately
+            proves the action-bound World approval for A1.
           </p>
         </CardContent>
       </Card>

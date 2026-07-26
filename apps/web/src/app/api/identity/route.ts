@@ -1,7 +1,5 @@
-import {
-  lookupAgentHumanBackings,
-  resolveAgentNames,
-} from '@remit/world-adapter';
+import { lookupAgentHumanBackings } from '@remit/world-adapter/agentbook';
+import { resolveAgentNames } from '@remit/world-adapter/ens';
 import { listWorkspacePeople } from '@remit/persistence';
 
 import { headers } from 'next/headers';

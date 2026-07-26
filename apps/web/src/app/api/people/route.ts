@@ -1,4 +1,4 @@
-import { looksLikeEnsName, resolveEnsName } from '@remit/world-adapter';
+import { looksLikeEnsName, resolveEnsName } from '@remit/world-adapter/ens';
 import {
   addWorkspacePerson,
   listWorkspacePeople,

@@ -1,5 +1,4 @@
-import { createPublicClient, http, isAddress } from 'viem';
-import { mainnet } from 'viem/chains';
+import { createPublicClient, defineChain, http, isAddress } from 'viem';
 import { normalize } from 'viem/ens';
 
 /**
@@ -23,6 +22,26 @@ import { normalize } from 'viem/ens';
 
 const DEFAULT_RPC_URL = 'https://ethereum-rpc.publicnode.com';
 const LOOKUP_TIMEOUT_MS = 6_000;
+const ETHEREUM_MAINNET = defineChain({
+  blockExplorers: {
+    default: {
+      name: 'Etherscan',
+      url: 'https://etherscan.io',
+    },
+  },
+  id: 1,
+  name: 'Ethereum',
+  nativeCurrency: {
+    decimals: 18,
+    name: 'Ether',
+    symbol: 'ETH',
+  },
+  rpcUrls: {
+    default: {
+      http: [DEFAULT_RPC_URL],
+    },
+  },
+});
 
 export interface EnsIdentity {
   readonly address: string;
@@ -36,7 +55,10 @@ export interface EnsResolutionOptions {
 }
 
 function client(rpcUrl: string) {
-  return createPublicClient({ chain: mainnet, transport: http(rpcUrl) });
+  return createPublicClient({
+    chain: ETHEREUM_MAINNET,
+    transport: http(rpcUrl),
+  });
 }
 
 async function withTimeout<T>(

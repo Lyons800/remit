@@ -1,8 +1,13 @@
 import { createHash } from 'node:crypto';
 
 import { createAgentBookVerifier } from '@worldcoin/agentkit';
-import { createPublicClient, getAddress, http, isAddress } from 'viem';
-import { worldchain } from 'viem/chains';
+import {
+  createPublicClient,
+  defineChain,
+  getAddress,
+  http,
+  isAddress,
+} from 'viem';
 
 import {
   WORLD_AGENTBOOK_ADAPTER_ID,
@@ -31,6 +36,30 @@ const AGENTBOOK_ABI = [
     type: 'function',
   },
 ] as const;
+
+// Keep this definition local instead of importing `worldchain` from the
+// `viem/chains` barrel. In Next development that barrel pulls every chain
+// definition into the server compiler just to make one AgentBook read.
+const WORLD_CHAIN = defineChain({
+  blockExplorers: {
+    default: {
+      name: 'Worldscan',
+      url: 'https://worldscan.org',
+    },
+  },
+  id: WORLD_AGENTBOOK_NUMERIC_CHAIN_ID,
+  name: 'World Chain',
+  nativeCurrency: {
+    decimals: 18,
+    name: 'Ether',
+    symbol: 'ETH',
+  },
+  rpcUrls: {
+    default: {
+      http: ['https://worldchain-mainnet.g.alchemy.com/public'],
+    },
+  },
+});
 
 export type WorldAgentBookResolverObservation = Readonly<{
   agentBookAdapterId: typeof WORLD_AGENTBOOK_ADAPTER_ID;
@@ -283,7 +312,7 @@ export function createWorldChainAgentBookResolver({
 }: WorldChainAgentBookResolverOptions): AgentBookPrincipalResolver {
   const rpcUrl = requireRpcUrl(rawRpcUrl);
   const client = createPublicClient({
-    chain: worldchain,
+    chain: WORLD_CHAIN,
     transport: http(rpcUrl),
   });
   const verifier = createAgentBookVerifier({

@@ -8,6 +8,22 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./agentbook": {
+      "types": "./dist/agentbook.d.ts",
+      "import": "./dist/agentbook.js"
+    },
+    "./ens": {
+      "types": "./dist/ens.d.ts",
+      "import": "./dist/ens.js"
+    },
+    "./human-approval": {
+      "types": "./dist/human-approval.d.ts",
+      "import": "./dist/human-approval.js"
+    },
+    "./privacy": {
+      "types": "./dist/privacy.d.ts",
+      "import": "./dist/privacy.js"
     }
   },
   "scripts": {

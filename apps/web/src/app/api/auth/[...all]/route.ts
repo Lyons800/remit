@@ -1,6 +1,4 @@
-import { toNextJsHandler } from 'better-auth/next-js';
-
-import { getAuth } from '../../../../lib/auth.server';
+import { authConfigurationState } from '../../../../lib/workspace-access';
 
 /**
  * Better Auth's HTTP surface.
@@ -16,6 +14,32 @@ export const dynamic = 'force-dynamic';
 
 const handle = (method: 'GET' | 'POST') =>
   async function route(request: Request): Promise<Response> {
+    const state = authConfigurationState();
+    if (state === 'absent') {
+      // The public judge demo does not configure company sign-in. Returning an
+      // empty session keeps Better Auth's client hooks quiet without creating a
+      // pretend user or requiring irrelevant OAuth secrets.
+      if (method === 'GET') {
+        return Response.json(null, {
+          headers: { 'cache-control': 'no-store' },
+        });
+      }
+      return Response.json(
+        { error: 'Company sign-in is not configured in this environment.' },
+        { status: 503 },
+      );
+    }
+    if (state === 'partial') {
+      return Response.json(
+        { error: 'Company sign-in is only partially configured.' },
+        { status: 503 },
+      );
+    }
+
+    const [{ toNextJsHandler }, { getAuth }] = await Promise.all([
+      import('better-auth/next-js'),
+      import('../../../../lib/auth.server'),
+    ]);
     return toNextJsHandler(getAuth())[method](request);
   };
 

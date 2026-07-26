@@ -17,6 +17,25 @@
 This is a concise, append-only record of material build decisions. Git history
 remains the source of truth for exact changes.
 
+## 2026-07-26 - Resource-bounded World phone demo
+
+### Outcome
+
+- Replaced the root's seven-process default with a web-only demo launcher;
+  retained the full topology as `pnpm dev:all`.
+- Made the launcher select Node `24.11.0`, use Webpack, isolate the demo cache,
+  and cap the V8 heap at 2 GiB.
+- Removed `viem/chains` barrel imports from the World and ENS server paths, so a
+  World request no longer compiles every Viem chain definition.
+- Added the action-bearing browser `IDKit.request` flow, five-minute bounded
+  polling, World v4 server verification, exact response correlation, and
+  in-process replay refusal.
+- Kept the verified proof out of durable payment authority; the demo receipt is
+  explicitly in-memory until repository admission is implemented.
+- Reached a real World connector QR from the local approval page with the server
+  steady at approximately 1.5 GiB RSS. Phone authorization remains the external
+  completion step.
+
 ## 2026-07-25 - repository foundation
 
 ### Outcome

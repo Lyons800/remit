@@ -1,7 +1,7 @@
-# World offline integration record
+# World integration record
 
-Status: offline compatibility and atomic-admission contract proven; live
-authority not proven.
+Status: browser request and server-verification path implemented; offline
+atomic-admission contract proven; durable live authority not proven.
 
 Checked: 2026-07-26.
 
@@ -49,6 +49,15 @@ with legacy proofs disabled.
   environment, relying-party ID and mode. Requests keep that identity alongside
   explicit `proofOfHuman`, expected signal hash, user-presence requirement,
   short RP context, and disabled legacy proofs.
+- A browser flow using the action-bearing `IDKit.request` API rather than the
+  actionless returning-user session API. It loads IDKit only after the user
+  chooses to connect, displays the World connector QR, bounds polling to the
+  five-minute approval session, and treats unsuccessful completion as failure.
+- A server route that accepts the unmodified IDKit result, checks every
+  request-bound field, forwards the result to World's v4 verification endpoint,
+  and exposes only a sanitized receipt. Its in-memory session and
+  action-scoped-human consumption are explicitly demo-only and never enter the
+  payment quorum.
 - One World action identifier derived only from organization and action digest,
   shared across every role and decision slot. The signal separately binds the
   subject, approval session, role, decision, grant, agent, principal version,
@@ -105,8 +114,8 @@ following are evidenced:
 - a production Developer Portal app and RP configuration;
 - a compatible AgentKit license or explicit legal basis for production use and
   redistribution;
-- a live `IDKit.request` or admitted first-party connector round trip followed
-  by World's server-side verification;
+- a recorded phone completion from this reviewed build followed by successful
+  World server-side verification;
 - live AgentBook registration and resolution for the required distinct humans;
 - cryptographically issued and revoked company-role credentials;
 - a deployed composition root that rechecks the trusted subject, action,
@@ -121,9 +130,10 @@ following are evidenced:
   writer receipt in that same atomic group; and
 - deployed judge evidence from the same reviewed build SHA.
 
-No PostgreSQL repository or migration is part of this offline integration. No
-live AgentBook registration, World proof, real-human quorum, company-role
-authority, or settlement claim has been made.
+No PostgreSQL repository or migration is part of the browser proof path. Live
+AgentBook registrations are demonstrated separately; no completed World phone
+proof, real-human quorum, company-role authority, or settlement claim has yet
+been made from this reviewed build.
 
 AgentBook backing and action-time IDKit identity remain independent facts.
 Current first-party interfaces do not prove they identify the same person, and
