@@ -162,6 +162,7 @@ export type PaymentActionAggregate = Readonly<{
   metadata: PaymentAggregateMetadata;
   settlementAttempt: FrozenSettlementAttempt | null;
   settlementReceipt: AdapterVerifiedSettlementReceipt | null;
+  settlementRetryAuthority: RequestingAgentExecutionFact | null;
   settlementUncertainty: AdapterVerifiedSettlementUncertainty | null;
   state: PaymentActionState;
   terminal: PaymentTerminalRecord | null;
@@ -499,6 +500,7 @@ const AGGREGATE_KEYS = [
   'metadata',
   'settlementAttempt',
   'settlementReceipt',
+  'settlementRetryAuthority',
   'settlementUncertainty',
   'state',
   'terminal',
@@ -1012,6 +1014,10 @@ function parseAggregateFacts(
     input.settlementReceipt === null
       ? null
       : parseAdapterVerifiedSettlementReceipt(input.settlementReceipt);
+  const settlementRetryAuthority =
+    input.settlementRetryAuthority === null
+      ? null
+      : parseRequestingAgentExecutionFact(input.settlementRetryAuthority);
   const consumptionClaim =
     input.consumptionClaim === null
       ? null
@@ -1036,6 +1042,8 @@ function parseAggregateFacts(
     (input.settlementAttempt !== null && settlementAttempt === null) ||
     (input.settlementUncertainty !== null && settlementUncertainty === null) ||
     (input.settlementReceipt !== null && settlementReceipt === null) ||
+    (input.settlementRetryAuthority !== null &&
+      settlementRetryAuthority === null) ||
     (input.consumptionClaim !== null && consumptionClaim === null) ||
     (input.executionAuthority !== null && executionAuthority === null) ||
     (input.executionApprovals !== null && executionApprovals === null)
@@ -1059,6 +1067,7 @@ function parseAggregateFacts(
     executionAuthority,
     settlementAttempt,
     settlementReceipt,
+    settlementRetryAuthority,
     settlementUncertainty,
     terminal: null,
     verificationPayment,
@@ -1080,6 +1089,7 @@ function factsBindAuthorization(
     facts.settlementAttempt,
     facts.settlementUncertainty,
     facts.settlementReceipt,
+    facts.settlementRetryAuthority,
     facts.consumptionClaim,
     facts.executionAuthority,
   ]) {
@@ -1237,6 +1247,7 @@ function executionFactsValid(
   const audit = facts.authorizationAudit;
   const attempt = facts.settlementAttempt;
   const current = facts.executionAuthority;
+  const retryAuthority = facts.settlementRetryAuthority;
   if (
     basis === null ||
     audit === null ||
@@ -1244,6 +1255,21 @@ function executionFactsValid(
     current === null
   ) {
     return false;
+  }
+  if (retryAuthority !== null) {
+    const validatedRetryAuthority = validateRequestingAgent(
+      retryAuthority,
+      authorization,
+      retryAuthority.verifiedAt,
+      audit.committedAt,
+    );
+    if (
+      !validatedRetryAuthority.ok ||
+      !sameRequestingAgentIdentity(basis.requestingAgent, retryAuthority) ||
+      retryAuthority.effectDigest !== attempt.effectDigest
+    ) {
+      return false;
+    }
   }
   const validatedAuthority = validateRequestingAgent(
     current,
@@ -1384,6 +1410,7 @@ function noAuthorizationFacts(facts: ParsedAggregateFacts): boolean {
     facts.settlementAttempt === null &&
     facts.settlementUncertainty === null &&
     facts.settlementReceipt === null &&
+    facts.settlementRetryAuthority === null &&
     facts.consumptionClaim === null
   );
 }
@@ -1478,6 +1505,7 @@ function validateFactsForState(
       facts.settlementAttempt !== null ||
       facts.settlementUncertainty !== null ||
       facts.settlementReceipt !== null ||
+      facts.settlementRetryAuthority !== null ||
       facts.consumptionClaim !== null)
   ) {
     return false;
@@ -1491,6 +1519,7 @@ function validateFactsForState(
       facts.settlementAttempt !== null ||
       facts.settlementUncertainty !== null ||
       facts.settlementReceipt !== null ||
+      facts.settlementRetryAuthority !== null ||
       facts.consumptionClaim !== null)
   ) {
     return false;
@@ -1576,6 +1605,7 @@ function retainedFactChronologyValid(
   const executionAuthority = facts.executionAuthority;
   const uncertainty = facts.settlementUncertainty;
   const receipt = facts.settlementReceipt;
+  const retryAuthority = facts.settlementRetryAuthority;
   const claim = facts.consumptionClaim;
   const executionAudit = facts.executionAudit;
 
@@ -1644,6 +1674,19 @@ function retainedFactChronologyValid(
       return false;
     }
     timestamps.push(uncertainty.observedAt);
+  }
+  if (retryAuthority !== null) {
+    if (
+      audit === null ||
+      attempt === null ||
+      retryAuthority.verifiedAt < audit.committedAt ||
+      (metadata.lastEventType === 'RETRY_SAME_TRANSACTION' &&
+        (retryAuthority.verifiedAt > metadata.lastTransitionAt ||
+          retryAuthority.expiresAt <= metadata.lastTransitionAt))
+    ) {
+      return false;
+    }
+    timestamps.push(retryAuthority.verifiedAt);
   }
   if (receipt !== null) {
     if (attempt === null || receipt.settledAt < attempt.createdAt) {
@@ -1811,6 +1854,7 @@ export function createPaymentActionAggregate(
         }),
         settlementAttempt: null,
         settlementReceipt: null,
+        settlementRetryAuthority: null,
         settlementUncertainty: null,
         state: 'CAPTURED',
         terminal: null,
@@ -2132,6 +2176,194 @@ function releaseReservationForTerminal(
       ),
     ]),
   );
+}
+
+export function deriveExpectedPaymentTransitionEffects(
+  currentInput: unknown,
+  targetInput: unknown,
+  mandateLedgerInput: unknown = null,
+): DomainResult<readonly PaymentDomainEffect[]> {
+  const currentResult = hydratePaymentActionAggregate(currentInput);
+  if (!currentResult.ok) {
+    return currentResult;
+  }
+  const targetResult = hydratePaymentActionAggregate(targetInput);
+  if (!targetResult.ok) {
+    return targetResult;
+  }
+  const current = currentResult.value;
+  const target = targetResult.value;
+  if (
+    target.metadata.version !== current.metadata.version + 1 ||
+    target.metadata.transitionCount !== current.metadata.transitionCount + 1 ||
+    target.metadata.previousState !== current.state
+  ) {
+    return refuse('INVALID_STATE_TRANSITION');
+  }
+
+  const eventType = target.metadata.lastEventType;
+  const group = atomicGroupKey(current);
+  if (eventType === 'QUOTE_VERIFICATION') {
+    const eventId = deriveVerificationQuoteEventId(current);
+    return accept(
+      Object.freeze([
+        Object.freeze({
+          actionDigest: current.authorization.envelope.actionDigest,
+          atomicGroupKey: group,
+          evidencePolicyDigest:
+            current.authorization.decision.evidencePolicy.digest,
+          eventId,
+          expiresAt: current.authorization.actionCore.expiresAt,
+          idempotencyKey: eventId,
+          serviceId: current.authorization.decision.evidencePolicy.serviceId,
+          serviceKeyId:
+            current.authorization.decision.evidencePolicy.serviceKeyId,
+          serviceNetworkId:
+            current.authorization.decision.evidencePolicy.serviceNetworkId,
+          type: 'VERIFICATION_QUOTE_REQUEST' as const,
+        }),
+      ]),
+    );
+  }
+
+  if (eventType === 'AUTHORIZE_MANDATE') {
+    const basis = target.authorizationBasis;
+    if (basis === null || basis.kind !== 'MANDATE') {
+      return refuse('MANDATE_RESERVATION_CONFLICT');
+    }
+    const reserved = reserveMandateCapacity(
+      mandateLedgerInput,
+      basis.reservationClaim,
+    );
+    if (
+      !reserved.ok ||
+      canonicalizeJson(reserved.value.ledger) !==
+        canonicalizeJson(basis.reservedLedger)
+    ) {
+      return reserved.ok ? refuse('MANDATE_RESERVATION_CONFLICT') : reserved;
+    }
+    return accept(
+      Object.freeze([
+        reservationEffect(
+          current,
+          'RESERVE',
+          mandateLedgerInput as MandateReservationLedger,
+          reserved.value.ledger,
+          basis.reservationClaim,
+        ),
+      ]),
+    );
+  }
+
+  if (
+    eventType === 'REJECT_AUTHORIZATION' ||
+    eventType === 'EXPIRE' ||
+    eventType === 'SUPERSEDE' ||
+    eventType === 'CANCEL'
+  ) {
+    return releaseReservationForTerminal(current, mandateLedgerInput);
+  }
+
+  if (eventType === 'QUEUE_SETTLEMENT') {
+    const attempt = target.settlementAttempt;
+    const basis = current.authorizationBasis;
+    const authority = target.executionAuthority;
+    if (attempt === null || basis === null || authority === null) {
+      return refuse('SETTLEMENT_TRANSACTION_MISMATCH');
+    }
+    return accept(
+      Object.freeze([
+        Object.freeze({
+          atomicGroupKey: group,
+          attempt,
+          authorityFactDigest: authority.recordDigest,
+          authorizationBasisDigest: basis.basisDigest,
+          evidenceResultDigest: current.evidenceResult?.recordDigest ?? null,
+          eventId: deriveSettlementSubmissionEventId(attempt),
+          idempotencyKey: attempt.idempotencyKey,
+          type: 'SETTLEMENT_SUBMISSION_REQUEST' as const,
+        }),
+      ]),
+    );
+  }
+
+  if (eventType === 'SETTLE_CONSENSUS' || eventType === 'RECOVER_SETTLEMENT') {
+    const claim = target.consumptionClaim;
+    const receipt = target.settlementReceipt;
+    if (claim === null || receipt === null) {
+      return refuse('SETTLEMENT_TRANSACTION_MISMATCH');
+    }
+    const audit = executionAuditRequestEffect(current, receipt);
+    if (!audit.ok) {
+      return audit;
+    }
+    const effects: PaymentDomainEffect[] = [
+      Object.freeze({
+        atomicGroupKey: group,
+        claim,
+        receipt,
+        type: 'SETTLEMENT_CONSUMPTION_WRITE',
+      }),
+      audit.value,
+    ];
+    const basis = current.authorizationBasis;
+    if (basis?.kind === 'MANDATE') {
+      const settled = settleMandateReservation(
+        mandateLedgerInput,
+        basis.reservationClaim,
+      );
+      if (!settled.ok) {
+        return settled;
+      }
+      effects.push(
+        reservationEffect(
+          current,
+          'SETTLE',
+          mandateLedgerInput as MandateReservationLedger,
+          settled.value.ledger,
+          basis.reservationClaim,
+        ),
+      );
+    } else if (mandateLedgerInput !== null) {
+      return refuse('MANDATE_RESERVATION_CONFLICT');
+    }
+    return accept(Object.freeze(effects));
+  }
+
+  if (eventType === 'RETRY_SAME_TRANSACTION') {
+    const attempt = current.settlementAttempt;
+    const basis = current.authorizationBasis;
+    const authority = target.settlementRetryAuthority;
+    if (attempt === null || basis === null || authority === null) {
+      return refuse('SETTLEMENT_TRANSACTION_MISMATCH');
+    }
+    return accept(
+      Object.freeze([
+        Object.freeze({
+          atomicGroupKey: group,
+          attempt,
+          authorityFactDigest: authority.recordDigest,
+          authorizationBasisDigest: basis.basisDigest,
+          evidenceResultDigest: current.evidenceResult?.recordDigest ?? null,
+          eventId: deriveSettlementSubmissionEventId(attempt),
+          idempotencyKey: attempt.idempotencyKey,
+          requestingAgent: authority,
+          type: 'SETTLEMENT_RETRY_REQUEST' as const,
+        }),
+      ]),
+    );
+  }
+
+  if (eventType === 'RETRY_EXECUTION_AUDIT') {
+    const receipt = current.settlementReceipt;
+    if (receipt === null) {
+      return refuse('EXECUTION_AUDIT_MISMATCH');
+    }
+    const effect = executionAuditRequestEffect(current, receipt);
+    return effect.ok ? accept(Object.freeze([effect.value])) : effect;
+  }
+
+  return accept(Object.freeze([]));
 }
 
 function validateAudit(
@@ -2850,19 +3082,26 @@ export function transitionPaymentAction(
         return reservation;
       }
     }
-    return transitionResult(aggregate, next, eventType, now, {}, [
-      Object.freeze({
-        atomicGroupKey: atomicGroupKey(aggregate),
-        attempt,
-        authorityFactDigest: requestingAgent.value.recordDigest,
-        authorizationBasisDigest: basis.basisDigest,
-        evidenceResultDigest: evidence.value?.recordDigest ?? null,
-        eventId: deriveSettlementSubmissionEventId(attempt),
-        idempotencyKey: attempt.idempotencyKey,
-        requestingAgent: requestingAgent.value,
-        type: 'SETTLEMENT_RETRY_REQUEST',
-      }),
-    ]);
+    return transitionResult(
+      aggregate,
+      next,
+      eventType,
+      now,
+      { settlementRetryAuthority: requestingAgent.value },
+      [
+        Object.freeze({
+          atomicGroupKey: atomicGroupKey(aggregate),
+          attempt,
+          authorityFactDigest: requestingAgent.value.recordDigest,
+          authorizationBasisDigest: basis.basisDigest,
+          evidenceResultDigest: evidence.value?.recordDigest ?? null,
+          eventId: deriveSettlementSubmissionEventId(attempt),
+          idempotencyKey: attempt.idempotencyKey,
+          requestingAgent: requestingAgent.value,
+          type: 'SETTLEMENT_RETRY_REQUEST',
+        }),
+      ],
+    );
   }
   if (
     eventType === 'CONFIRM_EXECUTION_AUDIT' ||
