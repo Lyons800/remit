@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Remit — invoices your agents can actually pay</title>
+    <meta
+      name="description"
+      content="The agent pays your routine supplier invoices. Anything that changes where money goes is held for two provably distinct humans. World · Hedera · 0G."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0c0c0c;
+        --panel: #121212;
+        --line: #2c2c2c;
+        --line-soft: #1d1d1d;
+        --fg: #f2f1ef;
+        --dim: #878787;
+        --faint: #5a5a5a;
+        --red: #ff3638;
+        --sans: 'Geist', system-ui, sans-serif;
+        --mono: 'Geist Mono', ui-monospace, monospace;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--sans);
+        font-size: 15px;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 1060px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+      .micro {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+
+      nav {
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .nav-in {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 18px 24px;
+        max-width: 1060px;
+        margin: 0 auto;
+      }
+      .logo {
+        font-weight: 600;
+        font-size: 15px;
+        letter-spacing: -0.01em;
+      }
+      .nav-r {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--dim);
+      }
+      .nav-r a {
+        color: var(--fg);
+        text-decoration: none;
+        border: 1px solid var(--line);
+        padding: 7px 14px;
+        margin-left: 14px;
+      }
+      .nav-r a:hover {
+        background: var(--fg);
+        color: var(--bg);
+      }
+
+      header {
+        padding: 96px 0 56px;
+        text-align: center;
+      }
+      h1 {
+        font-weight: 500;
+        font-size: clamp(34px, 5.4vw, 58px);
+        line-height: 1.08;
+        letter-spacing: -0.03em;
+        max-width: 19ch;
+        margin: 0 auto;
+      }
+      h1 em {
+        font-style: italic;
+        font-weight: 400;
+      }
+      .sub {
+        max-width: 56ch;
+        margin: 22px auto 0;
+        font-size: 16.5px;
+        color: var(--dim);
+        line-height: 1.7;
+      }
+      .cta {
+        margin-top: 30px;
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        display: inline-block;
+        padding: 11px 22px;
+        font-size: 14px;
+        font-weight: 500;
+        text-decoration: none;
+        border: 1px solid var(--fg);
+      }
+      .btn.solid {
+        background: var(--fg);
+        color: var(--bg);
+      }
+      .btn.solid:hover {
+        background: #dcdbd8;
+      }
+      .btn.ghost {
+        color: var(--fg);
+        border-color: var(--line);
+      }
+      .btn.ghost:hover {
+        border-color: var(--fg);
+      }
+      .cta-note {
+        margin-top: 14px;
+      }
+
+      /* dashboard shot */
+      .shot {
+        max-width: 1060px;
+        margin: 64px auto 0;
+        padding: 0 24px;
+      }
+      .frame {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        text-align: left;
+        box-shadow: 0 40px 80px -40px rgba(0, 0, 0, 0.8);
+      }
+      .frame-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .frame-bar i {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--line);
+      }
+      .frame-bar span {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--faint);
+        margin-left: 10px;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 176px 1fr;
+        min-height: 480px;
+        font-size: 13px;
+      }
+      @media (max-width: 820px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .side {
+          display: none;
+        }
+      }
+      .side {
+        padding: 22px 0;
+      }
+      .side .org {
+        padding: 0 18px 18px;
+      }
+      .side .org b {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .side nav {
+        border: none;
+      }
+      .side a {
+        display: block;
+        padding: 8px 16px;
+        color: var(--dim);
+        font-size: 13px;
+        text-decoration: none;
+        border-left: 1px solid var(--line-soft);
+      }
+      .side a.on {
+        color: var(--fg);
+        border-left-color: var(--fg);
+      }
+      .main {
+        border-left: 1px solid var(--line-soft);
+        padding: 22px 24px;
+      }
+
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        background: var(--line-soft);
+        border: 1px solid var(--line-soft);
+        margin-bottom: 20px;
+      }
+      @media (max-width: 680px) {
+        .kpis {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      .kpi {
+        background: var(--panel);
+        padding: 14px 16px;
+      }
+      .kpi b {
+        display: block;
+        font-family: var(--mono);
+        font-size: 22px;
+        font-weight: 500;
+        margin-top: 4px;
+      }
+      .kpi.alert b {
+        color: var(--red);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+      }
+      th {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--faint);
+        text-align: left;
+        font-weight: 400;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      td {
+        padding: 10px;
+        border-bottom: 1px solid var(--line-soft);
+        vertical-align: middle;
+      }
+      .r {
+        text-align: right;
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+      .chip {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        border: 1px solid var(--line);
+        padding: 3px 8px;
+        white-space: nowrap;
+        color: var(--dim);
+      }
+      .chip.held {
+        border-color: rgba(255, 54, 56, 0.5);
+        color: var(--red);
+      }
+      .why {
+        color: var(--faint);
+        font-size: 11.5px;
+      }
+
+      /* sections */
+      section {
+        padding: 96px 0 0;
+      }
+      .kicker {
+        margin-bottom: 18px;
+      }
+      h2 {
+        font-weight: 500;
+        font-size: clamp(24px, 3.4vw, 36px);
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        max-width: 24ch;
+      }
+      h2 em {
+        font-style: italic;
+        font-weight: 400;
+      }
+      .lede {
+        max-width: 58ch;
+        margin-top: 16px;
+        font-size: 15.5px;
+        color: var(--dim);
+      }
+
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1px;
+        background: var(--line-soft);
+        border: 1px solid var(--line-soft);
+        margin-top: 44px;
+      }
+      @media (max-width: 820px) {
+        .steps {
+          grid-template-columns: 1fr;
+        }
+      }
+      .step {
+        background: var(--bg);
+        padding: 26px 24px;
+      }
+      .step .n {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--faint);
+        margin-bottom: 12px;
+      }
+      .step h3 {
+        font-size: 15px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        letter-spacing: -0.01em;
+      }
+      .step p {
+        font-size: 13.5px;
+        color: var(--dim);
+        line-height: 1.7;
+      }
+
+      .refuse {
+        margin-top: 44px;
+        border: 1px solid var(--line-soft);
+      }
+      .refuse table {
+        font-size: 13.5px;
+      }
+      .refuse td {
+        padding: 16px 14px;
+      }
+      .refuse td:first-child {
+        font-weight: 500;
+        width: 36%;
+      }
+      .refuse .stop {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--red);
+        white-space: nowrap;
+        width: 150px;
+      }
+      .refuse td:last-child {
+        color: var(--dim);
+        font-size: 13px;
+      }
+
+      .built {
+        margin-top: 44px;
+      }
+      .b-row {
+        display: grid;
+        grid-template-columns: 150px 1fr;
+        gap: 24px;
+        padding: 22px 0;
+        border-top: 1px solid var(--line-soft);
+      }
+      @media (max-width: 640px) {
+        .b-row {
+          grid-template-columns: 1fr;
+          gap: 6px;
+        }
+      }
+      .b-row:last-of-type {
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .b-row .who {
+        font-weight: 600;
+        font-size: 15px;
+      }
+      .b-row p {
+        font-size: 14px;
+        color: var(--dim);
+      }
+      .b-row p b {
+        color: var(--fg);
+        font-weight: 500;
+      }
+
+      .boundary {
+        margin-top: 64px;
+        border: 1px solid var(--line-soft);
+        padding: 30px 32px;
+      }
+      .boundary h3 {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 10px;
+      }
+      .boundary p,
+      .boundary li {
+        font-size: 13.5px;
+        color: var(--dim);
+      }
+      .boundary ul {
+        margin-top: 12px;
+        padding-left: 18px;
+      }
+      .boundary li {
+        padding: 2px 0;
+      }
+
+      footer {
+        margin-top: 96px;
+        border-top: 1px solid var(--line-soft);
+        padding: 28px 0 44px;
+      }
+      .foot {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <div class="nav-in">
+        <span class="logo">Remit</span>
+        <span class="nav-r"><a href="/sign-in">Sign in</a></span>
+      </div>
+    </nav>
+
+    <header>
+      <div class="wrap">
+        <h1>Invoices your agents can <em>actually</em> pay.</h1>
+        <p class="sub">
+          The agent pays your routine supplier invoices. Anything that changes
+          where money goes is held for two approvers who are provably different
+          people — approving exactly what was requested, unchanged.
+        </p>
+        <div class="cta">
+          <a class="btn solid" href="/dashboard">Open the demo organisation</a>
+          <a class="btn ghost" href="#how">How it works</a>
+          <a
+            class="btn ghost"
+            href="https://github.com/Lyons800/remit"
+            rel="noreferrer"
+            target="_blank"
+            >Read the code</a
+          >
+        </div>
+        <p class="micro cta-note">
+          Built at ETHGlobal Lisbon 2026 · World · Hedera · 0G
+        </p>
+      </div>
+
+      <div class="shot">
+        <div class="frame">
+          <div class="frame-bar">
+            <i></i><i></i><i></i><span>app.invoiceguard.io/overview</span>
+          </div>
+          <div class="app">
+            <aside class="side">
+              <div class="org">
+                <b>Remit</b><span class="micro">Padel Peru, Lda</span>
+              </div>
+              <nav>
+                <a class="on" href="#">Overview</a>
+                <a href="#">Invoices</a>
+                <a href="#">Approvals</a>
+                <a href="#">Suppliers</a>
+                <a href="#">Payments</a>
+                <a href="#">Audit log</a>
+                <a href="#">Policies</a>
+              </nav>
+            </aside>
+            <div class="main">
+              <div class="kpis">
+                <div class="kpi">
+                  <span class="micro">Paid by agent</span><b>990</b>
+                </div>
+                <div class="kpi alert">
+                  <span class="micro">Held for approval</span><b>2</b>
+                </div>
+                <div class="kpi">
+                  <span class="micro">Settled volume</span><b>€142,380</b>
+                </div>
+                <div class="kpi">
+                  <span class="micro">Human minutes</span><b>0</b>
+                </div>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Invoice</th>
+                    <th>Supplier</th>
+                    <th style="text-align: right">Amount</th>
+                    <th>Status</th>
+                    <th>Handled by</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>INV-2026-0916</td>
+                    <td>Águas do Sado</td>
+                    <td class="r">€312.40</td>
+                    <td><span class="chip">Paid</span></td>
+                    <td class="why">Agent — no review needed</td>
+                  </tr>
+                  <tr>
+                    <td>INV-2026-0915</td>
+                    <td>EDP Comercial</td>
+                    <td class="r">€1,840.06</td>
+                    <td><span class="chip">Paid</span></td>
+                    <td class="why">Agent — no review needed</td>
+                  </tr>
+                  <tr>
+                    <td>INV-2026-0912</td>
+                    <td>Padel Surfaces Lda</td>
+                    <td class="r">€25,000.00</td>
+                    <td><span class="chip held">Held</span></td>
+                    <td class="why">
+                      Bank account changed — 2 distinct approvers required
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>INV-2026-0914</td>
+                    <td>CleanCourt Serviços</td>
+                    <td class="r">€960.00</td>
+                    <td><span class="chip">Paid</span></td>
+                    <td class="why">Agent — no review needed</td>
+                  </tr>
+                  <tr>
+                    <td>INV-2026-0910</td>
+                    <td>Sport Import Iberia</td>
+                    <td class="r">€4,118.75</td>
+                    <td><span class="chip held">Held</span></td>
+                    <td class="why">
+                      First payment to this supplier — 2 approvers required
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>INV-2026-0913</td>
+                    <td>NovaRede Telecom</td>
+                    <td class="r">€214.90</td>
+                    <td><span class="chip">Paid</span></td>
+                    <td class="why">Agent — no review needed</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section id="how">
+      <div class="wrap">
+        <p class="micro kicker">How it works</p>
+        <h2>
+          Most invoices never needed a person. <em>A few always will.</em>
+        </h2>
+        <p class="lede">
+          Today a human checks all one thousand, because the control cannot tell
+          the difference. Remit routes each invoice from the payment identifier
+          itself.
+        </p>
+        <div class="steps">
+          <div class="step">
+            <div class="n">01 / FREEZE</div>
+            <h3>Every invoice becomes an exact request</h3>
+            <p>
+              Supplier, bank account, amount, reference and expiry are locked
+              into a single identifier. Change any detail later and it is a
+              different request — every approval already given no longer
+              applies.
+            </p>
+          </div>
+          <div class="step">
+            <div class="n">02 / ROUTE</div>
+            <h3>Routine invoices are paid by the agent</h3>
+            <p>
+              Known supplier, unchanged account, amount inside your limit: the
+              agent settles it on Hedera and records the receipt. Nobody on your
+              team is interrupted.
+            </p>
+          </div>
+          <div class="step">
+            <div class="n">03 / HOLD</div>
+            <h3>Risky changes wait for two real people</h3>
+            <p>
+              A new bank account, a first-time supplier, an unusual amount: held
+              until two approvers who are provably different people — not two
+              logins — approve exactly what was requested.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <p class="micro kicker">Refusals</p>
+        <h2>The product is what it <em>refuses</em>.</h2>
+        <p class="lede">
+          These are not alerts for someone to review later. They are payments
+          that cannot happen, by construction.
+        </p>
+        <div class="refuse">
+          <table>
+            <tbody>
+              <tr>
+                <td>
+                  One character of the bank account is altered after approval
+                </td>
+                <td class="stop">Blocked</td>
+                <td>
+                  A changed detail is a different request. The approvals given
+                  no longer apply to it, so nothing authorised exists to pay.
+                </td>
+              </tr>
+              <tr>
+                <td>One person approves twice, from two different agents</td>
+                <td class="stop">Counted once</td>
+                <td>
+                  Approvers are verified as distinct people through World, not
+                  distinct accounts. Two approvals from one person never make a
+                  quorum of two.
+                </td>
+              </tr>
+              <tr>
+                <td>An already-settled payment is submitted again</td>
+                <td class="stop">Blocked</td>
+                <td>
+                  Each request settles exactly once; the payable token is burned
+                  on Hedera at settlement. A duplicate cannot be paid, even with
+                  valid approvals.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <p class="micro kicker">Stack</p>
+        <h2>Remove any layer and it <em>stops working</em>.</h2>
+        <div class="built">
+          <div class="b-row">
+            <div class="who">World</div>
+            <p>
+              <b>Proves two approvers are two people.</b> AgentBook links each
+              approving agent to a real, unique human — anonymously. Without it,
+              dual approval only ever meant two accounts clicked a button.
+            </p>
+          </div>
+          <div class="b-row">
+            <div class="who">Hedera</div>
+            <p>
+              <b>Moves the money, exactly once.</b> The agent pays for
+              verification and settles on Hedera with a public receipt; the
+              payable token burns at settlement, so double payment is impossible
+              on the ledger.
+            </p>
+          </div>
+          <div class="b-row">
+            <div class="who">0G</div>
+            <p>
+              <b>Proves what the invoice said.</b> Extraction runs in attested
+              compute and the result binds to the request — you can prove which
+              figures were approved and that nothing altered them in between.
+            </p>
+          </div>
+        </div>
+
+        <div class="boundary">
+          <h3>What we don't claim</h3>
+          <p>
+            Remit guarantees the integrity of the approval and payment path. It
+            does not claim to verify:
+          </p>
+          <ul>
+            <li>
+              that an invoice is genuine, or that a supplier owns a bank
+              account;
+            </li>
+            <li>
+              that an approver is honest, or that a verification service is
+              truthful;
+            </li>
+            <li>that a payment is legally or fiscally compliant.</li>
+          </ul>
+          <p style="margin-top: 12px">
+            Being precise about this boundary is why the guarantees inside it
+            hold.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="wrap foot">
+        <span class="micro">Remit — ETHGlobal Lisbon 2026</span>
+        <span class="micro">World · Hedera · 0G</span>
+      </div>
+    </footer>
+  </body>
+</html>

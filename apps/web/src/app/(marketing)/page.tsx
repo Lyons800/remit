@@ -105,6 +105,18 @@ export default function WelcomePage() {
           >
             See who can approve
           </Link>
+          <Link
+            className="border border-border px-4 py-2 text-sm font-medium"
+            href="/sign-in"
+          >
+            Sign in
+          </Link>
+          <a
+            className="border border-border px-4 py-2 text-sm font-medium"
+            href="/landing/"
+          >
+            The pitch
+          </a>
           <a
             className="border border-border px-4 py-2 text-sm font-medium"
             href="https://github.com/Lyons800/remit"
