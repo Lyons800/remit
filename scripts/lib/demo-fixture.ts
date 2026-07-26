@@ -118,7 +118,7 @@ const POLICY_CONFIG = {
   executorAuthority: {
     adapterId: 'world-agentbook-adapter',
     agentBookRegistry: 'world-agentbook:eip155:480',
-    audience: 'remit:settlement',
+    audience: 'invoiceguard:settlement',
     grant: { digest: hex64('7'), id: 'payment-executor-grant', version: 1 },
     requiredRole: 'PAYMENT_EXECUTOR',
     requiredScope: 'payments:execute',
