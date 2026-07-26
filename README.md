@@ -2,8 +2,7 @@
 
 **Let agents pay the invoices. Prove they paid the right thing.**
 
-ETHGlobal Lisbon 2026 · Classic track ·
-[invoiceguard-hq.vercel.app](https://invoiceguard-hq.vercel.app)
+ETHGlobal Lisbon 2026 · Classic track · [remithq.xyz](https://remithq.xyz)
 
 ---
 
