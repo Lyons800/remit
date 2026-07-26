@@ -12,9 +12,11 @@ settlement attempts and results, and recoverable outbox work.
 - Every aggregate loaded from JSON is rehydrated through
   `hydratePaymentActionAggregate`; invalid persisted state fails closed.
 - Transition writes use `SERIALIZABLE`, lock the current action, compare the
-  aggregate version, recompute and compare complete domain effect bodies, and
-  commit normalized uniqueness, reservation, receipt, consumption, and outbox
-  rows together. Exact replay is checked against the durable last-effect body.
+  aggregate version, rerun the domain reducer from the supplied event and
+  trusted context, and require the complete aggregate and effect set to equal
+  that canonical successor. The command input, normalized uniqueness,
+  reservation, receipt, consumption, and outbox rows commit together. Exact
+  replay is checked against both the durable command input and effect body.
 - `applyTransition` requires an opaque, boundary-specific writer capability. The
   composition root retains the issuer and configures each process's allowed
   effect types plus fact and effect adapter identifiers. Plain caller objects

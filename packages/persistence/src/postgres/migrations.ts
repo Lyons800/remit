@@ -24,7 +24,7 @@ export async function applyPaymentEffectContractsMigration(
       CREATE TABLE IF NOT EXISTS invoiceguard_schema_migrations (
         migration_id text PRIMARY KEY,
         checksum text NOT NULL
-          CHECK (checksum ~ '^[0-9a-f]{64}$'),
+          CHECK ((checksum ~ '^[0-9a-f]{64}$') IS TRUE),
         applied_at timestamptz NOT NULL DEFAULT transaction_timestamp()
       )
     `;

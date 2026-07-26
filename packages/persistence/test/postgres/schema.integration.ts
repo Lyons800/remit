@@ -23,7 +23,6 @@ import {
   validateMandateContainment,
   type PaymentActionAggregate,
   type PaymentActionEvent,
-  type PaymentActionTransition,
   type PaymentAuthorizationContext,
   type FrozenSettlementAttempt,
 } from '@invoiceguard/domain';
@@ -47,6 +46,7 @@ import {
   createPostgresPaymentActionRepository,
   paymentPersistenceUniquenessContract,
   type PaymentWriterAuthorization,
+  type PaymentTransitionCommand,
 } from '../../src/index.js';
 import {
   assertDisposableDatabaseUrl,
@@ -234,8 +234,8 @@ const rawRepository = createPostgresPaymentActionRepository(
   writerBoundary.repositoryTrust,
 );
 const repository = Object.freeze({
-  applyTransition(transition: PaymentActionTransition) {
-    return rawRepository.applyTransition(transition, writerAuthorization);
+  applyTransition(command: PaymentTransitionCommand) {
+    return rawRepository.applyTransition(command, writerAuthorization);
   },
   create(aggregate: PaymentActionAggregate) {
     return rawRepository.create(aggregate);
@@ -265,6 +265,7 @@ function mandateAggregate(): PaymentActionAggregate {
 function requestingAgent(
   frozenAuthorization: PaymentAuthorizationContext,
   verifiedAt: string,
+  identitySuffix = '',
 ) {
   return createRequestingAgentExecutionFact(frozenAuthorization, {
     actionHumanPrincipal: 'requesting-human-1',
@@ -273,12 +274,12 @@ function requestingAgent(
     agentBookRegistry: 'world-agentbook:eip155:480',
     agentBookStatus: 'CURRENT',
     agentId: 'payment-agent-1',
-    agentKitChallengeId: `agentkit-challenge:${frozenAuthorization.actionCore.actionId}`,
+    agentKitChallengeId: `agentkit-challenge:${frozenAuthorization.actionCore.actionId}${identitySuffix}`,
     agentTenantPrincipal: 'agent-tenant-1',
     audience: 'invoiceguard:settlement',
     companyRoleStatus: 'CURRENT',
     expiresAt: '2026-07-25T10:59:00.000Z',
-    factId: `requesting-agent-proof:${frozenAuthorization.actionCore.actionId}`,
+    factId: `requesting-agent-proof:${frozenAuthorization.actionCore.actionId}${identitySuffix}`,
     grantDigest: '7'.repeat(64),
     grantId: 'payment-executor-grant',
     grantStatus: 'CURRENT',
@@ -293,7 +294,7 @@ function requestingAgent(
   });
 }
 
-function approvalFacts(verifiedAt: string) {
+function approvalFacts(verifiedAt: string, identitySuffix = '') {
   const binding = actionFactBinding(humanAuthorization);
   return [
     createAdapterVerifiedApprovalFact({
@@ -303,22 +304,22 @@ function approvalFacts(verifiedAt: string) {
       agentBackingRecordId: 'agent-backing-approval-1',
       agentBackingStatus: 'CURRENT',
       agentTenantPrincipal: 'approval-agent-1',
-      agentKitChallengeId: 'approval-agentkit-challenge-1',
-      approvalId: 'approval-1',
-      approvalSessionId: 'approval-session-1',
+      agentKitChallengeId: `approval-agentkit-challenge-1${identitySuffix}`,
+      approvalId: `approval-1${identitySuffix}`,
+      approvalSessionId: `approval-session-1${identitySuffix}`,
       companyRoleStatus: 'CURRENT',
-      consumptionClaimId: 'approval-consumption-1',
+      consumptionClaimId: `approval-consumption-1${identitySuffix}`,
       decision: 'APPROVE',
-      decisionId: 'decision-1',
+      decisionId: `decision-1${identitySuffix}`,
       expiresAt: '2026-07-25T10:59:00.000Z',
       humanDecisionStatus: 'VERIFIED',
       kind: 'APPROVAL_FACT',
       role: 'FINANCE_APPROVER',
       roleCredentialId: 'role-credential-finance-1',
       signedProofDigest: '1'.repeat(64),
-      subjectId: 'subject-1',
+      subjectId: `subject-1${identitySuffix}`,
       verifiedAt,
-      worldProofId: 'world-proof-1',
+      worldProofId: `world-proof-1${identitySuffix}`,
     }),
     createAdapterVerifiedApprovalFact({
       ...binding,
@@ -327,22 +328,22 @@ function approvalFacts(verifiedAt: string) {
       agentBackingRecordId: 'agent-backing-approval-2',
       agentBackingStatus: 'CURRENT',
       agentTenantPrincipal: 'approval-agent-2',
-      agentKitChallengeId: 'approval-agentkit-challenge-2',
-      approvalId: 'approval-2',
-      approvalSessionId: 'approval-session-2',
+      agentKitChallengeId: `approval-agentkit-challenge-2${identitySuffix}`,
+      approvalId: `approval-2${identitySuffix}`,
+      approvalSessionId: `approval-session-2${identitySuffix}`,
       companyRoleStatus: 'CURRENT',
-      consumptionClaimId: 'approval-consumption-2',
+      consumptionClaimId: `approval-consumption-2${identitySuffix}`,
       decision: 'APPROVE',
-      decisionId: 'decision-2',
+      decisionId: `decision-2${identitySuffix}`,
       expiresAt: '2026-07-25T10:59:00.000Z',
       humanDecisionStatus: 'VERIFIED',
       kind: 'APPROVAL_FACT',
       role: 'TREASURY_APPROVER',
       roleCredentialId: 'role-credential-treasury-2',
       signedProofDigest: '2'.repeat(64),
-      subjectId: 'subject-2',
+      subjectId: `subject-2${identitySuffix}`,
       verifiedAt,
-      worldProofId: 'world-proof-2',
+      worldProofId: `world-proof-2${identitySuffix}`,
     }),
   ] as const;
 }
@@ -458,12 +459,17 @@ function applyEvent(
   aggregate: PaymentActionAggregate,
   event: PaymentActionEvent,
   now: string,
-): PaymentActionTransition {
-  const result = transitionPaymentAction(aggregate, event, { now });
+): PaymentTransitionCommand {
+  const context = { now };
+  const result = transitionPaymentAction(aggregate, event, context);
   if (!result.ok) {
     throw new Error(`fixture transition failed: ${result.error.code}`);
   }
-  return result.value;
+  return Object.freeze({
+    ...result.value,
+    context,
+    event,
+  });
 }
 
 async function resetPaymentData(): Promise<void> {
@@ -472,7 +478,7 @@ async function resetPaymentData(): Promise<void> {
   );
 }
 
-async function seedQuoteEvent(): Promise<PaymentActionTransition> {
+async function seedQuoteEvent(): Promise<PaymentTransitionCommand> {
   const aggregate = initialAggregate();
   await repository.create(aggregate);
   const classified = applyEvent(
@@ -492,7 +498,7 @@ async function seedQuoteEvent(): Promise<PaymentActionTransition> {
 
 async function seedMandateSettlementSubmission(
   attemptId: string,
-): Promise<PaymentActionTransition> {
+): Promise<PaymentTransitionCommand> {
   let aggregate = mandateAggregate();
   await repository.create(aggregate);
   for (const [event, now] of [
@@ -570,6 +576,21 @@ async function seedMandateSettlementSubmission(
   );
   await repository.applyTransition(queued);
   return queued;
+}
+
+async function expectInvalidWithoutDivergence(
+  command: PaymentTransitionCommand,
+  current: PaymentActionAggregate,
+): Promise<void> {
+  await expect(repository.applyTransition(command)).rejects.toMatchObject({
+    code: 'INVALID_TRANSITION',
+  });
+  await expect(
+    repository.findById(
+      current.authorization.actionCore.organizationId,
+      current.authorization.actionCore.actionId,
+    ),
+  ).resolves.toEqual(current);
 }
 
 describe('PostgreSQL payment repository', () => {
@@ -653,6 +674,500 @@ describe('PostgreSQL payment repository', () => {
         restrictedBoundary.issue('restricted-process'),
       ),
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED_WRITER' });
+  });
+
+  it('requires fact permission for a same-adapter record replacement', async () => {
+    await resetPaymentData();
+    const queued = await seedMandateSettlementSubmission(
+      'same-adapter-replacement-attempt',
+    );
+    const attempt = queued.aggregate.settlementAttempt;
+    const basis = queued.aggregate.authorizationBasis;
+    if (attempt === null || basis === null || basis.kind !== 'MANDATE') {
+      throw new Error('replacement seed must retain its attempt and mandate');
+    }
+
+    const firstRecovery = applyEvent(
+      queued.aggregate,
+      {
+        type: 'START_SETTLEMENT_RECOVERY',
+        uncertainty: createAdapterVerifiedSettlementUncertainty(
+          authorization,
+          attempt,
+          {
+            adapterId: 'hedera-settlement-adapter',
+            observedAt: '2026-07-25T10:00:06.000Z',
+            reason: 'SUBMISSION_RESULT_UNKNOWN',
+            uncertaintyId: 'same-adapter-uncertainty-1',
+          },
+        ),
+      },
+      '2026-07-25T10:00:06.000Z',
+    );
+    await repository.applyTransition(firstRecovery);
+    const retried = applyEvent(
+      firstRecovery.aggregate,
+      {
+        approvals: null,
+        mandate: activeMandateAggregate,
+        requestingAgent: requestingAgent(
+          authorization,
+          '2026-07-25T10:00:07.000Z',
+        ),
+        reservationLedger: basis.reservedLedger,
+        type: 'RETRY_SAME_TRANSACTION',
+      },
+      '2026-07-25T10:00:07.000Z',
+    );
+    await repository.applyTransition(retried);
+
+    const secondRecovery = applyEvent(
+      retried.aggregate,
+      {
+        type: 'START_SETTLEMENT_RECOVERY',
+        uncertainty: createAdapterVerifiedSettlementUncertainty(
+          authorization,
+          attempt,
+          {
+            adapterId: 'hedera-settlement-adapter',
+            observedAt: '2026-07-25T10:00:08.000Z',
+            reason: 'SUBMISSION_RESULT_UNKNOWN',
+            uncertaintyId: 'same-adapter-uncertainty-2',
+          },
+        ),
+      },
+      '2026-07-25T10:00:08.000Z',
+    );
+    expect(secondRecovery.effects).toEqual([]);
+
+    const restrictedBoundary = createPaymentWriterAuthorizationBoundary([
+      {
+        permittedEffectAdapterIds: [],
+        permittedEffectTypes: [],
+        permittedFactAdapterIds: [],
+        processId: 'same-adapter-restricted-process',
+      },
+    ]);
+    const restrictedRepository = createPostgresPaymentActionRepository(
+      sql,
+      restrictedBoundary.repositoryTrust,
+    );
+    await expect(
+      restrictedRepository.applyTransition(
+        secondRecovery,
+        restrictedBoundary.issue('same-adapter-restricted-process'),
+      ),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED_WRITER' });
+    await expect(
+      repository.findById(
+        authorization.actionCore.organizationId,
+        authorization.actionCore.actionId,
+      ),
+    ).resolves.toEqual(retried.aggregate);
+    await expect(repository.applyTransition(secondRecovery)).resolves.toBe(
+      'APPLIED',
+    );
+  });
+
+  it('recomputes the complete successor before admitting same-adapter fact changes', async () => {
+    await resetPaymentData();
+    let current = mandateAggregate();
+    await repository.create(current);
+
+    let command = applyEvent(
+      current,
+      { type: 'CLASSIFY' },
+      '2026-07-25T10:00:01.000Z',
+    );
+    await expectInvalidWithoutDivergence(
+      {
+        ...command,
+        context: { now: '2026-07-25T10:00:01.001Z' },
+      },
+      current,
+    );
+    await repository.applyTransition(command);
+    current = command.aggregate;
+
+    command = applyEvent(
+      current,
+      { type: 'SATISFY_EVIDENCE_NOT_REQUIRED' },
+      '2026-07-25T10:00:02.000Z',
+    );
+    await repository.applyTransition(command);
+    current = command.aggregate;
+
+    const authorizationEvent = {
+      mandate: activeMandateAggregate,
+      requestingAgent: requestingAgent(
+        authorization,
+        '2026-07-25T10:00:03.000Z',
+      ),
+      reservationLedger: emptyMandateLedger(),
+      type: 'AUTHORIZE_MANDATE' as const,
+    };
+    const authorized = applyEvent(
+      current,
+      authorizationEvent,
+      '2026-07-25T10:00:03.000Z',
+    );
+    const alternateAuthority = applyEvent(
+      current,
+      {
+        ...authorizationEvent,
+        requestingAgent: requestingAgent(
+          authorization,
+          '2026-07-25T10:00:03.000Z',
+          ':alternate-authority',
+        ),
+      },
+      '2026-07-25T10:00:03.000Z',
+    );
+    await expectInvalidWithoutDivergence(
+      {
+        ...alternateAuthority,
+        context: authorized.context,
+        event: authorized.event,
+      },
+      current,
+    );
+    const basis = authorized.aggregate.authorizationBasis;
+    if (basis === null || basis.kind !== 'MANDATE') {
+      throw new Error('mandate authorization must retain its basis');
+    }
+    await expectInvalidWithoutDivergence(
+      {
+        ...authorized,
+        aggregate: {
+          ...authorized.aggregate,
+          authorizationBasis: {
+            ...basis,
+            mandate: {
+              ...basis.mandate,
+              state: 'PAUSED',
+            },
+          },
+        },
+      },
+      current,
+    );
+    await repository.applyTransition(authorized);
+    current = authorized.aggregate;
+
+    const auditAuthority = requestingAgent(
+      authorization,
+      '2026-07-25T10:00:04.000Z',
+    );
+    const authorizationAudit = createAdapterVerifiedAuthorizationAudit(
+      authorization,
+      basis.basisDigest,
+      auditAuthority,
+      {
+        adapterId: 'hedera-consensus-adapter',
+        auditId: 'successor-authorization-audit',
+        committedAt: '2026-07-25T10:00:04.000Z',
+        networkId: 'hedera:296',
+        topicId: '0.0.9000',
+        transactionId: '0.0.1000@1753437604.000000200',
+        writerAccountId: '0.0.1000',
+        writerId: 'authorization-audit-writer',
+        writerKeyId: 'hedera-audit-key-1',
+      },
+    );
+    command = applyEvent(
+      current,
+      {
+        authorizationAudit,
+        requestingAgent: auditAuthority,
+        type: 'COMMIT_AUDIT',
+      },
+      '2026-07-25T10:00:04.000Z',
+    );
+    await repository.applyTransition(command);
+    current = command.aggregate;
+
+    const attempt = frozenAttempt(
+      '2026-07-25T10:00:05.000Z',
+      'successor-attempt',
+    );
+    const queueEvent = {
+      approvals: null,
+      attempt,
+      mandate: activeMandateAggregate,
+      requestingAgent: requestingAgent(
+        authorization,
+        '2026-07-25T10:00:05.000Z',
+      ),
+      reservationLedger: basis.reservedLedger,
+      type: 'QUEUE_SETTLEMENT' as const,
+    };
+    const queued = applyEvent(current, queueEvent, '2026-07-25T10:00:05.000Z');
+    const alternateAttempt = applyEvent(
+      current,
+      {
+        ...queueEvent,
+        attempt: frozenAttempt(
+          '2026-07-25T10:00:05.000Z',
+          'successor-attempt-substituted',
+        ),
+      },
+      '2026-07-25T10:00:05.000Z',
+    );
+    await expectInvalidWithoutDivergence(
+      {
+        ...alternateAttempt,
+        context: queued.context,
+        event: queued.event,
+      },
+      current,
+    );
+    await repository.applyTransition(queued);
+    current = queued.aggregate;
+
+    const uncertainty = createAdapterVerifiedSettlementUncertainty(
+      authorization,
+      attempt,
+      {
+        adapterId: 'hedera-settlement-adapter',
+        observedAt: '2026-07-25T10:00:06.000Z',
+        reason: 'SUBMISSION_RESULT_UNKNOWN',
+        uncertaintyId: 'successor-uncertainty',
+      },
+    );
+    const recovery = applyEvent(
+      current,
+      { type: 'START_SETTLEMENT_RECOVERY', uncertainty },
+      '2026-07-25T10:00:06.000Z',
+    );
+    const alternateUncertainty = createAdapterVerifiedSettlementUncertainty(
+      authorization,
+      attempt,
+      {
+        adapterId: 'hedera-settlement-adapter',
+        observedAt: '2026-07-25T10:00:06.000Z',
+        reason: 'SUBMISSION_RESULT_UNKNOWN',
+        uncertaintyId: 'successor-uncertainty-substituted',
+      },
+    );
+    const alternateRecovery = applyEvent(
+      current,
+      {
+        type: 'START_SETTLEMENT_RECOVERY',
+        uncertainty: alternateUncertainty,
+      },
+      '2026-07-25T10:00:06.000Z',
+    );
+    await expectInvalidWithoutDivergence(
+      {
+        ...alternateRecovery,
+        context: recovery.context,
+        event: recovery.event,
+      },
+      current,
+    );
+    const substitutedRetainedAudit = createAdapterVerifiedAuthorizationAudit(
+      authorization,
+      basis.basisDigest,
+      auditAuthority,
+      {
+        adapterId: 'hedera-consensus-adapter',
+        auditId: 'successor-authorization-audit-substituted',
+        committedAt: '2026-07-25T10:00:04.000Z',
+        networkId: 'hedera:296',
+        topicId: '0.0.9000',
+        transactionId: '0.0.1000@1753437604.000000201',
+        writerAccountId: '0.0.1000',
+        writerId: 'authorization-audit-writer',
+        writerKeyId: 'hedera-audit-key-1',
+      },
+    );
+    await expectInvalidWithoutDivergence(
+      {
+        ...recovery,
+        aggregate: {
+          ...recovery.aggregate,
+          authorizationAudit: substitutedRetainedAudit,
+        },
+      },
+      current,
+    );
+
+    const receipt = createAdapterVerifiedSettlementReceipt(
+      authorization,
+      attempt,
+      {
+        adapterId: 'hedera-settlement-adapter',
+        receiptId: 'successor-receipt',
+        receiptSource: 'MIRROR_NODE',
+        settledAt: '2026-07-25T10:00:06.000Z',
+        sourceNodeId: 'hedera-mirror-node-testnet',
+      },
+    );
+    const claim = createAtomicSettlementConsumptionClaim(
+      authorization,
+      attempt,
+      receipt,
+      {
+        adapterId: 'postgres-atomic-payment-writer',
+        atomicGroupKey: `payment:${attempt.actionDigest}:v${
+          current.metadata.version + 1
+        }`,
+        claimId: 'successor-consumption',
+        consumedAt: '2026-07-25T10:00:06.000Z',
+        expectedAggregateVersion: current.metadata.version,
+        writerId: 'postgres-payment-writer',
+        writerVersion: 1,
+      },
+    );
+    const settlementEvent = {
+      consumptionClaim: claim,
+      receipt,
+      reservationLedger: basis.reservedLedger,
+      type: 'SETTLE_CONSENSUS' as const,
+    };
+    const settled = applyEvent(
+      current,
+      settlementEvent,
+      '2026-07-25T10:00:06.000Z',
+    );
+    const substitutedReceipt = createAdapterVerifiedSettlementReceipt(
+      authorization,
+      attempt,
+      {
+        adapterId: 'hedera-settlement-adapter',
+        receiptId: 'successor-receipt-substituted',
+        receiptSource: 'MIRROR_NODE',
+        settledAt: '2026-07-25T10:00:06.000Z',
+        sourceNodeId: 'hedera-mirror-node-testnet',
+      },
+    );
+    const substitutedClaim = createAtomicSettlementConsumptionClaim(
+      authorization,
+      attempt,
+      substitutedReceipt,
+      {
+        adapterId: 'postgres-atomic-payment-writer',
+        atomicGroupKey: settled.atomicGroupKey,
+        claimId: 'successor-consumption-substituted',
+        consumedAt: '2026-07-25T10:00:06.000Z',
+        expectedAggregateVersion: current.metadata.version,
+        writerId: 'postgres-payment-writer',
+        writerVersion: 1,
+      },
+    );
+    const alternateSettlement = applyEvent(
+      current,
+      {
+        ...settlementEvent,
+        consumptionClaim: substitutedClaim,
+        receipt: substitutedReceipt,
+      },
+      '2026-07-25T10:00:06.000Z',
+    );
+    await expectInvalidWithoutDivergence(
+      {
+        ...alternateSettlement,
+        context: settled.context,
+        event: settled.event,
+      },
+      current,
+    );
+  });
+
+  it('rejects a complete same-adapter approval successor for another event body', async () => {
+    await resetPaymentData();
+    let current = initialAggregate();
+    await repository.create(current);
+    for (const [event, now] of [
+      [{ type: 'CLASSIFY' }, '2026-07-25T10:00:01.000Z'],
+      [{ type: 'QUOTE_VERIFICATION' }, '2026-07-25T10:00:02.000Z'],
+    ] as const) {
+      const step = applyEvent(current, event, now);
+      await repository.applyTransition(step);
+      current = step.aggregate;
+    }
+    const payment = createAdapterVerifiedVerificationPayment(
+      humanAuthorization,
+      {
+        adapterId: 'hedera-x402-adapter',
+        paidAt: '2026-07-25T10:00:03.000Z',
+        paymentAttemptId: 'successor-approval-payment-attempt',
+        paymentNetworkId: 'hedera:296',
+        paymentTransactionId: '0.0.1000@1753437603.000000200',
+        quoteDigest: 'a'.repeat(64),
+        quoteId: 'successor-approval-quote',
+        servicePaymentId: 'successor-approval-payment',
+        serviceRequestDigest: 'b'.repeat(64),
+      },
+    );
+    let step = applyEvent(
+      current,
+      { payment, type: 'RECORD_VERIFICATION_PAYMENT' },
+      '2026-07-25T10:00:03.000Z',
+    );
+    await repository.applyTransition(step);
+    current = step.aggregate;
+    const evidence = createAdapterVerifiedEvidenceResult(
+      humanAuthorization,
+      payment,
+      {
+        adapterId: 'verification-service-adapter',
+        evidenceResultId: 'successor-approval-evidence',
+        evidenceRoot: humanAuthorization.actionCore.evidenceRoot,
+        expiresAt: '2026-07-25T10:50:00.000Z',
+        result: 'MATCH',
+        verifiedAt: '2026-07-25T10:00:04.000Z',
+      },
+    );
+    step = applyEvent(
+      current,
+      { type: 'ACCEPT_VERIFICATION', verification: evidence },
+      '2026-07-25T10:00:04.000Z',
+    );
+    await repository.applyTransition(step);
+    current = step.aggregate;
+    step = applyEvent(
+      current,
+      { type: 'AWAIT_APPROVALS' },
+      '2026-07-25T10:00:05.000Z',
+    );
+    await repository.applyTransition(step);
+    current = step.aggregate;
+
+    const approvalEvent = {
+      approvals: approvalFacts('2026-07-25T10:00:06.000Z'),
+      requestingAgent: requestingAgent(
+        humanAuthorization,
+        '2026-07-25T10:00:06.000Z',
+      ),
+      type: 'AUTHORIZE_APPROVALS' as const,
+    };
+    const approved = applyEvent(
+      current,
+      approvalEvent,
+      '2026-07-25T10:00:06.000Z',
+    );
+    const alternateApproved = applyEvent(
+      current,
+      {
+        approvals: approvalFacts('2026-07-25T10:00:06.000Z', ':substituted'),
+        requestingAgent: requestingAgent(
+          humanAuthorization,
+          '2026-07-25T10:00:06.000Z',
+          ':substituted',
+        ),
+        type: 'AUTHORIZE_APPROVALS',
+      },
+      '2026-07-25T10:00:06.000Z',
+    );
+    await expectInvalidWithoutDivergence(
+      {
+        ...alternateApproved,
+        context: approved.context,
+        event: approved.event,
+      },
+      current,
+    );
   });
 
   it('admits, hydrates, and idempotently replays an exact action', async () => {
@@ -1115,6 +1630,120 @@ describe('PostgreSQL payment repository', () => {
         state: 'SETTLED_AUDIT_PENDING',
       },
     ]);
+
+    await expect(
+      sql`UPDATE payment_actions SET aggregate = '{}'::jsonb`,
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint_name: 'payment_action_aggregate_binding',
+    });
+    await expect(
+      sql`
+        UPDATE payment_actions
+        SET aggregate = aggregate #- '{metadata,version}'
+      `,
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint_name: 'payment_action_aggregate_binding',
+    });
+    await expect(
+      sql`
+        UPDATE payment_actions
+        SET aggregate =
+          jsonb_set(aggregate, '{metadata,version}', '"8"'::jsonb)
+      `,
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint_name: 'payment_action_aggregate_binding',
+    });
+    await expect(
+      sql`
+        UPDATE payment_actions
+        SET aggregate = jsonb_set(
+          aggregate,
+          '{authorization,actionCore,actionId}',
+          to_jsonb('019f939b-fe5e-7e92-b72e-8d4531958eff'::text)
+        )
+      `,
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint_name: 'payment_action_aggregate_binding',
+    });
+    await expect(
+      sql`UPDATE payment_actions SET last_transition_input = '{}'::jsonb`,
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint_name: 'payment_action_transition_input_binding',
+    });
+    await expect(
+      sql`
+        UPDATE payment_actions
+        SET last_transition_input =
+          last_transition_input #- '{context,now}'
+      `,
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint_name: 'payment_action_transition_input_binding',
+    });
+    await expect(
+      sql`
+        UPDATE payment_actions
+        SET last_transition_input = jsonb_set(
+          last_transition_input,
+          '{event,type}',
+          '123'::jsonb
+        )
+      `,
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint_name: 'payment_action_transition_input_binding',
+    });
+    await expect(
+      sql`UPDATE settlement_attempts SET attempt = '{}'::jsonb`,
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint_name: 'settlement_attempt_json_binding',
+    });
+    await expect(
+      sql`
+        UPDATE settlement_receipts
+        SET receipt = receipt - 'transactionId'
+      `,
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint_name: 'settlement_receipt_json_binding',
+    });
+    await expect(
+      sql`
+        UPDATE settlement_consumptions
+        SET claim = jsonb_set(claim, '{receiptId}', 'null'::jsonb)
+      `,
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint_name: 'settlement_consumption_json_binding',
+    });
+    await expect(
+      sql`
+        UPDATE outbox_events
+        SET payload = jsonb_set(payload, '{eventId}', '123'::jsonb)
+      `,
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint_name: 'outbox_payload_binding',
+    });
+    await expect(
+      sql`
+        UPDATE outbox_events
+        SET payload = jsonb_set(
+          payload,
+          '{idempotencyKey}',
+          to_jsonb('mismatched-idempotency-key'::text)
+        )
+      `,
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint_name: 'outbox_payload_binding',
+    });
   });
 
   it('consumes approval and quorum identities with human authorization', async () => {
