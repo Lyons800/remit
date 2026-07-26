@@ -22,7 +22,7 @@ export default async function PaymentsPage() {
         <p className="max-w-3xl text-sm text-muted-foreground">
           Public Hedera Testnet facts are live. Supplier invoice settlement is
           not: the x402 HBAR transfer paid a test verification service, and the
-          HTS NFT is a no-value lifecycle marker experiment.
+          HTS NFT is an audited no-value lifecycle marker.
         </p>
       </div>
 

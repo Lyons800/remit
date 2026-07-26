@@ -40,6 +40,7 @@ function validPayloads(): MirrorEvidencePayloads {
     htsBurn: response(
       transaction(hts.burnTransactionId, 'TOKENBURN', {
         charged_tx_fee: 1_410_568,
+        consensus_timestamp: '1785041308.858702785',
         entity_id: hts.tokenId,
         nft_transfers: [
           {
@@ -55,12 +56,14 @@ function validPayloads(): MirrorEvidencePayloads {
     htsCreate: response(
       transaction(hts.createTransactionId, 'TOKENCREATION', {
         charged_tx_fee: 1_410_569_869,
+        consensus_timestamp: '1785041302.663485668',
         entity_id: hts.tokenId,
       }),
     ),
     htsMint: response(
       transaction(hts.mintTransactionId, 'TOKENMINT', {
         charged_tx_fee: 28_211_396,
+        consensus_timestamp: '1785041304.478678881',
         entity_id: hts.tokenId,
         nft_transfers: [
           {
@@ -75,18 +78,23 @@ function validPayloads(): MirrorEvidencePayloads {
     ),
     htsNft: {
       account_id: null,
-      created_timestamp: '1785026114.100875266',
+      created_timestamp: '1785041304.478678881',
       delegating_spender: null,
       deleted: true,
       metadata:
-        'MHg1Y2U0ZjNjYWI3Nzk1YzA5Yzg4NGRhNTFlNjkzNjYxODEwYjExY2M0YTAzZDY2MGMxYTc3YTQ0M2QwMTdkZTg5',
-      modified_timestamp: '1785026114.100875266',
+        'OGRmYzRmNTgzNzViMGI1N2U0ZmJiMjk2NzMyYzgzZTU1ZTYxZjFjN2NlOTRkZWEwZTA5OTRjMWEyOTBmNWQxZA==',
+      modified_timestamp: '1785041308.858702785',
       serial_number: 1,
       spender: null,
       token_id: hts.tokenId,
     },
     htsToken: {
       admin_key: null,
+      custom_fees: {
+        created_timestamp: '1785041302.663485668',
+        fixed_fees: [],
+        royalty_fees: [],
+      },
       decimals: '0',
       deleted: false,
       fee_schedule_key: null,
@@ -94,16 +102,16 @@ function validPayloads(): MirrorEvidencePayloads {
       freeze_key: null,
       initial_supply: '0',
       kyc_key: null,
-      max_supply: '0',
+      max_supply: '1',
       metadata_key: null,
-      name: 'InvoiceGuard Payables - NO VALUE',
+      name: 'Remit Payable Markers - NO VALUE',
       pause_key: null,
       supply_key: {
         _type: 'ECDSA_SECP256K1',
         key: '027218920d5eb73809c105ff98c4246a026f518b445b8a2cfebd8c8977d71ec860',
       },
-      supply_type: 'INFINITE',
-      symbol: 'IGPAY',
+      supply_type: 'FINITE',
+      symbol: 'RMPAY',
       token_id: hts.tokenId,
       total_supply: '0',
       treasury_account_id: hts.treasuryAccountId,
@@ -181,9 +189,12 @@ describe('validateHederaMirrorEvidence', () => {
       transactionId: '0.0.9758618-1785026108-927419230',
     });
     expect(result.hts).toMatchObject({
+      actionDigest:
+        '8dfc4f58375b0b57e4fbb296732c83e55e61f1c7ce94dea0e0994c1a290f5d1d',
       currentSupply: 0,
+      maxSupply: 1,
       serialNumber: 1,
-      tokenId: '0.0.9757606',
+      tokenId: '0.0.9762937',
       treasuryAccountId: '0.0.9708355',
       type: 'NON_FUNGIBLE_UNIQUE',
     });

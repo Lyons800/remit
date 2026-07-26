@@ -1,11 +1,11 @@
 export const HEDERA_EVIDENCE_IDS = {
   hts: {
-    burnTransactionId: '0.0.9708355-1785024788-043989723',
-    createTransactionId: '0.0.9708355-1785024779-350224287',
-    experimentalDigest:
-      '0x5ce4f3cab7795c09c884da51e693661810b11cc4a03d660c1a77a443d017de89',
-    mintTransactionId: '0.0.9708355-1785024779-021457816',
-    tokenId: '0.0.9757606',
+    actionDigest:
+      '8dfc4f58375b0b57e4fbb296732c83e55e61f1c7ce94dea0e0994c1a290f5d1d',
+    burnTransactionId: '0.0.9708355-1785041302-248047264',
+    createTransactionId: '0.0.9708355-1785041294-342974356',
+    mintTransactionId: '0.0.9708355-1785041298-535173099',
+    tokenId: '0.0.9762937',
     treasuryAccountId: '0.0.9708355',
   },
   x402: {
@@ -42,17 +42,18 @@ export interface ValidatedTransaction {
 
 export interface ValidatedHederaEvidence {
   readonly hts: {
+    readonly actionDigest: '8dfc4f58375b0b57e4fbb296732c83e55e61f1c7ce94dea0e0994c1a290f5d1d';
     readonly burn: ValidatedTransaction;
     readonly create: ValidatedTransaction;
     readonly currentSupply: 0;
-    readonly experimentalDigest: '0x5ce4f3cab7795c09c884da51e693661810b11cc4a03d660c1a77a443d017de89';
+    readonly maxSupply: 1;
     readonly mint: ValidatedTransaction;
     readonly nftMirrorUrl: string;
-    readonly name: 'InvoiceGuard Payables - NO VALUE';
+    readonly name: 'Remit Payable Markers - NO VALUE';
     readonly serialNumber: 1;
     readonly supplyKeyPresent: true;
-    readonly symbol: 'IGPAY';
-    readonly tokenId: '0.0.9757606';
+    readonly symbol: 'RMPAY';
+    readonly tokenId: '0.0.9762937';
     readonly treasuryAccountId: '0.0.9708355';
     readonly type: 'NON_FUNGIBLE_UNIQUE';
   };
@@ -309,10 +310,10 @@ function validateToken(payload: unknown): void {
   );
   expectEqual(
     string(token['name'], 'token.name'),
-    'InvoiceGuard Payables - NO VALUE',
+    'Remit Payable Markers - NO VALUE',
     'token.name',
   );
-  expectEqual(string(token['symbol'], 'token.symbol'), 'IGPAY', 'token.symbol');
+  expectEqual(string(token['symbol'], 'token.symbol'), 'RMPAY', 'token.symbol');
   expectEqual(
     string(token['type'], 'token.type'),
     'NON_FUNGIBLE_UNIQUE',
@@ -339,8 +340,13 @@ function validateToken(payload: unknown): void {
     'token.total_supply',
   );
   expectEqual(
+    string(token['max_supply'], 'token.max_supply'),
+    '1',
+    'token.max_supply',
+  );
+  expectEqual(
     string(token['supply_type'], 'token.supply_type'),
-    'INFINITE',
+    'FINITE',
     'token.supply_type',
   );
   expectEqual(
@@ -364,6 +370,16 @@ function validateToken(payload: unknown): void {
     'wipe_key',
   ] as const) {
     expectNull(token[key], `token.${key}`);
+  }
+
+  const customFees = record(token['custom_fees'], 'token.custom_fees');
+  if (
+    array(customFees['fixed_fees'], 'token.custom_fees.fixed_fees').length !==
+      0 ||
+    array(customFees['royalty_fees'], 'token.custom_fees.royalty_fees')
+      .length !== 0
+  ) {
+    fail('token.custom_fees', 'expected no custom fees');
   }
 
   const supplyKey = record(token['supply_key'], 'token.supply_key');
@@ -404,7 +420,7 @@ function validateNftRecord(payload: unknown): ValidatedNftRecord {
 
   const metadata = string(nft['metadata'], 'nft.metadata');
   const expectedMetadata =
-    'MHg1Y2U0ZjNjYWI3Nzk1YzA5Yzg4NGRhNTFlNjkzNjYxODEwYjExY2M0YTAzZDY2MGMxYTc3YTQ0M2QwMTdkZTg5';
+    'OGRmYzRmNTgzNzViMGI1N2U0ZmJiMjk2NzMyYzgzZTU1ZTYxZjFjN2NlOTRkZWEwZTA5OTRjMWEyOTBmNWQxZA==';
   expectEqual(metadata, expectedMetadata, 'nft.metadata');
 
   const createdTimestamp = string(
@@ -527,16 +543,17 @@ export function validateHederaMirrorEvidence(
 
   return {
     hts: {
+      actionDigest: expected.actionDigest,
       burn,
       create,
       currentSupply: 0,
-      experimentalDigest: expected.experimentalDigest,
+      maxSupply: 1,
       mint,
       nftMirrorUrl: nft.mirrorUrl,
-      name: 'InvoiceGuard Payables - NO VALUE',
+      name: 'Remit Payable Markers - NO VALUE',
       serialNumber: 1,
       supplyKeyPresent: true,
-      symbol: 'IGPAY',
+      symbol: 'RMPAY',
       tokenId: expected.tokenId,
       treasuryAccountId: expected.treasuryAccountId,
       type: 'NON_FUNGIBLE_UNIQUE',
