@@ -61,7 +61,7 @@ export function Sidebar() {
               isExpanded ? 'opacity-100' : 'opacity-0',
             )}
           >
-            InvoiceGuard
+            Remit
           </span>
         </div>
 

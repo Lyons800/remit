@@ -1,10 +1,10 @@
-import type { StandingMandateV1 } from '@invoiceguard/protocol';
+import type { StandingMandateV1 } from '@remit/protocol';
 import {
   canonicalizeJson,
   verifyAuthorizationBundle,
   verifyStandingMandate,
   type AuthorizationBundleV1,
-} from '@invoiceguard/protocol/hashing';
+} from '@remit/protocol/hashing';
 
 import type {
   MandatePeriodKind,

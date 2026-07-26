@@ -71,8 +71,8 @@ export function parseServiceRuntime({
 }: ParseServiceRuntimeOptions): ServiceRuntime {
   const adapterMode = parseOrThrow(
     adapterModeSchema,
-    env.INVOICEGUARD_DEMO_MODE,
-    'INVOICEGUARD_DEMO_MODE',
+    env.REMIT_DEMO_MODE,
+    'REMIT_DEMO_MODE',
     'must be inactive, fake, or live',
   );
 
@@ -81,19 +81,16 @@ export function parseServiceRuntime({
   }
 
   const rawBuildSha =
-    env.INVOICEGUARD_BUILD_SHA ??
-    (adapterMode === 'live' ? undefined : 'local');
+    env.REMIT_BUILD_SHA ?? (adapterMode === 'live' ? undefined : 'local');
   const buildSha = parseOrThrow(
     buildShaSchema,
     rawBuildSha,
-    'INVOICEGUARD_BUILD_SHA',
+    'REMIT_BUILD_SHA',
     'must be local or a complete lowercase Git commit hash',
   );
 
   if (adapterMode === 'live' && buildSha === 'local') {
-    throw new Error(
-      'INVOICEGUARD_BUILD_SHA must identify the deployed commit.',
-    );
+    throw new Error('REMIT_BUILD_SHA must identify the deployed commit.');
   }
 
   const validatedService = parseOrThrow(

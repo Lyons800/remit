@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-InvoiceGuard is pre-release hackathon software. Only the current `main` branch
-is supported.
+Remit is pre-release hackathon software. Only the current `main` branch is
+supported.
 
 ## Reporting a vulnerability
 

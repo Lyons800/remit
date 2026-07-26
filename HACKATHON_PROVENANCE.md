@@ -9,8 +9,8 @@
 
 ## Starting-state declaration
 
-This repository began without pre-existing InvoiceGuard application code,
-contracts, designs, generated assets, or deployment state.
+This repository began without pre-existing Remit application code, contracts,
+designs, generated assets, or deployment state.
 
 All project-specific implementation, architecture records, product assets,
 tests, prompts, and plans committed here are created during the event window.
@@ -34,8 +34,8 @@ is copied, vendored, patched, or modified.
 | `@x402/hedera`      |      `2.19.0` | [npm registry manifest](https://registry.npmjs.org/@x402%2Fhedera/2.19.0)      | [x402 Foundation `x402`](https://github.com/x402-foundation/x402)    | Apache-2.0 | None; installed artifact is unmodified. |
 | `@hiero-ledger/sdk` |      `2.85.0` | [npm registry manifest](https://registry.npmjs.org/@hiero-ledger%2Fsdk/2.85.0) | [Hiero JavaScript SDK](https://github.com/hiero-ledger/hiero-sdk-js) | Apache-2.0 | None; installed artifact is unmodified. |
 
-InvoiceGuard's adapter, trust-policy checks, canonical bindings, recovery seam,
-and tests are original event-window code outside those packages.
+Remit's adapter, trust-policy checks, canonical bindings, recovery seam, and
+tests are original event-window code outside those packages.
 
 ## AI-assisted development
 

@@ -18,8 +18,8 @@ pins `6.19.2`, which satisfies the repository's unchanged no-downgrade
 supply-chain policy. No trust-policy exclusion was added.
 
 The AgentKit npm artifact and its pinned source revision contain no declared
-license. InvoiceGuard does not infer one. Production use or redistribution is a
-NO-GO until a compatible license or explicit legal basis is confirmed. The exact
+license. Remit does not infer one. Production use or redistribution is a NO-GO
+until a compatible license or explicit legal basis is confirmed. The exact
 dependency sources, license findings, and rollback are recorded in the
 [technology baseline](../architecture/TECHNOLOGY-BASELINE.md#admitted-world-offline-dependency-set).
 
@@ -31,9 +31,9 @@ with legacy proofs disabled.
 ## What is implemented
 
 - Exact EIP-191 AgentKit challenge construction and verification, including
-  InvoiceGuard's path, sole-resource, statement, method, chain, action-digest,
-  nonce, expiry, one-use, and unsigned-field checks. A verified claim is an
-  opaque, in-process result created only after atomic challenge consumption; a
+  Remit's path, sole-resource, statement, method, chain, action-digest, nonce,
+  expiry, one-use, and unsigned-field checks. A verified claim is an opaque,
+  in-process result created only after atomic challenge consumption; a
   serialized or structurally copied claim must be verified again. That brand is
   an in-process sequencing guard, not durable authentication or protection from
   an untrusted composition root.
@@ -83,9 +83,9 @@ semantics.
 Run the scoped evidence after building its declared workspace dependencies:
 
 ```bash
-pnpm --filter @invoiceguard/world-adapter... build
+pnpm --filter @remit/world-adapter... build
 pnpm exec vitest run packages/world-adapter/test
-pnpm --filter @invoiceguard/world-adapter typecheck
+pnpm --filter @remit/world-adapter typecheck
 ```
 
 The suite uses released SDK behavior where available and explicit synthetic
@@ -127,7 +127,7 @@ authority, or settlement claim has been made.
 
 AgentBook backing and action-time IDKit identity remain independent facts.
 Current first-party interfaces do not prove they identify the same person, and
-InvoiceGuard makes no such claim.
+Remit makes no such claim.
 
 ### Exact persistence-branch integration
 

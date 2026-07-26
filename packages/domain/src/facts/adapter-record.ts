@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { canonicalizeJson } from '@invoiceguard/protocol/hashing';
+import { canonicalizeJson } from '@remit/protocol/hashing';
 
 import { isRecord, isSha256Digest } from '../values/validation.js';
 

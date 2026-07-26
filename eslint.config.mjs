@@ -64,11 +64,11 @@ export default tseslint.config(
           patterns: [
             {
               group: [
-                '@invoiceguard/hedera-settlement-adapter',
-                '@invoiceguard/hedera-x402-adapter',
-                '@invoiceguard/persistence',
-                '@invoiceguard/runtime-config',
-                '@invoiceguard/world-adapter',
+                '@remit/hedera-settlement-adapter',
+                '@remit/hedera-x402-adapter',
+                '@remit/persistence',
+                '@remit/runtime-config',
+                '@remit/world-adapter',
                 '@0gfoundation/*',
                 '@hashgraph/*',
                 '@hiero-ledger/*',

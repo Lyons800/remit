@@ -10,18 +10,18 @@ import {
   transitionPaymentAction,
   type PaymentActionTransition,
   type VerificationQuoteRequestEffect,
-} from '@invoiceguard/domain';
+} from '@remit/domain';
 import type {
   CanonicalInvoiceV1,
   PaymentActionCoreV1,
   SupplierMasterSnapshotV1,
-} from '@invoiceguard/protocol';
+} from '@remit/protocol';
 import {
   createAuthorizationBundle,
   createSupplierMasterSnapshot,
   hashCanonicalInvoice,
   type AuthorizationBundleV1,
-} from '@invoiceguard/protocol/hashing';
+} from '@remit/protocol/hashing';
 import { describe, expect, it } from 'vitest';
 
 import {

@@ -1,8 +1,5 @@
-import type {
-  PolicyDecisionV1,
-  StandingMandateV1,
-} from '@invoiceguard/protocol';
-import type { AuthorizationBundleV1 } from '@invoiceguard/protocol/hashing';
+import type { PolicyDecisionV1, StandingMandateV1 } from '@remit/protocol';
+import type { AuthorizationBundleV1 } from '@remit/protocol/hashing';
 
 export type EvidencePolicyReference = PolicyDecisionV1['evidencePolicy'];
 export type MandatePeriodKind = StandingMandateV1['period']['kind'];

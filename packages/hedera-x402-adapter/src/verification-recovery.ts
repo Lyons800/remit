@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   isPaymentDomainEventId,
   type VerificationQuoteRequestEffect,
-} from '@invoiceguard/domain';
+} from '@remit/domain';
 
 import {
   decodeHederaTransaction,

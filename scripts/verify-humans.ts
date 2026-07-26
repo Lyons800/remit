@@ -1,13 +1,13 @@
 /**
  * The AgentBook gate.
  *
- * InvoiceGuard's central claim is that two agent wallets backed by one person
+ * Remit's central claim is that two agent wallets backed by one person
  * cannot fake maker-checker approval. That claim holds only if World AgentBook
  * actually resolves A1 and A2 to the same anonymous human.
  *
  * This proves it or kills it in about ten seconds, with no application code
  * involved. It talks to AgentBook directly rather than through
- * `@invoiceguard/world-adapter` on purpose: a gate should exercise the
+ * `@remit/world-adapter` on purpose: a gate should exercise the
  * dependency, not our wrapper around it.
  *
  * A failure here is not a bug to debug — it means World cannot support the

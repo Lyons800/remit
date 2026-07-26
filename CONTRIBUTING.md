@@ -1,7 +1,7 @@
 # Contributing
 
-InvoiceGuard is a security-sensitive financial authorization project. Small,
-reviewable changes and explicit evidence are part of the product.
+Remit is a security-sensitive financial authorization project. Small, reviewable
+changes and explicit evidence are part of the product.
 
 ## Before coding
 
@@ -37,8 +37,8 @@ sessions edit the same working directory.
 
 ```bash
 git fetch origin
-git worktree add ../invoiceguard-<topic> -b <branch> origin/main
-cd ../invoiceguard-<topic>
+git worktree add ../remit-<topic> -b <branch> origin/main
+cd ../remit-<topic>
 pnpm install --frozen-lockfile
 ```
 

@@ -1,4 +1,4 @@
-title = "InvoiceGuard Gitleaks configuration"
+title = "Remit Gitleaks configuration"
 
 [extend]
 useDefault = true

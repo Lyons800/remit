@@ -7,8 +7,8 @@
 
 AgentKit establishes that an agent wallet is backed by a registered human. It
 does not establish that a person reviewed a particular payment when the agent
-signed it. InvoiceGuard also needs a narrow approval experience that works on a
-phone without creating a second client or moving authority keys into a browser.
+signed it. Remit also needs a narrow approval experience that works on a phone
+without creating a second client or moving authority keys into a browser.
 
 ## Decision
 
@@ -29,8 +29,8 @@ as an additional authorization fact:
    complete atomically before the decision can count.
 
 The official interfaces do not prove that the IDKit user is the same person as
-the AgentBook human backing the delegate. InvoiceGuard requires both facts and
-does not claim that they are cryptographically joined.
+the AgentBook human backing the delegate. Remit requires both facts and does not
+claim that they are cryptographically joined.
 
 `apps/web` is the sole human interface. It provides a desktop operations view
 and a focused mobile approval route from the same Next.js application. The

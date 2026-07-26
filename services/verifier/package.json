@@ -1,5 +1,5 @@
 {
-  "name": "@invoiceguard/verifier",
+  "name": "@remit/verifier",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@invoiceguard/runtime-config": "workspace:*",
+    "@remit/runtime-config": "workspace:*",
     "@hono/node-server": "catalog:",
     "hono": "catalog:"
   },

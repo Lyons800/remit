@@ -1,8 +1,8 @@
 # Repository consolidation review
 
 - Date: 2026-07-25
-- Scope: the InvoiceGuard monorepo, its three active feature worktrees, and the
-  earlier `callguard` prototype
+- Scope: the Remit monorepo, its three active feature worktrees, and the earlier
+  `callguard` prototype
 - Decision: keep this monorepo as the only submission repository
 
 The current repository should not be restarted. Its protocol, domain,
@@ -43,7 +43,7 @@ admission contracts are the canonical implementation.
 The live claim remains blocked until a real Testnet x402 payment and settlement
 asset flow are recorded against the exact submitted commit.
 
-Do not port the prototype's `IGPAY` NFT as currently designed. Minting and
+Do not port the prototype's `RMPAY` NFT as currently designed. Minting and
 burning a separate token after authorization does not itself prevent replay of
 the supplier payment, and its plain evidence objects are not an authenticated
 ledger boundary. Reconsider tokenized payables only if settlement is

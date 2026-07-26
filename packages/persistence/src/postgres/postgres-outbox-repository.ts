@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { isPaymentDomainEventId } from '@invoiceguard/domain';
+import { isPaymentDomainEventId } from '@remit/domain';
 import type postgres from 'postgres';
 
 import { mapPostgresError, PersistenceError } from '../errors.js';
@@ -40,7 +40,7 @@ function requireEventId(value: string): void {
   if (!isPaymentDomainEventId(value)) {
     throw new PersistenceError(
       'OUTBOX_EVENT_CONFLICT',
-      'eventId must be a bounded InvoiceGuard payment event identity',
+      'eventId must be a bounded Remit payment event identity',
     );
   }
 }

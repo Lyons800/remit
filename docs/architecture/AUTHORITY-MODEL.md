@@ -1,7 +1,6 @@
 # Authority model
 
-InvoiceGuard deliberately separates facts that are often collapsed into
-"identity."
+Remit deliberately separates facts that are often collapsed into "identity."
 
 ## Independent facts
 
@@ -38,8 +37,8 @@ The World identifier is treated as a sensitive stable pseudonym.
 
 The raw identifier is publicly queryable, pseudonymous AgentBook data and is
 linkable across wallets registered by the same human within AgentBook. The HMAC
-prevents InvoiceGuard from creating another public join; it does not make the
-source identifier secret on World Chain.
+prevents Remit from creating another public join; it does not make the source
+identifier secret on World Chain.
 
 ## Company role credential
 
@@ -80,7 +79,7 @@ must show:
   accepted.
 
 This credential is a demonstration of a company trust root, not a claim that
-InvoiceGuard has independently verified employment.
+Remit has independently verified employment.
 
 ## Exact-action human decision
 

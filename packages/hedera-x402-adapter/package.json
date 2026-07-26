@@ -1,5 +1,5 @@
 {
-  "name": "@invoiceguard/hedera-x402-adapter",
+  "name": "@remit/hedera-x402-adapter",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -17,8 +17,8 @@
   },
   "dependencies": {
     "@hiero-ledger/sdk": "2.85.0",
-    "@invoiceguard/domain": "workspace:*",
-    "@invoiceguard/protocol": "workspace:*",
+    "@remit/domain": "workspace:*",
+    "@remit/protocol": "workspace:*",
     "@x402/core": "2.19.0",
     "@x402/hedera": "2.19.0"
   },

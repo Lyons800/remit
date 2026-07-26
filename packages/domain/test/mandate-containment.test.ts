@@ -1,4 +1,4 @@
-import { createAuthorizationBundle } from '@invoiceguard/protocol/hashing';
+import { createAuthorizationBundle } from '@remit/protocol/hashing';
 import { describe, expect, it } from 'vitest';
 
 import { validateMandateContainment } from '../src/index.js';

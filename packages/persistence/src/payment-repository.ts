@@ -3,7 +3,7 @@ import type {
   PaymentActionEvent,
   PaymentActionTransition,
   TrustedTransitionContext,
-} from '@invoiceguard/domain';
+} from '@remit/domain';
 
 import type { PaymentWriterAuthorization } from './payment-writer-authorization.js';
 

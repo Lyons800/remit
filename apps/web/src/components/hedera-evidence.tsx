@@ -52,7 +52,7 @@ function FailedEvidence({
         <p className="text-sm">
           {mismatch
             ? 'Mirror Node responded, but at least one expected immutable fact did not match. Live proof is withheld.'
-            : 'InvoiceGuard could not read every required public Mirror Node endpoint.'}{' '}
+            : 'Remit could not read every required public Mirror Node endpoint.'}{' '}
           No cached or synthetic value has been substituted.
         </p>
         <p className="microlabel">
@@ -201,8 +201,7 @@ export function HederaEvidenceDetail({ result }: EvidenceProperties) {
             transaction has an empty memo, its run note uses a{' '}
             <span className="tabular">0x</span>-prefixed digest, and the gate
             script is absent from this repository. It does not prove that the
-            committed hardened adapter executed a canonical InvoiceGuard AP
-            action.
+            committed hardened adapter executed a canonical Remit AP action.
           </div>
         </CardContent>
       </Card>

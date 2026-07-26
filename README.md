@@ -1,4 +1,4 @@
-# InvoiceGuard
+# Remit
 
 **Let agents pay the invoices. Prove they paid the right thing.**
 
@@ -171,7 +171,7 @@ explicit for rehearsal. A rehearsal can never be mistaken for a proof.
 
 ## What we do not claim
 
-InvoiceGuard proves the integrity of the **authorisation path**. It does not
+Remit proves the integrity of the **authorisation path**. It does not
 prove that a supplier owns a bank account, that an invoice is genuine, that a
 person is honest, or that a verification service is truthful.
 

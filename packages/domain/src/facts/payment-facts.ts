@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   verifyAuthorizationBundle,
   type AuthorizationBundleV1,
-} from '@invoiceguard/protocol/hashing';
+} from '@remit/protocol/hashing';
 
 import {
   createAdapterRecord,
