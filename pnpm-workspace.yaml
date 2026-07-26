@@ -4,9 +4,12 @@ packages:
   - packages/*
 
 overrides:
+  '@grpc/grpc-js@>=1.12.0 <1.12.7': 1.12.7
   postcss: 8.5.23
+  'protobufjs@>=8.0.0 <8.6.6': 8.6.6
   sharp: 0.35.3
   undici-types@~6.19.2: 6.19.2
+  'ws@>=8.0.0 <8.21.0': 8.21.0
 
 catalog:
   '@eslint/js': 10.0.1
@@ -44,8 +47,7 @@ blockExoticSubdeps: true
 strictDepBuilds: true
 allowBuilds:
   esbuild: true
-  # Only the reviewed @x402/hedera peer graph may run protobufjs' install check.
+  # Only reviewed protobufjs versions may run the package's install check.
   protobufjs@7.6.5: false
-  protobufjs@8.0.1: true
-  protobufjs@8.2.0: false
+  protobufjs@8.6.6: true
   sharp: true
