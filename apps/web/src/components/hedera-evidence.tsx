@@ -140,6 +140,89 @@ export function HederaEvidenceDetail({ result }: EvidenceProperties) {
       <Card>
         <CardHeader className="flex-row items-center justify-between gap-3">
           <div>
+            <CardTitle>Atomic settlement mechanics fixture</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">
+              A real HIP-551 success-and-rollback proof using synthetic,
+              no-value Testnet assets.
+            </p>
+          </div>
+          <Badge variant="outline">Recorded Testnet proof</Badge>
+        </CardHeader>
+        <CardContent className="grid gap-x-8 lg:grid-cols-2">
+          <dl>
+            <Fact
+              label="Successful atomic batch"
+              value={
+                <EvidenceLink href="https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.9708355-1785052000-077747014">
+                  0.0.9708355-1785052000-077747014
+                </EvidenceLink>
+              }
+            />
+            <Fact
+              label="Sealed settlement asset"
+              value={
+                <EvidenceLink href="https://testnet.mirrornode.hedera.com/api/v1/tokens/0.0.9764805">
+                  48,000 RMEURT atoms · 0.0.9764805
+                </EvidenceLink>
+              }
+            />
+            <Fact
+              label="Synthetic claimant"
+              value={
+                <EvidenceLink href="https://testnet.mirrornode.hedera.com/api/v1/accounts/0.0.9758583/tokens?token.id=0.0.9764805">
+                  0.0.9758583 · 48,000 atoms received
+                </EvidenceLink>
+              }
+            />
+          </dl>
+          <dl>
+            <Fact
+              label="Deliberate rollback batch"
+              value={
+                <EvidenceLink href="https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.9708355-1785051992-337954908">
+                  INNER_TRANSACTION_FAILED · earlier effects reverted
+                </EvidenceLink>
+              }
+            />
+            <Fact
+              label="Consumed control assets"
+              value="RMPAY 0.0.9764807#1 · RMCTL 0.0.9764808#1"
+            />
+            <Fact
+              label="HCS audit trail"
+              value={
+                <EvidenceLink href="https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.9764806/messages">
+                  topic 0.0.9764806 · three ordered events
+                </EvidenceLink>
+              }
+            />
+          </dl>
+          <div className="mt-4 flex flex-col gap-2 border border-border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground lg:col-span-2">
+            <p>
+              One wire-admitted batch transferred the exact synthetic payment,
+              returned and burned both NFTs, and committed its mechanics event
+              to HCS. A deliberately invalid batch proved that earlier inner
+              effects roll back.
+            </p>
+            <p>
+              <b className="text-foreground">Evidence boundary:</b>{' '}
+              <span className="tabular">authorityMode</span> is{' '}
+              <span className="tabular">MECHANICS_FIXTURE</span>. This does not
+              prove a supplier was paid, fresh World/x402 authority, legal KYC
+              or receivable assignment, production custody, or production replay
+              control.
+            </p>
+            <p className="microlabel">
+              Pinned public records from implementation 96839de · this page does
+              not revalidate the full atomic batch graph on every request
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between gap-3">
+          <div>
             <CardTitle>Live x402 transport/payment spike</CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
               Exact public ledger facts, independently read from Mirror Node.
@@ -301,10 +384,11 @@ export function HederaEvidenceDetail({ result }: EvidenceProperties) {
             </p>
           </div>
           <div className="border border-border p-3">
-            <Badge>Live evidence</Badge>
-            <p className="mt-2 font-medium">Hedera HTS marker</p>
+            <Badge variant="outline">Recorded live proof</Badge>
+            <p className="mt-2 font-medium">Hedera atomic mechanics</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Public lifecycle verified; not an invoice settlement.
+              Public success and rollback receipts for exact synthetic payment,
+              dual-NFT consumption and HCS commitment. Production NO-GO.
             </p>
           </div>
           <div className="border border-border p-3">

@@ -20,9 +20,10 @@ export default async function PaymentsPage() {
           Payments & ledger evidence
         </h1>
         <p className="max-w-3xl text-sm text-muted-foreground">
-          Public Hedera Testnet facts are live. Supplier invoice settlement is
-          not: the x402 HBAR transfer paid a test verification service, and the
-          HTS NFT is an audited no-value lifecycle marker.
+          Public Hedera Testnet facts are live. A synthetic dual-token fixture
+          proves atomic payment, control consumption, audit commitment, and
+          rollback mechanics; it is not a supplier invoice settlement. The x402
+          HBAR transfer paid a test verification service.
         </p>
       </div>
 
@@ -37,7 +38,9 @@ export default async function PaymentsPage() {
           </div>
           <div className="border border-border p-3">
             <Badge>Demonstrated</Badge>
-            <p className="mt-2">Treasury-held HTS NFT create, mint, and burn</p>
+            <p className="mt-2">
+              HIP-551 atomic mechanics success and rollback
+            </p>
           </div>
           <div className="border border-border p-3">
             <Badge variant="destructive">Not demonstrated</Badge>

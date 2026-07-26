@@ -145,8 +145,7 @@ That is token **creation**, **configuration**, and **two lifecycle operations**.
 
 ### Experimental dual-token settlement
 
-The isolated `codex/hedera-dual-token-settlement` branch also contains an
-ambitious Testnet mechanism proof:
+Main contains an ambitious experimental Testnet mechanism proof:
 
 - an HTS KYC-flag-gated Payable NFT (`RMPAY`) is issued to the action's
   preconfigured synthetic claimant;
