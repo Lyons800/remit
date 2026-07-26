@@ -4,7 +4,7 @@ import {
   setWorkspacePersonRole,
   type PersonRole,
   type WorkspacePerson,
-} from '@invoiceguard/persistence';
+} from '@remit/persistence';
 
 import { DEMO_ORGANIZATION_ID, db } from '../../../lib/workspace.server';
 
