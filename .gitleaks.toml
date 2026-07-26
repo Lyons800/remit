@@ -1,0 +1,18 @@
+title = "InvoiceGuard Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Public Hedera Testnet HTS supply key in the exact Mirror fixture"
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^027218920d5eb73809c105ff98c4246a026f518b445b8a2cfebd8c8977d71ec860$''',
+]
+paths = [
+  '''^apps/web/src/lib/mirror-evidence\.test\.ts$''',
+]
