@@ -19,6 +19,7 @@
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "gate:agentbook": "tsx scripts/verify-humans.ts",
+    "gate:world-agentkit": "tsx scripts/gate-world-agentkit.ts",
     "lint": "eslint . --max-warnings 0",
     "migrate": "tsx scripts/migrate.ts",
     "test": "vitest run",
@@ -35,6 +36,7 @@
     "@remit/domain": "workspace:*",
     "@remit/persistence": "workspace:*",
     "@remit/protocol": "workspace:*",
+    "@remit/world-adapter": "workspace:*",
     "@types/node": "catalog:",
     "@worldcoin/agentkit": "0.2.0",
     "@x402/core": "2.19.0",
@@ -47,6 +49,7 @@
     "turbo": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
+    "viem": "2.55.8",
     "vitest": "catalog:"
   }
 }
