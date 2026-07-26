@@ -17,12 +17,16 @@ import {
   createMandateReservationLedger,
   createPaymentActionAggregate,
   createRequestingAgentExecutionFact,
+  deriveExecutionAuditEventId,
+  deriveSettlementRequestEventId,
+  deriveVerificationQuoteEventId,
   hydratePaymentActionAggregate,
   invoiceRevisionEvents,
   invoiceRevisionStates,
   isTerminalInvoiceRevisionState,
   isTerminalPaymentActionState,
   isTerminalStandingMandateState,
+  isPaymentDomainEventId,
   paymentActionEventTypes,
   paymentActionStates,
   sourceObservationEvents,
@@ -670,7 +674,7 @@ describe('persisted payment-action aggregate', () => {
       T1,
     ).aggregate;
     const first = applyEvent(classified, { type: 'QUOTE_VERIFICATION' }, T2);
-    const eventId = `invoiceguard:verification:quote:v1:${humanAuthorization.envelope.actionDigest}:${humanAuthorization.decision.evidencePolicy.digest}`;
+    const eventId = deriveVerificationQuoteEventId(classified);
 
     expect(first.effects).toEqual([
       {
@@ -687,6 +691,24 @@ describe('persisted payment-action aggregate', () => {
         type: 'VERIFICATION_QUOTE_REQUEST',
       },
     ]);
+  });
+
+  it('derives bounded event identities from maximum-length admitted inputs', () => {
+    const attempt = frozenAttempt(authorization, T5, {
+      attemptId: 'a'.repeat(512),
+    });
+    const group = `payment:${attempt.actionDigest}:v99`;
+    const eventIds = [
+      deriveExecutionAuditEventId(attempt),
+      deriveSettlementRequestEventId(attempt, group, 'SETTLEMENT_SUBMISSION'),
+      deriveSettlementRequestEventId(attempt, group, 'SETTLEMENT_RETRY'),
+    ];
+
+    expect(eventIds.every(isPaymentDomainEventId)).toBe(true);
+    expect(new Set(eventIds).size).toBe(eventIds.length);
+    expect(
+      Math.max(...eventIds.map(({ length }) => length)),
+    ).toBeLessThanOrEqual(256);
   });
 
   it('completes the mandate path with atomic reservation and consumption effects', () => {
@@ -719,7 +741,11 @@ describe('persisted payment-action aggregate', () => {
         authorityFactDigest: queued.aggregate.executionAuthority?.recordDigest,
         authorizationBasisDigest: basis.basisDigest,
         evidenceResultDigest: null,
-        eventId: `invoiceguard:settlement:submit:v1:${attempt.actionDigest}:${attempt.attemptId}`,
+        eventId: deriveSettlementRequestEventId(
+          attempt,
+          queued.atomicGroupKey,
+          'SETTLEMENT_SUBMISSION',
+        ),
         idempotencyKey: attempt.idempotencyKey,
         type: 'SETTLEMENT_SUBMISSION_REQUEST',
       },
@@ -762,8 +788,8 @@ describe('persisted payment-action aggregate', () => {
         expect.objectContaining({
           atomicGroupKey: settled.atomicGroupKey,
           authorizationAuditId: queued.aggregate.authorizationAudit?.auditId,
-          eventId: `invoiceguard:hcs:execution:v1:${attempt.actionDigest}:${attempt.attemptId}`,
-          idempotencyKey: `invoiceguard:hcs:execution:v1:${attempt.actionDigest}:${attempt.attemptId}`,
+          eventId: deriveExecutionAuditEventId(attempt),
+          idempotencyKey: deriveExecutionAuditEventId(attempt),
           receiptId: receipt.receiptId,
           type: 'EXECUTION_AUDIT_REQUEST',
         }),
@@ -966,7 +992,11 @@ describe('persisted payment-action aggregate', () => {
         authorityFactDigest: queued.aggregate.executionAuthority?.recordDigest,
         authorizationBasisDigest: basis.basisDigest,
         evidenceResultDigest: queued.aggregate.evidenceResult?.recordDigest,
-        eventId: `invoiceguard:settlement:submit:v1:${attempt.actionDigest}:${attempt.attemptId}`,
+        eventId: deriveSettlementRequestEventId(
+          attempt,
+          queued.atomicGroupKey,
+          'SETTLEMENT_SUBMISSION',
+        ),
         idempotencyKey: attempt.idempotencyKey,
         type: 'SETTLEMENT_SUBMISSION_REQUEST',
       }),
@@ -1133,23 +1163,27 @@ describe('persisted payment-action aggregate', () => {
       },
       { now: T7 },
     );
-    expect(retried).toMatchObject({
-      ok: true,
-      value: {
-        aggregate: {
-          settlementUncertainty: uncertainty,
-          state: 'SETTLEMENT_PENDING',
-        },
-        effects: [
-          {
-            authorizationBasisDigest: recoveryBasis.basisDigest,
-            attempt,
-            eventId: `invoiceguard:settlement:submit:v1:${attempt.actionDigest}:${attempt.attemptId}`,
-            idempotencyKey: attempt.idempotencyKey,
-            type: 'SETTLEMENT_RETRY_REQUEST',
-          },
-        ],
+    if (!retried.ok) {
+      throw new Error(`retry failed: ${retried.error.code}`);
+    }
+    expect(retried.value).toMatchObject({
+      aggregate: {
+        settlementUncertainty: uncertainty,
+        state: 'SETTLEMENT_PENDING',
       },
+      effects: [
+        {
+          authorizationBasisDigest: recoveryBasis.basisDigest,
+          attempt,
+          eventId: deriveSettlementRequestEventId(
+            attempt,
+            retried.value.atomicGroupKey,
+            'SETTLEMENT_RETRY',
+          ),
+          idempotencyKey: attempt.idempotencyKey,
+          type: 'SETTLEMENT_RETRY_REQUEST',
+        },
+      ],
     });
 
     const alternate = frozenAttempt(authorization, T5, {

@@ -53,6 +53,7 @@ import {
   hasValidAdapterRecordDigest,
   hashAdapterRecord,
 } from '../facts/adapter-record.js';
+import { derivePaymentDomainEventId } from '../facts/payment-event-id.js';
 import type {
   StandingMandateAggregate,
   TrustedTransitionContext,
@@ -1842,12 +1843,26 @@ function atomicGroupKey(
   return `payment:${aggregate.authorization.envelope.actionDigest}:v${nextVersion}`;
 }
 
-function settlementSubmissionEventId(attempt: FrozenSettlementAttempt): string {
-  return `invoiceguard:settlement:submit:v1:${attempt.actionDigest}:${attempt.attemptId}`;
+export function deriveSettlementRequestEventId(
+  attempt: FrozenSettlementAttempt,
+  eventAtomicGroupKey: string,
+  kind: 'SETTLEMENT_RETRY' | 'SETTLEMENT_SUBMISSION',
+): string {
+  return derivePaymentDomainEventId(kind, {
+    actionDigest: attempt.actionDigest,
+    atomicGroupKey: eventAtomicGroupKey,
+    attemptId: attempt.attemptId,
+  });
 }
 
-function verificationQuoteEventId(aggregate: PaymentActionAggregate): string {
-  return `invoiceguard:verification:quote:v1:${aggregate.authorization.envelope.actionDigest}:${aggregate.authorization.decision.evidencePolicy.digest}`;
+export function deriveVerificationQuoteEventId(
+  aggregate: PaymentActionAggregate,
+): string {
+  return derivePaymentDomainEventId('VERIFICATION_QUOTE', {
+    actionDigest: aggregate.authorization.envelope.actionDigest,
+    evidencePolicyDigest:
+      aggregate.authorization.decision.evidencePolicy.digest,
+  });
 }
 
 function transitionResult(
@@ -2283,7 +2298,11 @@ function handleQueue(
         authorityFactDigest: requestingAgent.value.recordDigest,
         authorizationBasisDigest: basis.basisDigest,
         evidenceResultDigest: evidence.value?.recordDigest ?? null,
-        eventId: settlementSubmissionEventId(attempt.value),
+        eventId: deriveSettlementRequestEventId(
+          attempt.value,
+          atomicGroupKey(aggregate),
+          'SETTLEMENT_SUBMISSION',
+        ),
         idempotencyKey: attempt.value.idempotencyKey,
         type: 'SETTLEMENT_SUBMISSION_REQUEST',
       }),
@@ -2442,7 +2461,7 @@ export function transitionPaymentAction(
       return refuse('VERIFICATION_REQUIRED');
     }
     const group = atomicGroupKey(aggregate);
-    const eventId = verificationQuoteEventId(aggregate);
+    const eventId = deriveVerificationQuoteEventId(aggregate);
     return transitionResult(aggregate, next, eventType, now, {}, [
       Object.freeze({
         actionDigest: aggregate.authorization.envelope.actionDigest,
@@ -2840,7 +2859,11 @@ export function transitionPaymentAction(
         authorityFactDigest: requestingAgent.value.recordDigest,
         authorizationBasisDigest: basis.basisDigest,
         evidenceResultDigest: evidence.value?.recordDigest ?? null,
-        eventId: settlementSubmissionEventId(attempt),
+        eventId: deriveSettlementRequestEventId(
+          attempt,
+          atomicGroupKey(aggregate),
+          'SETTLEMENT_RETRY',
+        ),
         idempotencyKey: attempt.idempotencyKey,
         requestingAgent: requestingAgent.value,
         type: 'SETTLEMENT_RETRY_REQUEST',

@@ -11,6 +11,7 @@ import {
   hasValidAdapterRecordDigest,
   hashAdapterRecord,
 } from './adapter-record.js';
+import { derivePaymentDomainEventId } from './payment-event-id.js';
 import { isCanonicalUtcInstant } from '../state/temporal.js';
 import {
   isNonEmptyBoundedString,
@@ -859,7 +860,13 @@ export function deriveSettlementIdempotencyKey(
 export function deriveExecutionAuditEventId(
   attempt: FrozenSettlementAttempt,
 ): string {
-  return `invoiceguard:hcs:execution:v1:${attempt.actionDigest}:${attempt.attemptId}`;
+  return derivePaymentDomainEventId('EXECUTION_AUDIT', {
+    actionDigest: attempt.actionDigest,
+    attemptId: attempt.attemptId,
+    networkId: attempt.networkId,
+    signedBytesHash: attempt.signedBytesHash,
+    transactionId: attempt.transactionId,
+  });
 }
 
 export function createAdapterVerifiedVerificationPayment(
