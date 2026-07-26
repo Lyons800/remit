@@ -15,9 +15,12 @@
  *
  *   - Act 1's transfer is a direct HBAR payment, not an integrated settlement.
  *     `packages/hedera-settlement-adapter` is an empty stub on main.
- *   - Act 3 speaks x402 directly rather than through
- *     `packages/hedera-x402-adapter`, so the result is protocol-real but not
- *     adapter-bound.
+ *   - Act 3's x402 PAYMENT is real and settles on Hedera. The beneficiary
+ *     verification service is NOT: there is no such service, so the demo
+ *     stands one in with a generated keypair and a fixed answer. Those lines
+ *     are marked [SIMULATED]. It also speaks x402 directly rather than
+ *     through `packages/hedera-x402-adapter`, so the payment is protocol-real
+ *     but not adapter-bound.
  *   - Act 4's HTS token is an audit marker. It is NOT payment authority and
  *     its burn does NOT prevent replay — see docs/evidence/README.md. Replay
  *     is refused by the approval layer in Act 5.
@@ -105,14 +108,29 @@ const beat = async (ms = 800): Promise<void> => {
 
 /* ── environment ─────────────────────────────────────────────────────── */
 
+/** Values good enough to render the narrative, never good enough to spend. */
+const PLACEHOLDERS: Record<string, string> = {
+  HEDERA_OPERATOR_ID: '0.0.0',
+  HEDERA_SERVICE_ACCOUNT_ID: '0.0.0',
+  HEDERA_FACILITATOR_ACCOUNT_ID: '0.0.0',
+  HEDERA_OPERATOR_KEY:
+    '0x0000000000000000000000000000000000000000000000000000000000000001',
+  HEDERA_FACILITATOR_KEY:
+    '0x0000000000000000000000000000000000000000000000000000000000000001',
+  AGENT_A1_ADDRESS: '0x0000000000000000000000000000000000000a01',
+  AGENT_A2_ADDRESS: '0x0000000000000000000000000000000000000a02',
+  AGENT_B1_ADDRESS: '0x0000000000000000000000000000000000000b01',
+};
+
 function env(): Record<string, string> {
   const out: Record<string, string> = {};
   let raw: string;
   try {
     raw = readFileSync(resolve(process.cwd(), '.env.local'), 'utf8');
   } catch {
-    console.error('\nNo .env.local found. See .env.example.\n');
-    process.exit(1);
+    // A clean clone has no .env.local. Offline runs cope; live runs fail in
+    // need() with the specific key that is missing.
+    return out;
   }
   for (const line of raw.split('\n')) {
     const t = line.trim();
@@ -124,13 +142,21 @@ function env(): Record<string, string> {
 }
 
 const E = env();
+
+/**
+ * Environment lookup that tolerates a clean clone.
+ *
+ * `--offline` is advertised as the no-network path, so it must not demand
+ * eight credentials nobody has yet. Offline runs fall back to a documented
+ * placeholder; live runs still fail loudly, because a missing key there means
+ * the run would silently not be what it claims.
+ */
 function need(key: string): string {
-  const value = E[key];
-  if (value === undefined || value === '') {
-    console.error(`Missing ${key} in .env.local`);
-    process.exit(1);
-  }
-  return value;
+  const value = E[key] ?? process.env[key];
+  if (value !== undefined && value !== '') return value;
+  if (OFFLINE) return PLACEHOLDERS[key] ?? `offline-${key.toLowerCase()}`;
+  console.error(`Missing ${key} in .env.local (see .env.example)`);
+  process.exit(1);
 }
 
 const OPERATOR_ID = need('HEDERA_OPERATOR_ID');
@@ -431,7 +457,8 @@ async function act3(digest: string): Promise<void> {
 
   step(`GET ${C.dim(`https://remit.local/verify/${digest}`)}`);
   step(
-    `${C.yellow('402 Payment Required')}  ${C.dim('0.01 ℏ — the check is a product, not a favour')}`,
+    `${C.yellow('402 Payment Required')}  ${C.dim('0.01 ℏ — the check is a product, not a favour')}` +
+      ` ${C.yellow('[SIMULATED challenge]')}`,
   );
   await beat();
 
@@ -499,8 +526,12 @@ async function act3(digest: string): Promise<void> {
   link(hashscan(txId));
   await beat();
 
-  // The answer is signed over the digest AND the payment, so it cannot be
-  // lifted onto a different invoice.
+  // The PAYMENT above is real. What follows is not: there is no beneficiary
+  // verification service, so the demo stands one in, generating a keypair and
+  // signing a fixed answer. It demonstrates the binding — the signature covers
+  // the digest and the payment together — but it proves nothing about the
+  // beneficiary. Saying otherwise would be the exact overclaim this project
+  // spends its README disowning.
   const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const answer = {
     actionDigest: digest,
@@ -512,12 +543,16 @@ async function act3(digest: string): Promise<void> {
     .sign(privateKey, 'base64');
   console.log();
   step(
-    `service returned a result signed over ${C.bold('this digest and this payment')}`,
+    `stand-in service returns a result bound to ${C.bold('this digest and this payment')}` +
+      ` ${C.yellow('[SIMULATED]')}`,
   );
-  step(`  result       ${C.green('MATCH')}`);
+  step(`  result       ${C.green('MATCH')} ${C.yellow('[SIMULATED]')}`);
   step(`  signature    ${C.dim(`${signature.slice(0, 40)}…`)}`);
   step(
-    `  ${C.dim('lift it onto another invoice and the signature stops verifying')}`,
+    `  ${C.dim('the binding is real — lift it onto another invoice and it stops verifying —')}`,
+  );
+  step(
+    `  ${C.dim('but no real service answered. The 402 payment above is the part that is live.')}`,
   );
 }
 
@@ -756,11 +791,25 @@ async function main(): Promise<void> {
     const payable = await act4(client, digest);
     await act5(digest, approved, payable);
 
+    // The closing claim depends on whether the humans were real. Printing
+    // "two provably different people" after resolving three invented ones
+    // would be the demo lying in its last line.
+    const humansWereReal = approvers.every((approver) => !approver.simulated);
+
     console.log(`\n${C.bold('─'.repeat(72))}`);
-    console.log(
-      `${C.green('The 990 were paid by an agent. The 10 needed two provably different people.')}\n` +
-        `${C.dim('No oracle. No trusted third party. No detection. Every refusal is provable.')}\n`,
-    );
+    if (humansWereReal) {
+      console.log(
+        `${C.green('The 990 were paid by an agent. The 10 needed two provably different people.')}\n` +
+          `${C.dim('No oracle. No trusted third party. No detection. Every refusal is provable.')}\n`,
+      );
+    } else {
+      console.log(
+        `${OFFLINE ? C.yellow('Offline run: no payment was made and no ledger was touched.') : C.green('The 990 were paid by an agent — that payment was real, on Hedera.')}\n` +
+          `${C.yellow('The 10 required two distinct humans. The identities here were SIMULATED:')}\n` +
+          `${C.yellow('the refusal is the real code path, the humans were not registered.')}\n` +
+          `${C.dim('Register them and re-run to see the same refusal on real World identities.')}\n`,
+      );
+    }
   } finally {
     client?.close();
   }
