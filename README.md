@@ -171,9 +171,9 @@ explicit for rehearsal. A rehearsal can never be mistaken for a proof.
 
 ## What we do not claim
 
-Remit proves the integrity of the **authorisation path**. It does not
-prove that a supplier owns a bank account, that an invoice is genuine, that a
-person is honest, or that a verification service is truthful.
+Remit proves the integrity of the **authorisation path**. It does not prove that
+a supplier owns a bank account, that an invoice is genuine, that a person is
+honest, or that a verification service is truthful.
 
 - The HTS token is an **audit marker**, not payment authority. Its burn does
   **not** prevent replay — replay is refused by the approval layer via
