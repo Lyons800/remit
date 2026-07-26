@@ -1,4 +1,5 @@
 export * from './errors.js';
+export * from './facts/payment-event-id.js';
 export * from './facts/payment-facts.js';
 export * from './payment-context.js';
 export * from './result.js';
