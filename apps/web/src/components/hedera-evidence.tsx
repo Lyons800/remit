@@ -94,7 +94,7 @@ export function HederaEvidenceSummary({ result }: EvidenceProperties) {
           <EvidenceLink href={x402.hashScanUrl}>Open transaction</EvidenceLink>
         </div>
         <div className="flex flex-col gap-2 border-l-2 border-primary pl-3">
-          <p className="microlabel">HTS marker experiment</p>
+          <p className="microlabel">HTS marker lifecycle</p>
           <p className="text-sm">
             Token <span className="tabular">{hts.tokenId}</span>, serial 1, was
             minted to and burned from the same treasury. Current supply is zero.
@@ -198,10 +198,10 @@ export function HederaEvidenceDetail({ result }: EvidenceProperties) {
           <div className="mt-4 border border-border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground lg:col-span-2">
             <b className="text-foreground">Evidence boundary:</b> this proves a
             three-party HBAR transfer used by the live x402 spike. The
-            transaction has an empty memo, its run note uses a{' '}
-            <span className="tabular">0x</span>-prefixed digest, and the gate
-            script is absent from this repository. It does not prove that the
-            committed hardened adapter executed a canonical Remit AP action.
+            transaction has an empty memo and its historical run note uses a{' '}
+            <span className="tabular">0x</span>-prefixed digest. That spike
+            predates the committed runner and does not prove that the hardened
+            adapter executed a canonical Remit AP action.
           </div>
         </CardContent>
       </Card>
@@ -209,7 +209,7 @@ export function HederaEvidenceDetail({ result }: EvidenceProperties) {
       <Card>
         <CardHeader className="flex-row items-center justify-between gap-3">
           <div>
-            <CardTitle>Live HTS lifecycle marker experiment</CardTitle>
+            <CardTitle>Live HTS lifecycle marker</CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
               One no-value NFT serial, held only by the treasury.
             </p>
@@ -274,10 +274,8 @@ export function HederaEvidenceDetail({ result }: EvidenceProperties) {
           </dl>
           <div className="mt-4 flex flex-col gap-2 border border-border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground lg:col-span-2">
             <p>
-              <b className="text-foreground">Experimental marker digest:</b>{' '}
-              <span className="tabular break-all">
-                {hts.experimentalDigest}
-              </span>
+              <b className="text-foreground">Canonical action digest:</b>{' '}
+              <span className="tabular break-all">{hts.actionDigest}</span>
             </p>
             <p>
               <b className="text-foreground">Evidence boundary:</b> Mirror
@@ -310,10 +308,11 @@ export function HederaEvidenceDetail({ result }: EvidenceProperties) {
             </p>
           </div>
           <div className="border border-border p-3">
-            <Badge variant="outline">Offline contract</Badge>
+            <Badge variant="outline">Executable gate</Badge>
             <p className="mt-2 font-medium">World authority</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Adapter and tests only. No live World authority is claimed.
+              AgentKit exact-action signing and replay refusal pass locally. No
+              live World human authority is claimed.
             </p>
           </div>
         </CardContent>
