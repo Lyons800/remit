@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    // The Hedera and viem SDK type definitions do not compile cleanly under
+    // node16 resolution. Our own script code is still fully checked.
+    "skipLibCheck": true
+  },
+  "include": ["scripts/**/*.ts"]
+}
