@@ -6,6 +6,7 @@ import {
   LayoutGrid,
   ReceiptText,
   ScrollText,
+  Users,
   ShieldCheck,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -27,6 +28,7 @@ const items = [
     label: 'Approvals',
     match: '/approvals',
   },
+  { href: '/people', icon: Users, label: 'People' },
   { href: '/suppliers', icon: Building2, label: 'Suppliers' },
   { href: '/payments', icon: ArrowLeftRight, label: 'Payments' },
   { href: '/audit', icon: ScrollText, label: 'Evidence' },
