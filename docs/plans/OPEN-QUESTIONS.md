@@ -21,8 +21,8 @@ eligibility.
 
 ## Resolved
 
-- Q01: `Lyons800/invoiceguard` is the canonical remote. It was created as a
-  private repository on 2026-07-25 so source was not disclosed without explicit
+- Q01: `Lyons800/remit` is the canonical remote. It was created as a private
+  repository on 2026-07-25 so source was not disclosed without explicit
   approval. Public visibility and the public-repository ruleset remain G0
   delivery steps.
 - Q07: ADR 0006 requires a successful HCS `authorization.v1` receipt before the

@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto';
 import type {
   AdapterVerifiedApprovalFact,
   RequestingAgentExecutionFact,
-} from '@invoiceguard/domain';
-import { canonicalizeJson } from '@invoiceguard/protocol/hashing';
+} from '@remit/domain';
+import { canonicalizeJson } from '@remit/protocol/hashing';
 
 import {
   WORLD_AGENTBOOK_ADAPTER_ID,

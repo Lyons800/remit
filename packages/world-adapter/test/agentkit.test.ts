@@ -4,7 +4,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import {
   authorizeAgentkitRequest,
   createAgentkitApprovalChallenge,
-  INVOICEGUARD_AGENTKIT_STATEMENT,
+  REMIT_AGENTKIT_STATEMENT,
   signAgentkitApprovalChallenge,
   WORLD_AGENT_SIGNATURE_CHAIN_ID,
   type AgentkitApprovalChallenge,
@@ -146,7 +146,7 @@ describe('AgentKit exact-action challenge', () => {
       issuedAt: challenge.issuedAt,
       nonce: '0123456789abcdef',
       resources: [challenge.approvalUri],
-      statement: INVOICEGUARD_AGENTKIT_STATEMENT,
+      statement: REMIT_AGENTKIT_STATEMENT,
       uri: challenge.approvalUri,
       version: '1',
     });

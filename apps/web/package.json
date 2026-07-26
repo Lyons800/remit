@@ -1,5 +1,5 @@
 {
-  "name": "@invoiceguard/web",
+  "name": "@remit/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
     "typecheck": "next typegen && tsc -p tsconfig.typecheck.json --noEmit"
   },
   "dependencies": {
-    "@invoiceguard/persistence": "workspace:*",
-    "@invoiceguard/world-adapter": "workspace:*",
+    "@remit/persistence": "workspace:*",
+    "@remit/world-adapter": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

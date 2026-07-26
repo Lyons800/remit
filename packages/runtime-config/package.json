@@ -1,5 +1,5 @@
 {
-  "name": "@invoiceguard/runtime-config",
+  "name": "@remit/runtime-config",
   "version": "0.0.0",
   "private": true,
   "type": "module",

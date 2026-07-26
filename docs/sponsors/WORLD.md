@@ -9,8 +9,8 @@ Checked: 2026-07-26.
 AgentKit is the eligibility boundary for the autonomous invoice and payment
 agents on every policy lane. Without AgentKit, a company cannot establish the
 human backing and accountability class of an enrolled agent. On an exception,
-World AgentBook also lets InvoiceGuard determine that two approval-agent wallets
-are backed by the same anonymous World ID human and count them once.
+World AgentBook also lets Remit determine that two approval-agent wallets are
+backed by the same anonymous World ID human and count them once.
 
 AgentKit does not prove that a person reviewed a payment when the agent signed
 it. World Human-in-the-Loop provides that separate fact when deterministic
@@ -58,15 +58,14 @@ npx @worldcoin/agentkit-cli@0.2.0 register 0xAgentAddress
 npx @worldcoin/agentkit-cli@0.2.0 status 0xAgentAddress
 ```
 
-Registration requires the World App and a real World ID human. InvoiceGuard
-needs three AgentBook humans for the complete refusal-and-quorum fixture.
-Registration is completed before the live demo and its transaction evidence is
-retained.
+Registration requires the World App and a real World ID human. Remit needs three
+AgentBook humans for the complete refusal-and-quorum fixture. Registration is
+completed before the live demo and its transaction evidence is retained.
 
 AgentBook registration does not prove possession of the submitted wallet and an
-address can be re-registered with its next registration nonce. InvoiceGuard
-therefore requires the wallet to sign an enrollment challenge before a company
-role is issued.
+address can be re-registered with its next registration nonce. Remit therefore
+requires the wallet to sign an enrollment challenge before a company role is
+issued.
 
 ## Enrollment and company authority
 
@@ -132,7 +131,7 @@ invoice to the exception or blocked path.
    process after atomic challenge consumption; do not hydrate it from JSON or a
    structurally similar object. This is an in-process sequencing guard, not
    durable authentication or protection from an untrusted composition root.
-6. Add InvoiceGuard's mandatory checks:
+6. Add Remit's mandatory checks:
 
    ```text
    payload.uri === expectedApprovalUri
@@ -151,10 +150,10 @@ invoice to the exception or blocked path.
 9. Immediately before settlement, re-resolve AgentBook and recheck the role.
 
 The released validator checks the expected domain and URI host/port but does not
-enforce InvoiceGuard's exact path, resource, method, or action semantics. The
-strict wrapper is consequently a security boundary, not optional hardening.
-AgentKit's reference nonce storage also exposes separate check/record
-operations, so the InvoiceGuard database owns atomic consumption.
+enforce Remit's exact path, resource, method, or action semantics. The strict
+wrapper is consequently a security boundary, not optional hardening. AgentKit's
+reference nonce storage also exposes separate check/record operations, so the
+Remit database owns atomic consumption.
 
 ## Action-time Human-in-the-Loop exception flow
 
@@ -208,8 +207,8 @@ operations, so the InvoiceGuard database owns atomic consumption.
     implemented by this offline integration.
 
 The current World interfaces do not establish that the IDKit user is the same
-person as the AgentBook human backing the agent. InvoiceGuard requires both
-facts and does not claim that they are joined.
+person as the AgentBook human backing the agent. Remit requires both facts and
+does not claim that they are joined.
 
 The action identifier is deliberately broader than the slot-specific signal.
 World nullifiers are action-scoped, so including role or decision in
@@ -219,16 +218,15 @@ slot on the same payment.
 ## Availability and privacy behavior
 
 The reference AgentBook verifier returns `null` both for an unregistered wallet
-and for some RPC failures. InvoiceGuard performs an independent World RPC health
-check:
+and for some RPC failures. Remit performs an independent World RPC health check:
 
 - healthy lookup with no registration: authorization refusal;
 - unhealthy or indeterminate lookup: dependency unavailable, fail closed.
 
 The raw `humanId` is a public pseudonymous value on World Chain and wallets for
-the same person are linkable within AgentBook. InvoiceGuard does not expose that
-value or its company mapping in logs, UI, Hedera messages, or public evidence.
-Normal records store a versioned tenant or action HMAC; public displays use an
+the same person are linkable within AgentBook. Remit does not expose that value
+or its company mapping in logs, UI, Hedera messages, or public evidence. Normal
+records store a versioned tenant or action HMAC; public displays use an
 action-scoped local label. During HMAC rotation, the adapter derives the current
 and still-admitted previous aliases from the authoritative keyring. It rejects
 caller-supplied alias lists, including truncated lists. The future physical
@@ -277,9 +275,9 @@ The scoped offline evidence and the unresolved live gates are recorded in
 - redacted evidence record tied to the same build SHA as the deployment.
 
 For an exception, the product claim is “a fresh verified human approved this
-exact action for a separately human-backed, company-authorized delegate.”
-InvoiceGuard does not claim that World cryptographically joins the two humans.
-For straight-through payment, the claim is narrower: a currently human-backed,
+exact action for a separately human-backed, company-authorized delegate.” Remit
+does not claim that World cryptographically joins the two humans. For
+straight-through payment, the claim is narrower: a currently human-backed,
 company-authorized agent acted inside a separately governed standing mandate.
 
 ## First-party sources

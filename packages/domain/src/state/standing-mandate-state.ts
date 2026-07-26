@@ -1,4 +1,4 @@
-import { verifyStandingMandate } from '@invoiceguard/protocol/hashing';
+import { verifyStandingMandate } from '@remit/protocol/hashing';
 
 import type {
   StandingMandateAggregate,

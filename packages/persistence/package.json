@@ -1,5 +1,5 @@
 {
-  "name": "@invoiceguard/persistence",
+  "name": "@remit/persistence",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@invoiceguard/domain": "workspace:*",
+    "@remit/domain": "workspace:*",
     "postgres": "catalog:"
   },
   "devDependencies": {

@@ -10,10 +10,10 @@
  * can be compared line for line.
  */
 
-import type { ApprovalRequirement } from '@invoiceguard/domain';
-import { createAdapterVerifiedApprovalFact } from '@invoiceguard/domain';
-import { paymentActionCoreV1Schema } from '@invoiceguard/protocol';
-import type { PaymentActionCoreV1 } from '@invoiceguard/protocol';
+import type { ApprovalRequirement } from '@remit/domain';
+import { createAdapterVerifiedApprovalFact } from '@remit/domain';
+import { paymentActionCoreV1Schema } from '@remit/protocol';
+import type { PaymentActionCoreV1 } from '@remit/protocol';
 
 export interface DemoApprover {
   readonly label: string;
@@ -118,7 +118,7 @@ const POLICY_CONFIG = {
   executorAuthority: {
     adapterId: 'world-agentbook-adapter',
     agentBookRegistry: 'world-agentbook:eip155:480',
-    audience: 'invoiceguard:settlement',
+    audience: 'remit:settlement',
     grant: { digest: hex64('7'), id: 'payment-executor-grant', version: 1 },
     requiredRole: 'PAYMENT_EXECUTOR',
     requiredScope: 'payments:execute',

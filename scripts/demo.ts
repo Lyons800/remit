@@ -4,9 +4,9 @@
  * Nothing here re-implements the product. The policy route, the action digest
  * and the approval quorum all come from the shipped packages:
  *
- *   evaluatePaymentPolicy   @invoiceguard/protocol   the 990/10 split
- *   digestCanonicalValue    @invoiceguard/protocol   the action digest
- *   validateApprovalQuorum  @invoiceguard/domain     distinct-human quorum
+ *   evaluatePaymentPolicy   @remit/protocol   the 990/10 split
+ *   digestCanonicalValue    @remit/protocol   the action digest
+ *   validateApprovalQuorum  @remit/domain     distinct-human quorum
  *
  * Hedera and World are reached directly, because a gate should exercise the
  * dependency rather than our wrapper around it.
@@ -31,13 +31,13 @@ import { createSign, generateKeyPairSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { validateApprovalQuorum } from '@invoiceguard/domain';
-import { paymentActionCoreV1Schema } from '@invoiceguard/protocol';
+import { validateApprovalQuorum } from '@remit/domain';
+import { paymentActionCoreV1Schema } from '@remit/protocol';
 import {
   digestCanonicalValue,
   digestDomains,
   evaluatePaymentPolicy,
-} from '@invoiceguard/protocol/hashing';
+} from '@remit/protocol/hashing';
 import { createAgentBookVerifier } from '@worldcoin/agentkit';
 import { x402Facilitator } from '@x402/core/facilitator';
 import {
@@ -429,7 +429,7 @@ async function act3(digest: string): Promise<void> {
     extra: { actionDigest: digest, feePayer: FACILITATOR_ID },
   };
 
-  step(`GET ${C.dim(`https://invoiceguard.local/verify/${digest}`)}`);
+  step(`GET ${C.dim(`https://remit.local/verify/${digest}`)}`);
   step(
     `${C.yellow('402 Payment Required')}  ${C.dim('0.01 ℏ — the check is a product, not a favour')}`,
   );
@@ -573,8 +573,8 @@ async function act4(
 
   const created = await (
     await new TokenCreateTransaction()
-      .setTokenName('InvoiceGuard Audit Markers - NO VALUE')
-      .setTokenSymbol('IGPAY')
+      .setTokenName('Remit Audit Markers - NO VALUE')
+      .setTokenSymbol('RMPAY')
       .setTokenType(TokenType.NonFungibleUnique)
       .setSupplyType(TokenSupplyType.Finite)
       .setMaxSupply(1)
@@ -734,7 +734,7 @@ async function act5(
 
 async function main(): Promise<void> {
   console.log(
-    `\n${C.bold('InvoiceGuard')} — let agents pay the invoices, prove they paid the right thing`,
+    `\n${C.bold('Remit')} — let agents pay the invoices, prove they paid the right thing`,
   );
   if (OFFLINE)
     console.log(

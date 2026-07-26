@@ -1,8 +1,8 @@
 # Payment persistence
 
 This package implements the PostgreSQL security boundary tracked by issue
-[#20](https://github.com/Lyons800/invoiceguard/issues/20). It persists hydrated
-payment aggregates, organization-scoped replay identities, mandate reservations,
+[#20](https://github.com/Lyons800/remit/issues/20). It persists hydrated payment
+aggregates, organization-scoped replay identities, mandate reservations,
 settlement attempts and results, and recoverable outbox work.
 
 ## Boundary
@@ -51,8 +51,8 @@ The Compose file contains only fixed synthetic test credentials:
 
 ```sh
 docker compose -f compose.persistence-test.yaml up -d
-PERSISTENCE_TEST_DISPOSABLE_CONFIRM=invoiceguard-persistence-disposable-v1 \
-PERSISTENCE_TEST_DATABASE_URL=postgresql://invoiceguard_test:invoiceguard_test@127.0.0.1:55432/invoiceguard_test \
+PERSISTENCE_TEST_DISPOSABLE_CONFIRM=remit-persistence-disposable-v1 \
+PERSISTENCE_TEST_DATABASE_URL=postgresql://remit_test:remit_test@127.0.0.1:55432/remit_test \
   pnpm test:persistence
 docker compose -f compose.persistence-test.yaml down
 ```

@@ -3,7 +3,7 @@ import {
   hashPolicyDecision,
   verifyAuthorizationBundle,
   type AuthorizationBundleV1,
-} from '@invoiceguard/protocol/hashing';
+} from '@remit/protocol/hashing';
 
 import {
   parseAdapterVerifiedApprovalFact,

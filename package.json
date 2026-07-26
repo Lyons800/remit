@@ -1,5 +1,5 @@
 {
-  "name": "invoiceguard",
+  "name": "remit",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -30,9 +30,9 @@
   "devDependencies": {
     "@eslint/js": "catalog:",
     "@hiero-ledger/sdk": "2.85.0",
-    "@invoiceguard/domain": "workspace:*",
-    "@invoiceguard/persistence": "workspace:*",
-    "@invoiceguard/protocol": "workspace:*",
+    "@remit/domain": "workspace:*",
+    "@remit/persistence": "workspace:*",
+    "@remit/protocol": "workspace:*",
     "@types/node": "catalog:",
     "@worldcoin/agentkit": "0.2.0",
     "@x402/core": "2.19.0",
