@@ -20,7 +20,10 @@ export function CardHeader({
 }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn('flex flex-col gap-1 border-b border-border p-4', className)}
+      className={cn(
+        'flex flex-col gap-1 border-b border-border p-4',
+        className,
+      )}
       {...properties}
     />
   );
