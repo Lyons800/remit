@@ -151,15 +151,15 @@ seam that atomically appends `ABANDONED` history and installs the replacement
 claim; racing callers must leave exactly one winner.
 
 The adapter does not implement or duplicate the application persistence layer.
-`VerificationEffectIdentitySource` is the explicit prerequisite seam for the
-durable event identity that is not currently carried by
-`VerificationQuoteRequestEffect`; the adapter never invents one. The
-application-owned store must make claims and state advances durable before any
-submission.
+`VerificationQuoteRequestEffect` carries the canonical `eventId` and matching
+`idempotencyKey` issued by the domain transition. The adapter independently
+re-derives that event ID from the frozen action and evidence-policy digests, so
+a caller cannot substitute either field. The persistence layer validates and
+outboxes that exact effect identity before any submission.
 
-The later application/persistence merge must provide both the trusted event
-identity and compare-and-swap implementation of `takeoverExpiredClaim`. No
-domain effect field or caller authority was invented in this adapter branch.
+The application-owned store must durably implement the compare-and-swap
+`takeoverExpiredClaim` operation. No caller-provided identity seam remains in
+the adapter.
 
 This slice performs no network calls, signs no live transaction, creates no
 runtime environment variables, and provides no G4 or G5 evidence. Consensus

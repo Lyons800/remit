@@ -28,7 +28,6 @@ import {
   type FacilitatorPaymentAttestationBodyV2,
   type SupplierEvidenceQuoteV2,
   type TrustedEd25519Key,
-  type VerificationEffectIdentitySource,
   type VerificationPaymentRecoveryContextV2,
   type VerificationPaymentStore,
 } from '../src/index.js';
@@ -196,18 +195,10 @@ function recoveryFixture() {
     trustedDeploymentAuthority: deploymentAuthority.trusted,
     trustedFacilitator: facilitator.trusted,
   };
-  const identitySource: VerificationEffectIdentitySource = {
-    resolve: (candidate) => ({
-      actionDigest: candidate.actionDigest,
-      atomicGroupKey: candidate.atomicGroupKey,
-      eventId: `test-only-event:${candidate.actionDigest}`,
-    }),
-  };
   return {
     context,
     deploymentAuthority,
     facilitator,
-    identitySource,
   };
 }
 
@@ -274,7 +265,6 @@ async function preparedTransactionBytes(
 async function firstClaim(test: ReturnType<typeof recoveryFixture>) {
   const decision = await decideVerificationPaymentRecovery(
     test.context,
-    test.identitySource,
     null,
     recoveryInput(),
   );
@@ -360,12 +350,11 @@ const SIGNED_CONSENSUS_MUTATIONS: readonly (readonly [
   ['service', { serviceId: 'supplier-evidence-substitute' }],
 ];
 
-describe('verification payment recovery seam', () => {
-  it('requires trusted prerequisite identity and returns one claim', async () => {
+describe('verification payment recovery', () => {
+  it('uses the canonical durable effect identity for a new claim', async () => {
     const test = recoveryFixture();
     const decision = await decideVerificationPaymentRecovery(
       test.context,
-      test.identitySource,
       null,
       recoveryInput(),
     );
@@ -373,31 +362,54 @@ describe('verification payment recovery seam', () => {
     expect(decision).toMatchObject({
       claim: {
         actionDigest: test.context.effect.actionDigest,
-        eventId: `test-only-event:${test.context.effect.actionDigest}`,
+        eventId: test.context.effect.eventId,
         state: 'CLAIMED',
       },
       kind: 'CLAIM_NEW',
     });
   });
 
-  it('rejects identity and request substitution', async () => {
+  it('rejects a mismatched durable event idempotency key', async () => {
     const test = recoveryFixture();
-    const substituted: VerificationEffectIdentitySource = {
-      resolve: () => ({
-        actionDigest: 'f'.repeat(64),
-        atomicGroupKey: test.context.effect.atomicGroupKey,
-        eventId: 'wrong-event',
-      }),
-    };
 
     await expect(
       decideVerificationPaymentRecovery(
-        test.context,
-        substituted,
+        {
+          ...test.context,
+          effect: {
+            ...test.context.effect,
+            idempotencyKey: `invoiceguard:event:v1:${'f'.repeat(64)}`,
+          },
+        },
         null,
         recoveryInput(),
       ),
     ).rejects.toThrow(/does not bind/u);
+  });
+
+  it('rejects paired substitution of the durable event identity', async () => {
+    const test = recoveryFixture();
+    const substitutedEventId = `invoiceguard:event:v1:${'f'.repeat(64)}`;
+
+    await expect(
+      decideVerificationPaymentRecovery(
+        {
+          ...test.context,
+          effect: {
+            ...test.context.effect,
+            eventId: substitutedEventId,
+            idempotencyKey: substitutedEventId,
+          },
+        },
+        null,
+        recoveryInput(),
+      ),
+    ).rejects.toThrow(/does not bind/u);
+  });
+
+  it('rejects request substitution', async () => {
+    const test = recoveryFixture();
+
     await expect(
       decideVerificationPaymentRecovery(
         {
@@ -407,7 +419,6 @@ describe('verification payment recovery seam', () => {
             legalIdentityHash: 'f'.repeat(64),
           },
         },
-        test.identitySource,
         null,
         recoveryInput(),
       ),
@@ -425,7 +436,6 @@ describe('verification payment recovery seam', () => {
     );
     const decision = await decideVerificationPaymentRecovery(
       test.context,
-      test.identitySource,
       prepared,
       recoveryInput(),
     );
@@ -480,7 +490,6 @@ describe('verification payment recovery seam', () => {
     const consensus = await consensusAttempt(test);
     const decision = await decideVerificationPaymentRecovery(
       test.context,
-      test.identitySource,
       consensus,
       {
         ...recoveryInput(),
@@ -509,7 +518,6 @@ describe('verification payment recovery seam', () => {
     await expect(
       decideVerificationPaymentRecovery(
         test.context,
-        test.identitySource,
         {
           ...consensus,
           attestation: {
@@ -526,7 +534,6 @@ describe('verification payment recovery seam', () => {
           ...test.context,
           trustedFacilitator: wrongFacilitator.trusted,
         },
-        test.identitySource,
         consensus,
         recoveryInput(),
       ),
@@ -550,7 +557,6 @@ describe('verification payment recovery seam', () => {
       await expect(
         decideVerificationPaymentRecovery(
           test.context,
-          test.identitySource,
           {
             ...consensus,
             attestation: {
@@ -571,7 +577,6 @@ describe('verification payment recovery seam', () => {
     await expect(
       decideVerificationPaymentRecovery(
         test.context,
-        test.identitySource,
         {
           ...consensus,
           attestation: {
@@ -585,7 +590,6 @@ describe('verification payment recovery seam', () => {
     await expect(
       decideVerificationPaymentRecovery(
         test.context,
-        test.identitySource,
         {
           ...consensus,
           attestation: {
@@ -610,7 +614,6 @@ describe('verification payment recovery seam', () => {
       await expect(
         decideVerificationPaymentRecovery(
           test.context,
-          test.identitySource,
           withResignedConsensusBody(test, consensus, overrides),
           recoveryInput(),
         ),
@@ -632,7 +635,6 @@ describe('verification payment recovery seam', () => {
       await expect(
         decideVerificationPaymentRecovery(
           test.context,
-          test.identitySource,
           {
             ...consensus,
             ...persistedOverrides,
@@ -660,7 +662,6 @@ describe('verification payment recovery seam', () => {
     const freshContext = withQuote(test, freshQuote);
     const decision = await decideVerificationPaymentRecovery(
       freshContext,
-      test.identitySource,
       stale,
       {
         leaseExpiresAt: '2026-07-25T10:07:00.000Z',
@@ -725,16 +726,11 @@ describe('verification payment recovery seam', () => {
     const stale = await firstClaim(test);
 
     await expect(
-      decideVerificationPaymentRecovery(
-        test.context,
-        test.identitySource,
-        stale,
-        {
-          leaseExpiresAt: '2026-07-25T10:06:30.000Z',
-          now: '2026-07-25T10:06:10.000Z',
-          paymentAttemptId: stale.paymentAttemptId,
-        },
-      ),
+      decideVerificationPaymentRecovery(test.context, stale, {
+        leaseExpiresAt: '2026-07-25T10:06:30.000Z',
+        now: '2026-07-25T10:06:10.000Z',
+        paymentAttemptId: stale.paymentAttemptId,
+      }),
     ).rejects.toThrow(/fresh quote and attempt/u);
 
     const quoteIssuedAtLeaseExpiry = createSupplierEvidenceQuoteV2(
@@ -751,7 +747,6 @@ describe('verification payment recovery seam', () => {
     await expect(
       decideVerificationPaymentRecovery(
         withQuote(test, quoteIssuedAtLeaseExpiry),
-        test.identitySource,
         stale,
         {
           leaseExpiresAt: '2026-07-25T10:07:00.000Z',
@@ -766,16 +761,11 @@ describe('verification payment recovery seam', () => {
     const test = recoveryFixture();
 
     await expect(
-      decideVerificationPaymentRecovery(
-        test.context,
-        test.identitySource,
-        null,
-        {
-          ...recoveryInput(),
-          leaseExpiresAt: '2026-07-25T10:08:00.000Z',
-          now: '2026-07-25T10:07:30.000Z',
-        },
-      ),
+      decideVerificationPaymentRecovery(test.context, null, {
+        ...recoveryInput(),
+        leaseExpiresAt: '2026-07-25T10:08:00.000Z',
+        now: '2026-07-25T10:07:30.000Z',
+      }),
     ).rejects.toThrow(/outside its live window/u);
   });
 });

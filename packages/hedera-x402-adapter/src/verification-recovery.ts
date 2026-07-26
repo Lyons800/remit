@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 
-import type { VerificationQuoteRequestEffect } from '@invoiceguard/domain';
+import {
+  isPaymentDomainEventId,
+  type VerificationQuoteRequestEffect,
+} from '@invoiceguard/domain';
 
 import {
   decodeHederaTransaction,
@@ -31,18 +34,6 @@ export type VerificationEffectIdentity = Readonly<{
   atomicGroupKey: string;
   eventId: string;
 }>;
-
-/**
- * Temporary seam owned by the application/persistence integration.
- *
- * VerificationQuoteRequestEffect does not yet carry the durable event identity
- * required by the outbox contract. The adapter deliberately does not invent
- * one. A trusted caller must provide the identity issued by the prerequisite
- * persistence workstream.
- */
-export interface VerificationEffectIdentitySource {
-  resolve(effect: VerificationQuoteRequestEffect): VerificationEffectIdentity;
-}
 
 export type ClaimedVerificationPayment = Readonly<{
   actionDigest: string;
@@ -194,19 +185,20 @@ function assertCanonicalInstant(value: string, label: string): void {
 
 function assertIdentity(
   effect: VerificationQuoteRequestEffect,
-  source: VerificationEffectIdentitySource,
 ): VerificationEffectIdentity {
-  const identity = source.resolve(effect);
   if (
-    identity.actionDigest !== effect.actionDigest ||
-    identity.atomicGroupKey !== effect.atomicGroupKey ||
-    identity.eventId.length === 0
+    !isPaymentDomainEventId(effect.eventId) ||
+    effect.idempotencyKey !== effect.eventId
   ) {
     throw new TypeError(
-      'Verification effect identity does not bind the AP effect.',
+      'Verification effect identity does not bind the durable outbox event.',
     );
   }
-  return Object.freeze({ ...identity });
+  return Object.freeze({
+    actionDigest: effect.actionDigest,
+    atomicGroupKey: effect.atomicGroupKey,
+    eventId: effect.eventId,
+  });
 }
 
 function decodeCanonicalBase64(value: string): Buffer {
@@ -526,7 +518,6 @@ export function assertSamePreparedTransaction(
 
 export async function decideVerificationPaymentRecovery(
   context: VerificationPaymentRecoveryContextV2,
-  identitySource: VerificationEffectIdentitySource,
   stored: VerificationPaymentAttempt | null,
   input: Readonly<{
     leaseExpiresAt: string;
@@ -536,7 +527,7 @@ export async function decideVerificationPaymentRecovery(
 ): Promise<VerificationRecoveryDecision> {
   const { quote, request } = verifySupplierEvidenceBindingContextV2(context);
   const effect = context.effect;
-  const identity = assertIdentity(effect, identitySource);
+  const identity = assertIdentity(effect);
   assertCanonicalInstant(input.now, 'verification recovery time');
   assertCanonicalInstant(
     input.leaseExpiresAt,
