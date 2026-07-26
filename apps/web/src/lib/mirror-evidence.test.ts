@@ -96,7 +96,7 @@ function validPayloads(): MirrorEvidencePayloads {
       kyc_key: null,
       max_supply: '0',
       metadata_key: null,
-      name: 'InvoiceGuard Payables - NO VALUE',
+      name: 'Remit Payables - NO VALUE',
       pause_key: null,
       supply_key: {
         _type: 'ECDSA_SECP256K1',

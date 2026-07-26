@@ -15,8 +15,8 @@ Hedera proves two separate financial transitions:
 
 The check is released only after the first transaction reaches consensus. The
 second transaction is signed only after deterministic authorization and a
-successful HCS authorization precommit. InvoiceGuard never claims the two
-transactions are atomic.
+successful HCS authorization precommit. Remit never claims the two transactions
+are atomic.
 
 ## Dependency and process contract
 
@@ -61,7 +61,7 @@ request-digest memo. It is classified as a live protocol spike in
 
 A separate HTS NFT create/mint/burn spike also has public Mirror evidence. The
 NFT remained in treasury and had no monetary value. It is not coupled to the AP
-authorization or settlement state machine, so InvoiceGuard does not use it as
+authorization or settlement state machine, so Remit does not use it as
 authority, payment, consumption, or replay protection. Its exact evidence and
 limitations are recorded in
 [`docs/evidence`](../evidence/hts-payable-live-2026-07-26.md).

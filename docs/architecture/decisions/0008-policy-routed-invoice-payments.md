@@ -7,8 +7,8 @@
 
 Accounts payable is a volume problem. Requiring a fresh human decision for every
 known recurring invoice preserves control but fails to remove the operational
-work InvoiceGuard is meant to solve. Allowing a model or payment agent to decide
-which invoices need review would make extraction output an authority source.
+work Remit is meant to solve. Allowing a model or payment agent to decide which
+invoices need review would make extraction output an authority source.
 
 Invoice ingestion also introduces records that must not be confused: a source
 document, a normalized invoice, a supplier-master snapshot, and a payment action

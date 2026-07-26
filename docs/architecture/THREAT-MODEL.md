@@ -8,7 +8,7 @@ action-time human decisions, paid verification, Hedera Testnet settlement,
 reconciliation, and audit export.
 
 It does not claim to secure bank rails, custody providers, operating systems, or
-credentials outside the controlled InvoiceGuard gateway.
+credentials outside the controlled Remit gateway.
 
 ## Protected assets
 
@@ -50,9 +50,9 @@ credentials outside the controlled InvoiceGuard gateway.
 | T09 | A failed process silently changes to a fake/local adapter                   | Explicit adapter identity and live-mode startup assertion                        | Live mode refuses to boot with any fake                        |
 | T10 | Wrong financial chain or mainnet is selected                                | Pinned Hedera Testnet configuration and allowlist                                | Non-Testnet financial network causes startup failure           |
 | T11 | Treasury key is exposed to UI or identity service                           | Split keys and server-only worker                                                | Static/runtime secret scan plus browser bundle check           |
-| T12 | InvoiceGuard leaks a stable World identifier or company linkage             | Tenant/action HMACs, display tags, and redaction                                 | Logs/evidence contain no raw identifier                        |
+| T12 | Remit leaks a stable World identifier or company linkage                    | Tenant/action HMACs, display tags, and redaction                                 | Logs/evidence contain no raw identifier                        |
 | T13 | Expired or revoked company role remains counted                             | Time and revocation check at authorization and execution                         | Revoke after approval, before settlement: rejected             |
-| T14 | Direct credential path bypasses InvoiceGuard                                | Sole gateway owns constrained financial key                                      | Unauthorized direct-effect endpoint has no credential          |
+| T14 | Direct credential path bypasses Remit                                       | Sole gateway owns constrained financial key                                      | Unauthorized direct-effect endpoint has no credential          |
 | T15 | Audit trail overstates truth                                                | Claims manifest and typed evidence sources                                       | Export labels synthetic data and every trust boundary          |
 | T16 | Rejected 0G or public inference is reintroduced as a verifier               | No installed adapter and explicit admission ADR                                  | Unadmitted provider cannot enter live mode                     |
 | T17 | Model extraction is treated as authoritative payment data                   | Candidate-data boundary and deterministic corroboration                          | High-confidence output alone cannot auto-pay                   |

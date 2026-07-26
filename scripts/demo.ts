@@ -429,7 +429,7 @@ async function act3(digest: string): Promise<void> {
     extra: { actionDigest: digest, feePayer: FACILITATOR_ID },
   };
 
-  step(`GET ${C.dim(`https://invoiceguard.local/verify/${digest}`)}`);
+  step(`GET ${C.dim(`https://remit.local/verify/${digest}`)}`);
   step(
     `${C.yellow('402 Payment Required')}  ${C.dim('0.01 ℏ — the check is a product, not a favour')}`,
   );
@@ -573,7 +573,7 @@ async function act4(
 
   const created = await (
     await new TokenCreateTransaction()
-      .setTokenName('InvoiceGuard Audit Markers - NO VALUE')
+      .setTokenName('Remit Audit Markers - NO VALUE')
       .setTokenSymbol('IGPAY')
       .setTokenType(TokenType.NonFungibleUnique)
       .setSupplyType(TokenSupplyType.Finite)
@@ -734,7 +734,7 @@ async function act5(
 
 async function main(): Promise<void> {
   console.log(
-    `\n${C.bold('InvoiceGuard')} — let agents pay the invoices, prove they paid the right thing`,
+    `\n${C.bold('Remit')} — let agents pay the invoices, prove they paid the right thing`,
   );
   if (OFFLINE)
     console.log(

@@ -1,9 +1,9 @@
-# InvoiceGuard
+# Remit
 
 **Let agents pay the invoices. Prove they paid the right thing.**
 
 ETHGlobal Lisbon 2026 · Classic track ·
-[invoiceguard-hq.vercel.app](https://invoiceguard-hq.vercel.app)
+[remit-hq.vercel.app](https://remit-hq.vercel.app)
 
 ---
 
@@ -171,9 +171,9 @@ explicit for rehearsal. A rehearsal can never be mistaken for a proof.
 
 ## What we do not claim
 
-InvoiceGuard proves the integrity of the **authorisation path**. It does not
-prove that a supplier owns a bank account, that an invoice is genuine, that a
-person is honest, or that a verification service is truthful.
+Remit proves the integrity of the **authorisation path**. It does not prove that
+a supplier owns a bank account, that an invoice is genuine, that a person is
+honest, or that a verification service is truthful.
 
 - The HTS token is an **audit marker**, not payment authority. Its burn does
   **not** prevent replay — replay is refused by the approval layer via

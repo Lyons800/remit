@@ -1,7 +1,7 @@
 /**
  * The AgentBook gate.
  *
- * InvoiceGuard's central claim is that two agent wallets backed by one person
+ * Remit's central claim is that two agent wallets backed by one person
  * cannot fake maker-checker approval. That claim holds only if World AgentBook
  * actually resolves A1 and A2 to the same anonymous human.
  *

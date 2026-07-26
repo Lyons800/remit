@@ -1,11 +1,11 @@
 # 0G admission record
 
-Decision: **NO-GO** for the current InvoiceGuard submission.
+Decision: **NO-GO** for the current Remit submission.
 
 Last refreshed: 2026-07-25 22:42 WEST.
 
-InvoiceGuard selects World and Hedera only. No 0G SDK, credential, funded
-wallet, or runtime is installed.
+Remit selects World and Hedera only. No 0G SDK, credential, funded wallet, or
+runtime is installed.
 
 ## Why admission failed
 
@@ -42,7 +42,7 @@ The first-party `0g-pc-e2ee` repository has no tagged release. At commit
   `report_data`.
 
 This can provide transport confidentiality under assumptions, but it cannot
-support InvoiceGuard's required authenticated, verifiable provider result.
+support Remit's required authenticated, verifiable provider result.
 
 ### Released SDK does not prove exact content binding
 
@@ -50,9 +50,9 @@ support InvoiceGuard's required authenticated, verifiable provider result.
 verifies its signer, but its released response helper does not recompute and
 compare exact request and response commitments. The Router's
 `tee_verified: true` is a Router assertion rather than raw proof returned to
-InvoiceGuard.
+Remit.
 
-InvoiceGuard therefore cannot truthfully bind:
+Remit therefore cannot truthfully bind:
 
 ```text
 action digest
@@ -85,8 +85,8 @@ Every condition must pass:
 - the signer is matched against the onchain service record;
 - exact request and response commitments are independently verified;
 - provider/model fallback is disabled and pinned;
-- deterministic request/output schemas bind InvoiceGuard's existing action and
-  evidence digests;
+- deterministic request/output schemas bind Remit's existing action and evidence
+  digests;
 - mutation, replay, prompt-injection, outage, and no-downgrade tests pass;
 - any failure becomes `UNKNOWN` and moves no value;
 - ten live runs fit the demo latency budget; and

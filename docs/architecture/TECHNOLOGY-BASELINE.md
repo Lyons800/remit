@@ -63,7 +63,7 @@ and transaction surface does not need an ORM.
 Sponsor packages are not imported by the domain, protocol, persistence, or UI
 packages. The x402 and settlement SDK graphs live in separate processes and
 workspace packages. `@hashgraph/sdk` is not an alias for `@hiero-ledger/sdk`;
-InvoiceGuard uses only the latter and never passes SDK class instances between
+Remit uses only the latter and never passes SDK class instances between
 runtimes.
 
 ### Admitted World offline dependency set
@@ -122,8 +122,8 @@ release-age exception. The exception must pin an exact version and record the
 official source.
 
 At foundation install, Turborepo 2.10.7 and ESLint 10.8.0 were less than 24
-hours old and were rejected by policy. InvoiceGuard selected the newest mature
-releases instead of creating a convenience exception.
+hours old and were rejected by policy. Remit selected the newest mature releases
+instead of creating a convenience exception.
 
 The isolated Hedera x402 graph adds three narrowly reviewed admissions:
 

@@ -1,8 +1,8 @@
 # Repository consolidation review
 
 - Date: 2026-07-25
-- Scope: the InvoiceGuard monorepo, its three active feature worktrees, and the
-  earlier `callguard` prototype
+- Scope: the Remit monorepo, its three active feature worktrees, and the earlier
+  `callguard` prototype
 - Decision: keep this monorepo as the only submission repository
 
 The current repository should not be restarted. Its protocol, domain,

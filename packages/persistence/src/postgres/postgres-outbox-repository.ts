@@ -40,7 +40,7 @@ function requireEventId(value: string): void {
   if (!isPaymentDomainEventId(value)) {
     throw new PersistenceError(
       'OUTBOX_EVENT_CONFLICT',
-      'eventId must be a bounded InvoiceGuard payment event identity',
+      'eventId must be a bounded Remit payment event identity',
     );
   }
 }

@@ -2,9 +2,9 @@
 
 Checked: 2026-07-26.
 
-InvoiceGuard separates public network facts from operator notes and from
-end-to-end product evidence. A Testnet receipt is real evidence, but it proves
-only the transition visible in that receipt.
+Remit separates public network facts from operator notes and from end-to-end
+product evidence. A Testnet receipt is real evidence, but it proves only the
+transition visible in that receipt.
 
 | Evidence                                               | Publicly verified now                                                                  | Product status                                                                                 |
 | ------------------------------------------------------ | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |

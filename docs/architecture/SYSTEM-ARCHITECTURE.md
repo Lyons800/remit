@@ -25,8 +25,8 @@ their first-party integration spikes pass.
 ```mermaid
 flowchart LR
   Sources["Invoice API / upload / connector events"] --> API["Control API"]
-  Operator["Finance operator"] --> Web["InvoiceGuard desktop control room"]
-  Humans["Authorized humans"] --> Mobile["InvoiceGuard mobile approval"]
+  Operator["Finance operator"] --> Web["Remit desktop control room"]
+  Humans["Authorized humans"] --> Mobile["Remit mobile approval"]
   Mobile --> WorldHITL["World Human-in-the-Loop"]
   Delegates["Human-backed approval agents"] --> API
   Web --> API
@@ -145,7 +145,7 @@ The worker receives no long-lived secret and has no network egress. Until that
 sandbox is exercised, the live hackathon intake accepts only the controlled
 synthetic fixture set.
 
-InvoiceGuard keeps three records:
+Remit keeps three records:
 
 ### Source observation
 
@@ -283,13 +283,13 @@ createdAt
   obligation, and its source-currency amount.
 - `mappingPolicyHash` binds the deterministic source-to-settlement mapping. It
   is never inferred from a market price or model output.
-- Policy evaluation is non-circular. InvoiceGuard first hashes the action core
-  without `policyDecisionDigest`. The deterministic decision binds that core
-  digest, a manifest of the canonical policy configuration and normalized
-  inputs, route, verification mode, mandate ID and version, required roles and
-  quorums, reason codes, and validity. Bundle verification re-runs the evaluator
-  from those exact inputs. The final authorization intent embeds the decision
-  digest and is hashed again as `actionDigest`.
+- Policy evaluation is non-circular. Remit first hashes the action core without
+  `policyDecisionDigest`. The deterministic decision binds that core digest, a
+  manifest of the canonical policy configuration and normalized inputs, route,
+  verification mode, mandate ID and version, required roles and quorums, reason
+  codes, and validity. Bundle verification re-runs the evaluator from those
+  exact inputs. The final authorization intent embeds the decision digest and is
+  hashed again as `actionDigest`.
 - JSON is canonicalized using RFC 8785 before SHA-256 hashing.
 - The hash input includes the domain separator `invoiceguard:payment-action:v1`.
 - The full action remains immutable. A changed field creates a new action and
@@ -310,7 +310,7 @@ and a human-side proof.
 1. The control API stores the immutable action and issues a short-lived
    CAIP-122/SIWE challenge whose exact URI contains that action digest.
 2. An ECDSA/secp256k1 agent identity wallet signs the challenge.
-3. InvoiceGuard verifies the signature and adds strict checks for the exact URI,
+3. Remit verifies the signature and adds strict checks for the exact URI,
    `resources`, statement, chain, signature type, method, digest, and expiry.
 4. World AgentBook resolves the wallet to an anonymous human identifier. An
    independent World RPC health check distinguishes an outage from an
@@ -353,7 +353,7 @@ auditable.
 
 The released AgentKit validator is wrapped rather than trusted as the whole
 authorization check: it validates origin-level properties but does not itself
-enforce the exact path, resource, HTTP method, or InvoiceGuard action. World
+enforce the exact path, resource, HTTP method, or Remit action. World
 Human-in-the-Loop is also an additional fact, not a replacement for agent
 backing or company authority.
 
@@ -389,7 +389,7 @@ The worker accepts the response only after validating:
 The x402 facilitator's `/verify` result is not proof of payment. The verifier
 releases its signed response only after `/settle` produces a Hedera consensus
 receipt with `SUCCESS`. The x402 payment and the later company settlement are
-separate transactions; InvoiceGuard joins them with the action digest, service
+separate transactions; Remit joins them with the action digest, service
 attestation, HCS authorization precommit, and durable one-use state.
 
 The synthetic service reads a separately administered, signed supplier-change
@@ -586,8 +586,8 @@ aggregate reservations cannot exceed the mandate cap.
 
 ## Reliable external effects
 
-Database state and network effects cannot be one atomic transaction.
-InvoiceGuard uses a transactional outbox and recoverable saga:
+Database state and network effects cannot be one atomic transaction. Remit uses
+a transactional outbox and recoverable saga:
 
 1. lock the action row with optimistic version checking;
 2. freeze one attempt, including attempt ID, deterministic idempotency key,

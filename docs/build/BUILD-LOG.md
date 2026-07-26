@@ -24,8 +24,8 @@ remains the source of truth for exact changes.
 - Initialized an empty Classic-track repository during the event.
 - Created a provenance-only root commit on `main`.
 - Opened `chore/foundation` for all subsequent work.
-- Froze the InvoiceGuard product claim, non-claims, authority model, threat
-  model, sponsor contracts, and delivery gates.
+- Froze the Remit product claim, non-claims, authority model, threat model,
+  sponsor contracts, and delivery gates.
 - Bootstrapped a strict pnpm monorepo with seven deployables, seven internal
   packages, CI workflows, and explicit inactive-adapter shells.
 - Isolated untrusted invoice extraction in its own no-credential process

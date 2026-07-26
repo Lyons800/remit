@@ -17,7 +17,7 @@ const mono = Geist_Mono({ subsets: ['latin'], variable: '--font-mono' });
 export const metadata: Metadata = {
   description:
     'Agentic accounts-payable operations with exact-action controls.',
-  title: 'InvoiceGuard · Accounts payable control room',
+  title: 'Remit · Accounts payable control room',
 };
 
 type RootLayoutProperties = Readonly<{ children: ReactNode }>;

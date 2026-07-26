@@ -48,7 +48,7 @@ export interface ValidatedHederaEvidence {
     readonly experimentalDigest: '0x5ce4f3cab7795c09c884da51e693661810b11cc4a03d660c1a77a443d017de89';
     readonly mint: ValidatedTransaction;
     readonly nftMirrorUrl: string;
-    readonly name: 'InvoiceGuard Payables - NO VALUE';
+    readonly name: 'Remit Payables - NO VALUE';
     readonly serialNumber: 1;
     readonly supplyKeyPresent: true;
     readonly symbol: 'IGPAY';
@@ -309,7 +309,7 @@ function validateToken(payload: unknown): void {
   );
   expectEqual(
     string(token['name'], 'token.name'),
-    'InvoiceGuard Payables - NO VALUE',
+    'Remit Payables - NO VALUE',
     'token.name',
   );
   expectEqual(string(token['symbol'], 'token.symbol'), 'IGPAY', 'token.symbol');
@@ -533,7 +533,7 @@ export function validateHederaMirrorEvidence(
       experimentalDigest: expected.experimentalDigest,
       mint,
       nftMirrorUrl: nft.mirrorUrl,
-      name: 'InvoiceGuard Payables - NO VALUE',
+      name: 'Remit Payables - NO VALUE',
       serialNumber: 1,
       supplyKeyPresent: true,
       symbol: 'IGPAY',
