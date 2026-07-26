@@ -5,10 +5,7 @@ export const PAYMENT_DOMAIN_EVENT_ID_LENGTH =
   PAYMENT_DOMAIN_EVENT_ID_PREFIX.length + 64;
 
 export type PaymentDomainEventKind =
-  | 'EXECUTION_AUDIT'
-  | 'SETTLEMENT_RETRY'
-  | 'SETTLEMENT_SUBMISSION'
-  | 'VERIFICATION_QUOTE';
+  'EXECUTION_AUDIT' | 'SETTLEMENT_SUBMISSION' | 'VERIFICATION_QUOTE';
 
 export function derivePaymentDomainEventId(
   kind: PaymentDomainEventKind,
