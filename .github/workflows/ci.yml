@@ -21,7 +21,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:17-alpine@sha256:3430fe182f5065a6ea505c3d432d2c7fff18fbab954df8f277c1dbf4c70124af
         env:
           POSTGRES_DB: invoiceguard_test
           POSTGRES_PASSWORD: invoiceguard_test
@@ -33,6 +33,7 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
 
     env:
+      PERSISTENCE_TEST_DISPOSABLE_CONFIRM: invoiceguard-persistence-disposable-v1
       PERSISTENCE_TEST_DATABASE_URL: postgresql://invoiceguard_test:invoiceguard_test@127.0.0.1:5432/invoiceguard_test
 
     steps:

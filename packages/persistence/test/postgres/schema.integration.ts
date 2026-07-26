@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import postgres from 'postgres';
@@ -9,6 +10,7 @@ import {
   createAdapterVerifiedAuthorizationAudit,
   createAdapterVerifiedEvidenceResult,
   createAdapterVerifiedSettlementReceipt,
+  createAdapterVerifiedSettlementUncertainty,
   createAdapterVerifiedVerificationPayment,
   createAtomicSettlementConsumptionClaim,
   createFrozenSettlementAttempt,
@@ -16,6 +18,7 @@ import {
   createPaymentActionAggregate,
   createRequestingAgentExecutionFact,
   encodeCanonicalSignedTransactionBytes,
+  isPaymentDomainEventId,
   transitionPaymentAction,
   validateMandateContainment,
   type PaymentActionAggregate,
@@ -39,17 +42,35 @@ import {
 
 import {
   applyPaymentEffectContractsMigration,
+  createPaymentWriterAuthorizationBoundary,
   createPostgresOutboxRepository,
   createPostgresPaymentActionRepository,
   paymentPersistenceUniquenessContract,
+  type PaymentWriterAuthorization,
 } from '../../src/index.js';
+import {
+  DISPOSABLE_DATABASE_CONFIRMATION,
+  assertDisposableDatabaseUrl,
+  assertDisposableSchemaName,
+  assertLiveDisposableDatabase,
+  type LiveDatabaseIdentity,
+} from './disposable-database.js';
 
-const databaseUrl = process.env['PERSISTENCE_TEST_DATABASE_URL'];
-if (databaseUrl === undefined) {
-  throw new Error('PERSISTENCE_TEST_DATABASE_URL is required');
-}
-
+const databaseUrl = assertDisposableDatabaseUrl(
+  process.env['PERSISTENCE_TEST_DATABASE_URL'],
+  process.env['PERSISTENCE_TEST_DISPOSABLE_CONFIRM'],
+).toString();
+const testSchema = `invoiceguard_test_${process.pid}_${randomUUID().replaceAll(
+  '-',
+  '',
+)}`;
+assertDisposableSchemaName(testSchema);
+const adminSql = postgres(databaseUrl, {
+  max: 1,
+  onnotice: () => undefined,
+});
 const sql = postgres(databaseUrl, {
+  connection: { search_path: testSchema },
   max: 4,
   onnotice: () => undefined,
 });
@@ -59,14 +80,38 @@ const migrationUrl = new URL(
 );
 const migrationSql = await readFile(migrationUrl, 'utf8');
 
+async function verifyLiveDatabase(): Promise<void> {
+  const rows = await adminSql<readonly LiveDatabaseIdentity[]>`
+    SELECT
+      current_database() AS database_name,
+      current_user AS user_name,
+      inet_server_addr()::text AS server_address
+  `;
+  const identity = rows[0];
+  if (identity === undefined) {
+    throw new Error('connected PostgreSQL identity is unavailable');
+  }
+  assertLiveDisposableDatabase(identity);
+}
+
 beforeAll(async () => {
-  await sql.unsafe('DROP SCHEMA public CASCADE');
-  await sql.unsafe('CREATE SCHEMA public');
+  await verifyLiveDatabase();
+  await adminSql.unsafe(`CREATE SCHEMA "${testSchema}"`);
+  const schemaRows = await sql<readonly Readonly<{ schema_name: string }>[]>`
+    SELECT current_schema() AS schema_name
+  `;
+  if (schemaRows[0]?.schema_name !== testSchema) {
+    throw new Error('randomized PostgreSQL test schema is not active');
+  }
   await applyPaymentEffectContractsMigration(sql, migrationSql);
 });
 
 afterAll(async () => {
   await sql.end();
+  await verifyLiveDatabase();
+  assertDisposableSchemaName(testSchema);
+  await adminSql.unsafe(`DROP SCHEMA "${testSchema}" CASCADE`);
+  await adminSql.end();
 });
 
 describe('PostgreSQL payment-effect schema', () => {
@@ -82,15 +127,27 @@ describe('PostgreSQL payment-effect schema', () => {
     ).rejects.toThrow('migration checksum mismatch');
   });
 
-  it('physically reserves every declared uniqueness identity', async () => {
-    const rows = await sql<readonly Readonly<{ name: string }>[]>`
-      SELECT conname AS name
+  it('physically enforces declared identities, bindings, and predicates', async () => {
+    const rows = await sql<
+      readonly Readonly<{
+        definition: string;
+        kind: 'CONSTRAINT' | 'INDEX';
+        name: string;
+      }>[]
+    >`
+      SELECT
+        conname AS name,
+        pg_get_constraintdef(oid, true) AS definition,
+        'CONSTRAINT' AS kind
       FROM pg_constraint
-      WHERE connamespace = 'public'::regnamespace
-      UNION
-      SELECT indexname AS name
+      WHERE connamespace = current_schema()::regnamespace
+      UNION ALL
+      SELECT
+        indexname AS name,
+        indexdef AS definition,
+        'INDEX' AS kind
       FROM pg_indexes
-      WHERE schemaname = 'public'
+      WHERE schemaname = current_schema()
     `;
     const physicalNames = new Set(rows.map(({ name }) => name));
     const missing = paymentPersistenceUniquenessContract.uniqueKeys
@@ -98,10 +155,96 @@ describe('PostgreSQL payment-effect schema', () => {
       .filter((name) => !physicalNames.has(name));
 
     expect(missing).toEqual([]);
+    const definitions = new Map(
+      rows.map(({ definition, name }) => [
+        name,
+        definition.replaceAll(/\s+/gu, ' '),
+      ]),
+    );
+    expect(definitions.get('settlement_receipt_attempt_binding')).toContain(
+      'FOREIGN KEY (organization_id, attempt_id, action_digest, transaction_id, network_id, signed_bytes_hash, effect_digest, adapter_id)',
+    );
+    expect(definitions.get('settlement_consumption_receipt_binding')).toContain(
+      'FOREIGN KEY (organization_id, receipt_id, attempt_id, action_digest, transaction_id, network_id, signed_bytes_hash, effect_digest, attempt_adapter_id)',
+    );
+    expect(definitions.get('settlement_consumption_payment_binding')).toContain(
+      'FOREIGN KEY (organization_id, action_digest, obligation_id)',
+    );
+    expect(definitions.get('settlement_attempt_json_binding')).toContain(
+      "(attempt #>> '{transactionId}'::text[])",
+    );
+    expect(definitions.get('settlement_receipt_json_binding')).toContain(
+      "(receipt #>> '{signedBytesHash}'::text[])",
+    );
+    expect(definitions.get('settlement_consumption_json_binding')).toContain(
+      'to_jsonb(expected_aggregate_version)',
+    );
+    expect(definitions.get('outbox_payload_binding')).toContain(
+      "(payload #>> '{eventId}'::text[])",
+    );
+    expect(definitions.get('one_nonterminal_action_per_obligation')).toContain(
+      'WHERE',
+    );
+    expect(definitions.get('one_nonterminal_action_per_obligation')).toContain(
+      "'CANCELLED'::text",
+    );
+    expect(definitions.get('one_settlement_per_obligation')).toContain(
+      "WHERE (consumption_status = 'CONSUMED'::text)",
+    );
+    expect(definitions.get('outbox_events_claimable')).toContain('WHERE');
+    expect(definitions.get('outbox_events_claimable')).toContain(
+      "'LEASED'::text",
+    );
   });
 });
 
-const repository = createPostgresPaymentActionRepository(sql);
+const writerBoundary = createPaymentWriterAuthorizationBoundary([
+  {
+    permittedEffectAdapterIds: [
+      'hedera-consensus-adapter',
+      'hedera-settlement-adapter',
+      'postgres-atomic-payment-writer',
+      'supplier-verifier-v1',
+      'world-agentbook-adapter',
+    ],
+    permittedEffectTypes: [
+      'EXECUTION_AUDIT_REQUEST',
+      'MANDATE_RESERVATION_WRITE',
+      'SETTLEMENT_CONSUMPTION_WRITE',
+      'SETTLEMENT_RETRY_REQUEST',
+      'SETTLEMENT_SUBMISSION_REQUEST',
+      'VERIFICATION_QUOTE_REQUEST',
+    ],
+    permittedFactAdapterIds: [
+      'hedera-consensus-adapter',
+      'hedera-settlement-adapter',
+      'hedera-x402-adapter',
+      'postgres-atomic-payment-writer',
+      'verification-service-adapter',
+      'world-agentbook-adapter',
+      'world-approval-adapter',
+    ],
+    processId: 'persistence-contract-test-writer',
+  },
+]);
+const writerAuthorization = writerBoundary.issue(
+  'persistence-contract-test-writer',
+);
+const rawRepository = createPostgresPaymentActionRepository(
+  sql,
+  writerBoundary.repositoryTrust,
+);
+const repository = Object.freeze({
+  applyTransition(transition: PaymentActionTransition) {
+    return rawRepository.applyTransition(transition, writerAuthorization);
+  },
+  create(aggregate: PaymentActionAggregate) {
+    return rawRepository.create(aggregate);
+  },
+  findById(organizationId: string, actionId: string) {
+    return rawRepository.findById(organizationId, actionId);
+  },
+});
 const outbox = createPostgresOutboxRepository(sql);
 
 function initialAggregate(): PaymentActionAggregate {
@@ -221,10 +364,13 @@ function emptyMandateLedger() {
   return ledger.value;
 }
 
-function frozenAttempt(createdAt: string): FrozenSettlementAttempt {
+function frozenAttempt(
+  createdAt: string,
+  attemptId = 'settlement-attempt-1',
+): FrozenSettlementAttempt {
   return createFrozenSettlementAttempt(authorization, {
     adapterId: 'hedera-settlement-adapter',
-    attemptId: 'settlement-attempt-1',
+    attemptId,
     createdAt,
     expiresAt: '2026-07-25T11:00:00.000Z',
     signedTransactionBytes: encodeCanonicalSignedTransactionBytes(
@@ -345,7 +491,171 @@ async function seedQuoteEvent(): Promise<PaymentActionTransition> {
   return quoted;
 }
 
+async function seedMandateSettlementSubmission(
+  attemptId: string,
+): Promise<PaymentActionTransition> {
+  let aggregate = mandateAggregate();
+  await repository.create(aggregate);
+  for (const [event, now] of [
+    [{ type: 'CLASSIFY' }, '2026-07-25T10:00:01.000Z'],
+    [{ type: 'SATISFY_EVIDENCE_NOT_REQUIRED' }, '2026-07-25T10:00:02.000Z'],
+  ] as const) {
+    const step = applyEvent(aggregate, event, now);
+    await repository.applyTransition(step);
+    aggregate = step.aggregate;
+  }
+  let step = applyEvent(
+    aggregate,
+    {
+      mandate: activeMandateAggregate,
+      requestingAgent: requestingAgent(
+        authorization,
+        '2026-07-25T10:00:03.000Z',
+      ),
+      reservationLedger: emptyMandateLedger(),
+      type: 'AUTHORIZE_MANDATE',
+    },
+    '2026-07-25T10:00:03.000Z',
+  );
+  await repository.applyTransition(step);
+  aggregate = step.aggregate;
+  const basis = aggregate.authorizationBasis;
+  if (basis === null || basis.kind !== 'MANDATE') {
+    throw new Error('mandate settlement seed requires authorization');
+  }
+  const auditAuthority = requestingAgent(
+    authorization,
+    '2026-07-25T10:00:04.000Z',
+  );
+  const authorizationAudit = createAdapterVerifiedAuthorizationAudit(
+    authorization,
+    basis.basisDigest,
+    auditAuthority,
+    {
+      adapterId: 'hedera-consensus-adapter',
+      auditId: 'max-event-authorization-audit',
+      committedAt: '2026-07-25T10:00:04.000Z',
+      networkId: 'hedera:296',
+      topicId: '0.0.9000',
+      transactionId: '0.0.1000@1753437604.000000099',
+      writerAccountId: '0.0.1000',
+      writerId: 'authorization-audit-writer',
+      writerKeyId: 'hedera-audit-key-1',
+    },
+  );
+  step = applyEvent(
+    aggregate,
+    {
+      authorizationAudit,
+      requestingAgent: auditAuthority,
+      type: 'COMMIT_AUDIT',
+    },
+    '2026-07-25T10:00:04.000Z',
+  );
+  await repository.applyTransition(step);
+  aggregate = step.aggregate;
+  const queued = applyEvent(
+    aggregate,
+    {
+      approvals: null,
+      attempt: frozenAttempt('2026-07-25T10:00:05.000Z', attemptId),
+      mandate: activeMandateAggregate,
+      requestingAgent: requestingAgent(
+        authorization,
+        '2026-07-25T10:00:05.000Z',
+      ),
+      reservationLedger: basis.reservedLedger,
+      type: 'QUEUE_SETTLEMENT',
+    },
+    '2026-07-25T10:00:05.000Z',
+  );
+  await repository.applyTransition(queued);
+  return queued;
+}
+
 describe('PostgreSQL payment repository', () => {
+  it('rejects caller assertions and capabilities from another writer boundary', async () => {
+    await resetPaymentData();
+    const aggregate = initialAggregate();
+    await repository.create(aggregate);
+    const classified = applyEvent(
+      aggregate,
+      { type: 'CLASSIFY' },
+      '2026-07-25T10:00:01.000Z',
+    );
+    const forged = {} as PaymentWriterAuthorization;
+    await expect(
+      rawRepository.applyTransition(classified, forged),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED_WRITER' });
+
+    const otherBoundary = createPaymentWriterAuthorizationBoundary([
+      {
+        permittedEffectAdapterIds: [],
+        permittedEffectTypes: [],
+        permittedFactAdapterIds: [],
+        processId: 'other-process',
+      },
+    ]);
+    await expect(
+      rawRepository.applyTransition(
+        classified,
+        otherBoundary.issue('other-process'),
+      ),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED_WRITER' });
+    await expect(repository.applyTransition(classified)).resolves.toBe(
+      'APPLIED',
+    );
+    const quoted = applyEvent(
+      classified.aggregate,
+      { type: 'QUOTE_VERIFICATION' },
+      '2026-07-25T10:00:02.000Z',
+    );
+    const restrictedBoundary = createPaymentWriterAuthorizationBoundary([
+      {
+        permittedEffectAdapterIds: [],
+        permittedEffectTypes: ['VERIFICATION_QUOTE_REQUEST'],
+        permittedFactAdapterIds: [],
+        processId: 'restricted-process',
+      },
+    ]);
+    const restrictedRepository = createPostgresPaymentActionRepository(
+      sql,
+      restrictedBoundary.repositoryTrust,
+    );
+    await expect(
+      restrictedRepository.applyTransition(
+        quoted,
+        restrictedBoundary.issue('restricted-process'),
+      ),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED_WRITER' });
+    await repository.applyTransition(quoted);
+    const payment = createAdapterVerifiedVerificationPayment(
+      humanAuthorization,
+      {
+        adapterId: 'hedera-x402-adapter',
+        paidAt: '2026-07-25T10:00:03.000Z',
+        paymentAttemptId: 'writer-boundary-payment-attempt',
+        paymentNetworkId: 'hedera:296',
+        paymentTransactionId: '0.0.1000@1753437603.000000099',
+        quoteDigest: '8'.repeat(64),
+        quoteId: 'writer-boundary-quote',
+        servicePaymentId: 'writer-boundary-payment',
+        serviceRequestDigest: '9'.repeat(64),
+      },
+    );
+    const paid = applyEvent(
+      quoted.aggregate,
+      { payment, type: 'RECORD_VERIFICATION_PAYMENT' },
+      '2026-07-25T10:00:03.000Z',
+    );
+    await expect(
+      restrictedRepository.applyTransition(
+        paid,
+        restrictedBoundary.issue('restricted-process'),
+      ),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED_WRITER' });
+  });
+
   it('admits, hydrates, and idempotently replays an exact action', async () => {
     await resetPaymentData();
     const aggregate = initialAggregate();
@@ -375,9 +685,27 @@ describe('PostgreSQL payment repository', () => {
       { type: 'QUOTE_VERIFICATION' },
       '2026-07-25T10:00:02.000Z',
     );
+    const quoteEffect = quoted.effects[0];
+    if (
+      quoteEffect === undefined ||
+      quoteEffect.type !== 'VERIFICATION_QUOTE_REQUEST'
+    ) {
+      throw new Error('quote transition must carry its request');
+    }
 
     await expect(
       repository.applyTransition({ ...quoted, effects: [] }),
+    ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
+    await expect(
+      repository.applyTransition({
+        ...quoted,
+        effects: [
+          {
+            ...quoteEffect,
+            serviceKeyId: 'substituted-but-same-effect-type',
+          },
+        ],
+      }),
     ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
     await expect(
       repository.findById(
@@ -390,6 +718,17 @@ describe('PostgreSQL payment repository', () => {
     await expect(repository.applyTransition(quoted)).resolves.toBe(
       'ALREADY_APPLIED',
     );
+    await expect(
+      repository.applyTransition({
+        ...quoted,
+        effects: [
+          {
+            ...quoteEffect,
+            serviceKeyId: 'substituted-after-durable-apply',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
 
     const events = await sql<
       readonly Readonly<{
@@ -445,6 +784,84 @@ describe('PostgreSQL payment repository', () => {
     expect(rows).toEqual([{ aggregate_version: 2, row_count: '1' }]);
   });
 
+  it('re-enqueues an exact retry under the original logical outbox identity', async () => {
+    await resetPaymentData();
+    const queued = await seedMandateSettlementSubmission(
+      'settlement-retry-attempt',
+    );
+    const attempt = queued.aggregate.settlementAttempt;
+    const basis = queued.aggregate.authorizationBasis;
+    if (attempt === null || basis === null || basis.kind !== 'MANDATE') {
+      throw new Error('retry seed must retain its attempt and mandate basis');
+    }
+    const uncertainty = createAdapterVerifiedSettlementUncertainty(
+      authorization,
+      attempt,
+      {
+        adapterId: 'hedera-settlement-adapter',
+        observedAt: '2026-07-25T10:00:06.000Z',
+        reason: 'SUBMISSION_RESULT_UNKNOWN',
+        uncertaintyId: 'settlement-retry-uncertainty',
+      },
+    );
+    const recovery = applyEvent(
+      queued.aggregate,
+      { type: 'START_SETTLEMENT_RECOVERY', uncertainty },
+      '2026-07-25T10:00:06.000Z',
+    );
+    await repository.applyTransition(recovery);
+    const retried = applyEvent(
+      recovery.aggregate,
+      {
+        approvals: null,
+        mandate: activeMandateAggregate,
+        requestingAgent: requestingAgent(
+          authorization,
+          '2026-07-25T10:00:07.000Z',
+        ),
+        reservationLedger: basis.reservedLedger,
+        type: 'RETRY_SAME_TRANSACTION',
+      },
+      '2026-07-25T10:00:07.000Z',
+    );
+    const initialEffect = queued.effects[0];
+    const retryEffect = retried.effects[0];
+    if (
+      initialEffect === undefined ||
+      retryEffect === undefined ||
+      !('eventId' in initialEffect) ||
+      !('eventId' in retryEffect)
+    ) {
+      throw new Error('settlement requests must carry event identities');
+    }
+    expect(retryEffect.eventId).toBe(initialEffect.eventId);
+    await repository.applyTransition(retried);
+
+    const rows = await sql<
+      readonly Readonly<{
+        effect_type: string;
+        event_id: string;
+        first_atomic_group_key: string;
+        last_atomic_group_key: string;
+      }>[]
+    >`
+      SELECT
+        event_id,
+        effect_type,
+        first_atomic_group_key,
+        last_atomic_group_key
+      FROM outbox_events
+    `;
+    expect(rows).toEqual([
+      {
+        effect_type: 'SETTLEMENT_RETRY_REQUEST',
+        event_id: initialEffect.eventId,
+        first_atomic_group_key: queued.atomicGroupKey,
+        last_atomic_group_key: retried.atomicGroupKey,
+      },
+    ]);
+  });
+
   it('locks and persists the mandate reservation with authorization', async () => {
     await resetPaymentData();
     const aggregate = mandateAggregate();
@@ -474,7 +891,28 @@ describe('PostgreSQL payment repository', () => {
       },
       '2026-07-25T10:00:03.000Z',
     );
+    const reservationEffect = authorized.effects[0];
+    if (
+      reservationEffect === undefined ||
+      reservationEffect.type !== 'MANDATE_RESERVATION_WRITE'
+    ) {
+      throw new Error('mandate authorization must reserve capacity');
+    }
 
+    await expect(
+      repository.applyTransition({
+        ...authorized,
+        effects: [
+          {
+            ...reservationEffect,
+            claim: {
+              ...reservationEffect.claim,
+              settlementAmountAtoms: '1',
+            },
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
     await expect(repository.applyTransition(authorized)).resolves.toBe(
       'APPLIED',
     );
@@ -622,7 +1060,21 @@ describe('PostgreSQL payment repository', () => {
       },
       '2026-07-25T10:00:06.000Z',
     );
+    const substitutedAuditEffects = settled.effects.map((effect) =>
+      effect.type === 'EXECUTION_AUDIT_REQUEST'
+        ? {
+            ...effect,
+            receiptId: 'substituted-but-same-effect-type',
+          }
+        : effect,
+    );
 
+    await expect(
+      repository.applyTransition({
+        ...settled,
+        effects: substitutedAuditEffects,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
     await expect(repository.applyTransition(settled)).resolves.toBe('APPLIED');
     await expect(repository.applyTransition(settled)).resolves.toBe(
       'ALREADY_APPLIED',
@@ -832,6 +1284,42 @@ describe('PostgreSQL payment repository', () => {
 });
 
 describe('PostgreSQL outbox repository', () => {
+  it('claims, releases, and acknowledges an event derived from a maximum-length input', async () => {
+    await resetPaymentData();
+    const queued = await seedMandateSettlementSubmission('a'.repeat(512));
+    const effect = queued.effects[0];
+    if (effect === undefined || !('eventId' in effect)) {
+      throw new Error('settlement submission must carry an event identity');
+    }
+    expect(isPaymentDomainEventId(effect.eventId)).toBe(true);
+    expect(effect.eventId.length).toBeLessThanOrEqual(256);
+
+    const first = await outbox.claimNext('max-input-worker-a', 30);
+    if (first === null) {
+      throw new Error('maximum-input event must be claimable');
+    }
+    expect(first.eventId).toBe(effect.eventId);
+    await outbox.release(
+      first.organizationId,
+      first.eventId,
+      first.leaseToken,
+      0,
+    );
+    const second = await outbox.claimNext('max-input-worker-b', 30);
+    if (second === null) {
+      throw new Error('released maximum-input event must be reclaimable');
+    }
+    expect(second.eventId).toBe(effect.eventId);
+    await outbox.acknowledge(
+      second.organizationId,
+      second.eventId,
+      second.leaseToken,
+    );
+    await expect(
+      outbox.claimNext('max-input-worker-c', 30),
+    ).resolves.toBeNull();
+  });
+
   it('leases one event to only one competing worker', async () => {
     await resetPaymentData();
     const quoted = await seedQuoteEvent();

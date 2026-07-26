@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:3430fe182f5065a6ea505c3d432d2c7fff18fbab954df8f277c1dbf4c70124af
     environment:
       POSTGRES_DB: invoiceguard_test
       POSTGRES_PASSWORD: invoiceguard_test
