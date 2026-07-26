@@ -143,18 +143,54 @@ Three native Hedera services, matching the track's own examples:
 
 That is token **creation**, **configuration**, and **two lifecycle operations**.
 
+### Experimental dual-token settlement
+
+The isolated `codex/hedera-dual-token-settlement` branch also contains an
+ambitious Testnet mechanism proof:
+
+- an HTS KYC-flag-gated Payable NFT (`RMPAY`) is issued to the action's
+  preconfigured synthetic claimant;
+- an HTS KYC-flag-gated, frozen Control NFT (`RMCTL`) is a one-use mechanics
+  artifact;
+- a sealed, no-value synthetic-EUR token (`RMEURT`) is the explicitly mapped
+  settlement asset; and
+- one HIP-551 batch unfreezes the Control holder, transfers the exact settlement
+  atoms while returning both NFTs, burns both NFTs, and publishes an HCS
+  settlement commitment.
+
+Every inner transaction has its normal role signatures. A canonical intent guard
+binds the action, exact holder-beneficiary, amount, asset, audit topic, both
+serials, outer and ordered inner IDs, batch key, size and validity window. A
+separate pinned-protobuf verifier then decodes every outer node candidate and
+requires the exact five bodies, transfers, burns, HCS message, IDs, duration,
+batch key and cryptographically valid signer sets with no allowances or extras.
+An HCS `mechanics-execution.v2` event references the runner-observed receipt
+after consensus because an in-batch message cannot truthfully contain a receipt
+that does not yet exist.
+
+The standalone runner uses a visibly labelled `authorization-fixture.v2` event
+and a `MECHANICS_FIXTURE` Control state to exercise network mechanics. Every HCS
+event repeats that authority mode. It does **not** claim fresh World/x402
+authority for that synthetic action, production readiness, legal KYC, legal
+assignment of a receivable, or replay protection. See
+[ADR 0011](docs/architecture/decisions/0011-experimental-dual-token-atomic-settlement.md).
+
 ## Proven live
 
 Executed against real networks and verified by reading it back from Mirror Node,
 not from our own call:
 
-| Claim                                | Evidence                                                                                                           |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| Agent pays for verification via x402 | [`0.0.9758618-1785026905-665197442`](https://hashscan.io/testnet/transaction/0.0.9758618-1785026905-665197442)     |
-| Three-party economics                | agent `−1,000,000` tinybar · service `+1,000,000` · facilitator `−282,113` fee                                     |
-| Sealed marker collection             | [`0.0.9762937`](https://testnet.mirrornode.hedera.com/api/v1/tokens/0.0.9762937): finite supply 1; supply key only |
-| Marker carries the exact digest      | [Mirror NFT record](https://testnet.mirrornode.hedera.com/api/v1/tokens/0.0.9762937/nfts/1) matches byte-for-byte  |
-| Marker lifecycle burn                | `deleted=true`, `total_supply=0`, `max_supply=1`                                                                   |
+| Claim                                      | Evidence                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent pays for verification via x402       | [`0.0.9758618-1785026905-665197442`](https://hashscan.io/testnet/transaction/0.0.9758618-1785026905-665197442)                                                                                                                                                                              |
+| Three-party economics                      | agent `−1,000,000` tinybar · service `+1,000,000` · facilitator `−282,113` fee                                                                                                                                                                                                              |
+| Sealed marker collection                   | [`0.0.9762937`](https://testnet.mirrornode.hedera.com/api/v1/tokens/0.0.9762937): finite supply 1; supply key only                                                                                                                                                                          |
+| Marker carries the exact digest            | [Mirror NFT record](https://testnet.mirrornode.hedera.com/api/v1/tokens/0.0.9762937/nfts/1) matches byte-for-byte                                                                                                                                                                           |
+| Marker lifecycle burn                      | `deleted=true`, `total_supply=0`, `max_supply=1`                                                                                                                                                                                                                                            |
+| Sealed synthetic settlement asset          | [`RMEURT 0.0.9764805`](https://testnet.mirrornode.hedera.com/api/v1/tokens/0.0.9764805): 48,000 atoms, finite supply, no management keys or custom fees                                                                                                                                     |
+| Strict HIP-551 rollback proof              | [`INNER_TRANSACTION_FAILED`](https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.9708355-1785051992-337954908); three children are `REVERTED_SUCCESS`                                                                                                                             |
+| Wire-admitted dual-token atomic settlement | [successful batch](https://testnet.mirrornode.hedera.com/api/v1/transactions/0.0.9708355-1785052000-077747014); [`RMPAY`](https://testnet.mirrornode.hedera.com/api/v1/tokens/0.0.9764807) and [`RMCTL`](https://testnet.mirrornode.hedera.com/api/v1/tokens/0.0.9764808) supplies are zero |
+| Atomic and receipt-referencing HCS audit   | [topic `0.0.9764806`](https://testnet.mirrornode.hedera.com/api/v1/topics/0.0.9764806/messages) sequences the labelled fixture, commitment and execution event                                                                                                                              |
 
 More in [`docs/evidence/`](docs/evidence/).
 
@@ -163,10 +199,12 @@ More in [`docs/evidence/`](docs/evidence/).
 ```bash
 corepack enable
 pnpm install --frozen-lockfile
-pnpm test                 # 363 tests
+pnpm test                 # 506 tests
 
 pnpm demo -- --offline    # the full narrative, no network
 pnpm demo                 # the full narrative, live on Hedera testnet
+pnpm demo:dual-token -- --offline
+pnpm demo:dual-token      # experimental Testnet mechanics proof
 pnpm gate:agentbook       # does one human's two agents collapse to one id?
 ```
 
@@ -187,6 +225,9 @@ honest, or that a verification service is truthful.
 - The marker is not the legal or fiscal invoice and does not assign a
   receivable. Its metadata contains no invoice fields. See
   [ADR 0010](docs/architecture/decisions/0010-operational-payable-marker.md).
+- The experimental Payable and Control NFTs add holder-consented lifecycle
+  constraints, but neither NFT is company authority or a replay control. The
+  Payable holder must independently equal the immutable action beneficiary.
 - Act 1's transfer is a direct HBAR payment;
   `packages/hedera-settlement-adapter` is not implemented.
 - The demo speaks x402 directly rather than through

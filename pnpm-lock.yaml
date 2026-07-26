@@ -73,6 +73,9 @@ importers:
       '@eslint/js':
         specifier: 'catalog:'
         version: 10.0.1(eslint@10.7.0(jiti@2.7.0)(supports-color@8.1.1))
+      '@hiero-ledger/proto':
+        specifier: 2.31.0
+        version: 2.31.0(ansi-regex@6.2.2)(ansi-styles@6.2.3)(debug@4.4.1(supports-color@8.1.1))(protobufjs@8.6.6)(strip-ansi@7.1.2)
       '@hiero-ledger/sdk':
         specifier: 2.85.0
         version: 2.85.0(bn.js@5.2.3)(react-native@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.8)(supports-color@8.1.1))(supports-color@8.1.1)
