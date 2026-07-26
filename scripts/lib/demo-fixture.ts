@@ -90,9 +90,17 @@ function action(
   });
 }
 
+/**
+ * Nonces are exported because an approval binds to the action's nonce, not to
+ * a constant. Binding approvals to the wrong nonce would let an approval of
+ * one action look valid against another.
+ */
+export const ROUTINE_NONCE = '0123456789abcdef0123456789abcdef';
+export const CHANGED_NONCE = 'fedcba9876543210fedcba9876543210';
+
 /** INV-2026-0911 — known supplier, unchanged account, EUR 480.00. */
 export const routineAction = (): PaymentActionCoreV1 =>
-  action(KNOWN_ACCOUNT, '48000', '0123456789abcdef0123456789abcdef');
+  action(KNOWN_ACCOUNT, '48000', ROUTINE_NONCE);
 
 /** INV-2026-0912 — same supplier, new account, EUR 25,000.00. */
 export const changedBeneficiaryAction = (
@@ -101,7 +109,7 @@ export const changedBeneficiaryAction = (
   action(
     account.startsWith('hedera:') ? account : `hedera:296:${account}`,
     '2500000',
-    'fedcba9876543210fedcba9876543210',
+    CHANGED_NONCE,
   );
 
 /* ── policy ──────────────────────────────────────────────────────────── */
@@ -225,13 +233,16 @@ export const DEMO_NOW = NOW;
  * here — an eighth field is rejected as a malformed binding rather than
  * ignored.
  */
-export function actionBinding(actionDigest: string): DemoBinding {
+export function actionBinding(
+  actionDigest: string,
+  nonce: string = CHANGED_NONCE,
+): DemoBinding {
   return {
     actionDigest,
     actionId: IDS.action,
     invoiceRevisionId: IDS.invoiceRevision,
     minimumVerifiedAt: CREATED_AT,
-    nonce: '0123456789abcdef0123456789abcdef',
+    nonce,
     obligationId: IDS.obligation,
     organizationId: IDS.organization,
   };
@@ -247,6 +258,7 @@ export function approvalFact(
   approver: DemoApprover,
   actionDigest: string,
   slot: number,
+  nonce: string = CHANGED_NONCE,
 ): unknown {
   const s = String(slot);
   return createAdapterVerifiedApprovalFact({
@@ -268,7 +280,7 @@ export function approvalFact(
     humanDecisionStatus: 'VERIFIED',
     invoiceRevisionId: IDS.invoiceRevision,
     kind: 'APPROVAL_FACT',
-    nonce: '0123456789abcdef0123456789abcdef',
+    nonce,
     obligationId: IDS.obligation,
     organizationId: IDS.organization,
     role: approver.role,

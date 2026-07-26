@@ -1,5 +1,5 @@
 /**
- * The demo — the whole product in one continuous, live run.
+ * The demo — the authorization path, end to end, against live networks.
  *
  * Nothing here re-implements the product. The policy route, the action digest
  * and the approval quorum all come from the shipped packages:
@@ -10,6 +10,17 @@
  *
  * Hedera and World are reached directly, because a gate should exercise the
  * dependency rather than our wrapper around it.
+ *
+ * What this deliberately does NOT claim:
+ *
+ *   - Act 1's transfer is a direct HBAR payment, not an integrated settlement.
+ *     `packages/hedera-settlement-adapter` is an empty stub on main.
+ *   - Act 3 speaks x402 directly rather than through
+ *     `packages/hedera-x402-adapter`, so the result is protocol-real but not
+ *     adapter-bound.
+ *   - Act 4's HTS token is an audit marker. It is NOT payment authority and
+ *     its burn does NOT prevent replay — see docs/evidence/README.md. Replay
+ *     is refused by the approval layer in Act 5.
  *
  *   pnpm demo                     full live run
  *   pnpm demo -- --simulate-humans   rehearse before AgentBook registration
@@ -244,7 +255,13 @@ async function act1(client: Client | null): Promise<void> {
       throw new Error(`transfer ${receipt.status.toString()}`);
     }
     pass(
-      `agent settled it unattended — ${C.bold('no human was asked anything')}`,
+      `agent paid the supplier on Hedera — ${C.bold('no human was asked anything')}`,
+    );
+    step(
+      `     ${C.dim('a direct HBAR transfer standing in for the EUR payment;')}`,
+    );
+    step(
+      `     ${C.dim('the settlement adapter is not implemented on main yet')}`,
     );
     link(hashscan(tx.transactionId.toString()));
   } else {
@@ -501,11 +518,17 @@ async function act4(
   client: Client | null,
   digest: string,
 ): Promise<Payable | null> {
-  act(4, 'THE PAYABLE IS A TOKEN — minted, then burned');
+  act(4, 'AN AUDIT MARKER ON THE LEDGER — minted, then burned');
 
   step(`metadata       ${C.cyan(digest)}`);
   step(
-    `               ${C.dim("the token's on-ledger metadata IS the action digest")}`,
+    `               ${C.dim('the action digest, published where anyone can read it')}`,
+  );
+  step(
+    `               ${C.yellow('this marker is evidence, not payment authority')}`,
+  );
+  step(
+    `               ${C.dim('authority came from the quorum in Act 2 — see docs/evidence/README.md')}`,
   );
   await beat();
 
@@ -516,7 +539,7 @@ async function act4(
 
   const created = await (
     await new TokenCreateTransaction()
-      .setTokenName('InvoiceGuard Payables - NO VALUE')
+      .setTokenName('InvoiceGuard Audit Markers - NO VALUE')
       .setTokenSymbol('IGPAY')
       .setTokenType(TokenType.NonFungibleUnique)
       .setSupplyType(TokenSupplyType.Finite)
@@ -536,7 +559,7 @@ async function act4(
     .addMetadata(Buffer.from(digest, 'ascii'))
     .execute(client);
   const serial = Number((await minted.getReceipt(client)).serials[0]);
-  pass(`payable minted — serial ${String(serial)}`);
+  pass(`marker minted — serial ${String(serial)}`);
   link(hashscan(minted.transactionId.toString()));
   await beat();
 
@@ -554,7 +577,7 @@ async function act4(
     .setSerials([serial])
     .execute(client);
   await burned.getReceipt(client);
-  pass(`payable burned — ${C.bold('CONSUMED')}`);
+  pass(`marker burned — ${C.bold('spent')}`);
   link(hashscan(burned.transactionId.toString()));
 
   return { tokenId, serial };
@@ -645,10 +668,10 @@ async function act5(
   );
   console.log();
 
-  /* 3 — replay the settled payable */
-  step(C.bold('3. Replay the fully valid, fully approved authorisation.'));
+  /* 3 — the audit marker is spent, and says so publicly */
+  step(C.bold('3. The audit trail is public and cannot be quietly rewritten.'));
   if (!payable) {
-    refuse(C.bold('the agent cannot double-pay'));
+    step(`   ${C.dim('offline — no marker was minted')}`);
     return;
   }
   const facts = await waitForBurn(payable.tokenId, payable.serial);
@@ -658,11 +681,18 @@ async function act5(
   step(
     `                    total_supply=${C.bold(facts.totalSupply)}  max_supply=${C.bold(facts.maxSupply)}`,
   );
-  refuse(
-    `replay is not rejected by a database — ${C.bold('the token that authorised payment no longer exists')}`,
+  step(
+    `   ${C.dim('anyone can read the digest back from Mirror Node without asking us')}`,
+  );
+  console.log();
+  step(
+    `  ${C.yellow('Being precise:')} ${C.dim('the burn does NOT prevent payment replay.')}`,
   );
   step(
-    `   ${C.dim('and with max_supply 1 already spent, it can never be minted again')}`,
+    `  ${C.dim('Replay is refused by the approval layer above — REPLAY_DETECTED and')}`,
+  );
+  step(
+    `  ${C.dim('ACTION_DIGEST_MISMATCH. The marker is independent evidence, nothing more.')}`,
   );
 }
 
