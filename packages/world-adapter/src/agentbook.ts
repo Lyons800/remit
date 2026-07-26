@@ -1,10 +1,17 @@
+import { createHash } from 'node:crypto';
+
 import { createAgentBookVerifier } from '@worldcoin/agentkit';
 import { createPublicClient, getAddress, http, isAddress } from 'viem';
 import { worldchain } from 'viem/chains';
 
 import {
+  WORLD_AGENTBOOK_ADAPTER_ID,
+  WORLD_AGENTBOOK_ADAPTER_VERSION,
   WORLD_AGENTBOOK_ADDRESS,
+  WORLD_AGENTBOOK_BACKING_RECORD_SOURCE,
+  WORLD_AGENTBOOK_CHAIN_ID,
   WORLD_AGENTBOOK_NUMERIC_CHAIN_ID,
+  WORLD_AGENTBOOK_REGISTRY_ID,
 } from './constants.js';
 import {
   createWorldPrincipalKeyring,
@@ -25,23 +32,36 @@ const AGENTBOOK_ABI = [
   },
 ] as const;
 
-export type AgentBookResolution =
-  | Readonly<{
-      agentAddress: `0x${string}`;
-      status: 'backed';
-      tenantPrincipal: ScopedWorldPrincipal;
-      tenantPrincipalAliases: readonly VersionedScopedWorldPrincipal[];
-      tenantPrincipalDerivationVersion: WorldPrincipalDerivationVersion;
-    }>
-  | Readonly<{
-      agentAddress: `0x${string}`;
-      status: 'unregistered';
-    }>
-  | Readonly<{
-      agentAddress: `0x${string}`;
-      reason: 'LOOKUP_INDETERMINATE' | 'RPC_UNAVAILABLE' | 'WRONG_CHAIN';
-      status: 'unavailable';
-    }>;
+export type WorldAgentBookResolverObservation = Readonly<{
+  agentBookAdapterId: typeof WORLD_AGENTBOOK_ADAPTER_ID;
+  agentBookAdapterVersion: typeof WORLD_AGENTBOOK_ADAPTER_VERSION;
+  backingRecordSource: typeof WORLD_AGENTBOOK_BACKING_RECORD_SOURCE;
+  observedNetworkId: string | null;
+  observedNumericChainId: number | null;
+  registryAddress: typeof WORLD_AGENTBOOK_ADDRESS;
+  registryId: typeof WORLD_AGENTBOOK_REGISTRY_ID;
+}>;
+
+export type AgentBookResolution = WorldAgentBookResolverObservation &
+  (
+    | Readonly<{
+        agentAddress: `0x${string}`;
+        backingRecordId: string;
+        status: 'backed';
+        tenantPrincipal: ScopedWorldPrincipal;
+        tenantPrincipalAliases: readonly VersionedScopedWorldPrincipal[];
+        tenantPrincipalDerivationVersion: WorldPrincipalDerivationVersion;
+      }>
+    | Readonly<{
+        agentAddress: `0x${string}`;
+        status: 'unregistered';
+      }>
+    | Readonly<{
+        agentAddress: `0x${string}`;
+        reason: 'LOOKUP_INDETERMINATE' | 'RPC_UNAVAILABLE' | 'WRONG_CHAIN';
+        status: 'unavailable';
+      }>
+  );
 
 type AgentBookPrincipalResolverDependencies = Readonly<{
   getChainId: () => Promise<number>;
@@ -67,11 +87,56 @@ function requireAddress(value: string): `0x${string}` {
   return getAddress(value);
 }
 
+function observation(chainId: unknown): WorldAgentBookResolverObservation {
+  const observedNumericChainId =
+    typeof chainId === 'number' && Number.isSafeInteger(chainId)
+      ? chainId
+      : null;
+  return Object.freeze({
+    agentBookAdapterId: WORLD_AGENTBOOK_ADAPTER_ID,
+    agentBookAdapterVersion: WORLD_AGENTBOOK_ADAPTER_VERSION,
+    backingRecordSource: WORLD_AGENTBOOK_BACKING_RECORD_SOURCE,
+    observedNetworkId:
+      observedNumericChainId === null
+        ? null
+        : `eip155:${observedNumericChainId}`,
+    observedNumericChainId,
+    registryAddress: WORLD_AGENTBOOK_ADDRESS,
+    registryId: WORLD_AGENTBOOK_REGISTRY_ID,
+  });
+}
+
 function unavailable(
   agentAddress: `0x${string}`,
   reason: 'LOOKUP_INDETERMINATE' | 'RPC_UNAVAILABLE' | 'WRONG_CHAIN',
+  chainId: unknown,
 ): AgentBookResolution {
-  return Object.freeze({ agentAddress, reason, status: 'unavailable' });
+  return Object.freeze({
+    ...observation(chainId),
+    agentAddress,
+    reason,
+    status: 'unavailable',
+  });
+}
+
+function backingRecordId(
+  agentAddress: `0x${string}`,
+  tenantPrincipal: ScopedWorldPrincipal,
+): string {
+  const hash = createHash('sha256');
+  for (const field of [
+    'invoiceguard:world-agentbook-backing-record:v1',
+    WORLD_AGENTBOOK_CHAIN_ID,
+    WORLD_AGENTBOOK_ADDRESS,
+    WORLD_AGENTBOOK_BACKING_RECORD_SOURCE,
+    agentAddress,
+    tenantPrincipal,
+  ]) {
+    hash.update(String(Buffer.byteLength(field, 'utf8')));
+    hash.update(':');
+    hash.update(field, 'utf8');
+  }
+  return `world-agentbook-record:${hash.digest('hex')}`;
 }
 
 function requireRpcUrl(value: string): string {
@@ -128,11 +193,11 @@ export function createAgentBookPrincipalResolver(
       try {
         chainId = await getChainId();
       } catch {
-        return unavailable(agentAddress, 'RPC_UNAVAILABLE');
+        return unavailable(agentAddress, 'RPC_UNAVAILABLE', null);
       }
 
       if (chainId !== WORLD_AGENTBOOK_NUMERIC_CHAIN_ID) {
-        return unavailable(agentAddress, 'WRONG_CHAIN');
+        return unavailable(agentAddress, 'WRONG_CHAIN', chainId);
       }
 
       let humanId: string | null;
@@ -153,18 +218,20 @@ export function createAgentBookPrincipalResolver(
           const current = aliases[0];
 
           if (current === undefined) {
-            return unavailable(agentAddress, 'LOOKUP_INDETERMINATE');
+            return unavailable(agentAddress, 'LOOKUP_INDETERMINATE', chainId);
           }
 
           return Object.freeze({
+            ...observation(chainId),
             agentAddress,
+            backingRecordId: backingRecordId(agentAddress, current.principal),
             status: 'backed',
             tenantPrincipal: current.principal,
             tenantPrincipalAliases: aliases,
             tenantPrincipalDerivationVersion: current.derivationVersion,
           });
         } catch {
-          return unavailable(agentAddress, 'LOOKUP_INDETERMINATE');
+          return unavailable(agentAddress, 'LOOKUP_INDETERMINATE', chainId);
         }
       }
 
@@ -172,21 +239,29 @@ export function createAgentBookPrincipalResolver(
         const probedHuman = await probeHuman(agentAddress);
 
         if (probedHuman === 0n) {
-          return Object.freeze({ agentAddress, status: 'unregistered' });
+          return Object.freeze({
+            ...observation(chainId),
+            agentAddress,
+            status: 'unregistered',
+          });
         }
 
-        return unavailable(agentAddress, 'LOOKUP_INDETERMINATE');
+        return unavailable(agentAddress, 'LOOKUP_INDETERMINATE', chainId);
       } catch {
         try {
           const currentChainId = await getChainId();
 
           if (currentChainId !== WORLD_AGENTBOOK_NUMERIC_CHAIN_ID) {
-            return unavailable(agentAddress, 'WRONG_CHAIN');
+            return unavailable(agentAddress, 'WRONG_CHAIN', currentChainId);
           }
 
-          return unavailable(agentAddress, 'LOOKUP_INDETERMINATE');
+          return unavailable(
+            agentAddress,
+            'LOOKUP_INDETERMINATE',
+            currentChainId,
+          );
         } catch {
-          return unavailable(agentAddress, 'RPC_UNAVAILABLE');
+          return unavailable(agentAddress, 'RPC_UNAVAILABLE', null);
         }
       }
     },

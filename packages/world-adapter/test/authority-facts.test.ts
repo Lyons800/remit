@@ -2,29 +2,32 @@ import type { IDKitResult } from '@worldcoin/idkit-core';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { privateKeyToAccount } from 'viem/accounts';
 
-import {
-  actionFactBinding,
-  parseAdapterVerifiedApprovalFact,
-  parseRequestingAgentExecutionFact,
-  validateApprovalQuorum,
-} from '@invoiceguard/domain';
-
 import { humanAuthorization } from '../../domain/test/fixtures/authorization.js';
 import * as worldAdapter from '../src/index.js';
 import {
   authorizeAgentkitRequest,
   createAgentkitApprovalChallenge,
   createTrustedWorldDeploymentContext,
+  createWorldAuthorityAdmissionWriter,
+  createWorldAuthorityCompositionPolicy,
   createWorldHumanApprovalBinding,
   createWorldPrincipalKeyring,
   createWorldProofOfHumanRequest,
   deriveAgentTenantPrincipalAliases,
   signAgentkitApprovalChallenge,
-  verifyAndProjectWorldAuthority,
+  verifyAndAdmitWorldAuthority,
+  WORLD_AGENTBOOK_ADAPTER_ID,
+  WORLD_AGENTBOOK_ADAPTER_VERSION,
+  WORLD_AGENTBOOK_ADDRESS,
+  WORLD_AGENTBOOK_BACKING_RECORD_SOURCE,
+  WORLD_AGENTBOOK_CHAIN_ID,
+  WORLD_AGENTBOOK_NUMERIC_CHAIN_ID,
+  WORLD_AGENTBOOK_REGISTRY_ID,
   WORLD_AGENT_SIGNATURE_CHAIN_ID,
   type VerifiedAgentkitClaim,
+  type VerifiedWorldAuthorityAdmissionBundle,
   type VerifiedWorldCompanyAuthority,
-  type WorldAuthorityProjectionDependencies,
+  type WorldAuthorityAdmissionDependencies,
   type WorldCompanyAuthorityRequirement,
 } from '../src/index.js';
 
@@ -52,6 +55,7 @@ const deployment = createTrustedWorldDeploymentContext({
   mode: 'live',
   rpId: 'rp_invoiceguard',
 });
+const compositionPolicy = createWorldAuthorityCompositionPolicy(deployment);
 const keyring = createWorldPrincipalKeyring(
   { key: new Uint8Array(32).fill(1), version: 'v2' },
   [{ key: new Uint8Array(32).fill(2), version: 'v1' }],
@@ -142,6 +146,28 @@ function humanIdForClaim(claim: VerifiedAgentkitClaim): string {
   return claim.agentAddress === approvalAccount.address
     ? APPROVAL_HUMAN_ID
     : REQUESTER_HUMAN_ID;
+}
+
+function backingForClaim(
+  claim: VerifiedAgentkitClaim,
+  overrides: Readonly<Record<string, unknown>> = {},
+) {
+  return {
+    agentBookAdapterId: WORLD_AGENTBOOK_ADAPTER_ID,
+    agentBookAdapterVersion: WORLD_AGENTBOOK_ADAPTER_VERSION,
+    agentAddress: claim.agentAddress,
+    backingRecordId: `agentbook-record:${claim.agentAddress}`,
+    backingRecordSource: WORLD_AGENTBOOK_BACKING_RECORD_SOURCE,
+    expiresAt: BACKING_EXPIRES_AT,
+    humanId: humanIdForClaim(claim),
+    observedNetworkId: WORLD_AGENTBOOK_CHAIN_ID,
+    observedNumericChainId: WORLD_AGENTBOOK_NUMERIC_CHAIN_ID,
+    registryAddress: WORLD_AGENTBOOK_ADDRESS,
+    registryId: WORLD_AGENTBOOK_REGISTRY_ID,
+    status: 'backed' as const,
+    verifiedAt: '2026-07-25T10:00:20.000Z',
+    ...overrides,
+  };
 }
 
 function authorityFor(
@@ -250,15 +276,8 @@ function createHarness(
     },
   });
   const verifyWorldProof = vi.fn(async () => ({ status: 'verified' as const }));
-  const resolveAgentBookBacking = vi.fn(
-    async (claim: VerifiedAgentkitClaim) => ({
-      agentAddress: claim.agentAddress,
-      backingRecordId: `agentbook-record:${claim.agentAddress}`,
-      expiresAt: BACKING_EXPIRES_AT,
-      humanId: humanIdForClaim(claim),
-      status: 'backed' as const,
-      verifiedAt: '2026-07-25T10:00:20.000Z',
-    }),
+  const resolveAgentBookBacking = vi.fn(async (claim: VerifiedAgentkitClaim) =>
+    backingForClaim(claim),
   );
   const resolveCompanyAuthority = vi.fn(
     async (requirement: WorldCompanyAuthorityRequirement) => ({
@@ -266,14 +285,34 @@ function createHarness(
       status: 'valid' as const,
     }),
   );
-  const dependencies: WorldAuthorityProjectionDependencies = {
+  let admittedBundle: VerifiedWorldAuthorityAdmissionBundle | null = null;
+  const writeAtomically = vi.fn(
+    async (bundle: VerifiedWorldAuthorityAdmissionBundle) => {
+      admittedBundle = bundle;
+      return {
+        atomicGroupId: `world-authority:${bundle.bundleDigest}`,
+        bundleDigest: bundle.bundleDigest,
+        committedAt: NOW.toISOString(),
+        status: 'committed' as const,
+        writerId: 'synthetic-world-authority-writer',
+      };
+    },
+  );
+  const admissionWriter = createWorldAuthorityAdmissionWriter({
+    writeAtomically,
+    writerId: 'synthetic-world-authority-writer',
+  });
+  const dependencies: WorldAuthorityAdmissionDependencies = {
+    admissionWriter,
+    compositionPolicy,
     principalKeyring: keyring,
     resolveAgentBookBacking,
     resolveCompanyAuthority,
     verifyWorldProof,
-    worldDeployment: deployment,
   };
   return {
+    admittedBundle: () => admittedBundle,
+    admissionWriter,
     dependencies,
     input: {
       approval: {
@@ -292,22 +331,29 @@ function createHarness(
     resolveAgentBookBacking,
     resolveCompanyAuthority,
     verifyWorldProof,
+    writeAtomically,
   };
 }
 
-async function requireProjection(harness = createHarness()) {
-  const result = await verifyAndProjectWorldAuthority(
+async function requireAdmission(harness = createHarness()) {
+  const result = await verifyAndAdmitWorldAuthority(
     harness.input,
     harness.dependencies,
   );
   if (!result.ok) {
-    throw new Error(`Synthetic projection failed: ${result.reason}.`);
+    throw new Error(`Synthetic admission failed: ${result.reason}.`);
   }
-  return result.projection;
+  const bundle = harness.admittedBundle();
+  if (bundle === null) {
+    throw new Error('Synthetic admission did not receive its complete bundle.');
+  }
+  return { admission: result.admission, bundle };
 }
 
-describe('World to AP verified authority projection', () => {
-  it('exposes one verifier path and no structural fact constructors', () => {
+describe('World authority admission boundary', () => {
+  it('exposes one mandatory admission path and no loose World projection API', () => {
+    expect('verifyAndAdmitWorldAuthority' in worldAdapter).toBe(true);
+    expect('verifyAndProjectWorldAuthority' in worldAdapter).toBe(false);
     expect('createWorldApprovalFact' in worldAdapter).toBe(false);
     expect('createWorldRequestingAgentExecutionFact' in worldAdapter).toBe(
       false,
@@ -316,66 +362,48 @@ describe('World to AP verified authority projection', () => {
     expect('refreshWorldApprovalFact' in worldAdapter).toBe(false);
   });
 
-  it('projects only correlated verified evidence into canonical AP facts', async () => {
-    const financeHarness = createHarness();
-    const treasuryHarness = createHarness({
-      approvalClaim: requesterClaim,
-      approvalHumanId: REQUESTER_HUMAN_ID,
-      nullifier: '0x8765',
-      requesterClaim: approvalClaim,
-      role: 'TREASURY_APPROVER',
-      roleGrantId: 'approval-role-grant-2',
-      subjectId: 'subject:treasury-approver-1',
-    });
-    const finance = await requireProjection(financeHarness);
-    const treasury = await requireProjection(treasuryHarness);
+  it('passes one complete digest-bound bundle to the admission writer', async () => {
+    const harness = createHarness();
+    const { admission, bundle } = await requireAdmission(harness);
 
-    expect(parseAdapterVerifiedApprovalFact(finance.approvalFact)).toEqual(
-      finance.approvalFact,
-    );
-    expect(parseRequestingAgentExecutionFact(finance.requesterFact)).toEqual(
-      finance.requesterFact,
-    );
-    expect(
-      validateApprovalQuorum(
-        {
-          ...actionFactBinding(humanAuthorization),
-          minimumVerifiedAt: humanAuthorization.decision.evaluatedAt,
-        },
-        humanAuthorization.decision.requiredAuthority,
-        [finance.approvalFact, treasury.approvalFact],
-        NOW.toISOString(),
-      ),
-    ).toEqual({
-      ok: true,
-      value: [finance.approvalFact, treasury.approvalFact],
-    });
-    expect(finance.approvalFact).toMatchObject({
+    expect(harness.writeAtomically).toHaveBeenCalledExactlyOnceWith(bundle);
+    expect(admission.bundleDigest).toBe(bundle.bundleDigest);
+    expect(bundle.bundleDigest).toMatch(/^[0-9a-f]{64}$/u);
+    expect(bundle.compositionPolicyId).toBe(compositionPolicy.policyId);
+    expect(bundle.worldDeploymentId).toBe(deployment.deploymentId);
+    expect(bundle.approvalFact).toMatchObject({
       agentBackingStatus: 'CURRENT',
       companyRoleStatus: 'CURRENT',
       expiresAt: APPROVAL_AUTHORITY_EXPIRES_AT,
       humanDecisionStatus: 'VERIFIED',
     });
-    expect(finance.requesterFact).toMatchObject({
+    expect(bundle.requesterFact).toMatchObject({
       adapterId: humanAuthorization.decision.requiredExecutor.adapterId,
       agentBookStatus: 'CURRENT',
       companyRoleStatus: 'CURRENT',
       expiresAt: REQUESTER_AUTHORITY_EXPIRES_AT,
       grantStatus: 'CURRENT',
     });
-    expect(
-      Reflect.ownKeys(finance).some((key) => typeof key === 'symbol'),
-    ).toBe(true);
+    expect(Reflect.ownKeys(bundle).some((key) => typeof key === 'symbol')).toBe(
+      true,
+    );
   });
 
-  it('derives every rotation alias internally and rejects caller alias lists', async () => {
+  it('makes every current and overlap alias part of the admitted bundle', async () => {
     const harness = createHarness();
-    const projection = await requireProjection(harness);
+    const { bundle } = await requireAdmission(harness);
 
-    expect(projection.identityClaims.actionHumanPrincipals).toHaveLength(2);
-    expect(projection.identityClaims.agentTenantPrincipals).toHaveLength(2);
+    expect(bundle.identityClaims.approval.actionHumanPrincipals).toHaveLength(
+      2,
+    );
+    expect(bundle.identityClaims.approval.agentTenantPrincipals).toHaveLength(
+      2,
+    );
+    expect(bundle.identityClaims.requester.agentTenantPrincipals).toHaveLength(
+      2,
+    );
     expect(
-      projection.identityClaims.actionHumanPrincipals.map(
+      bundle.identityClaims.approval.actionHumanPrincipals.map(
         ({ derivationVersion }) => derivationVersion,
       ),
     ).toEqual(['v2', 'v1']);
@@ -385,13 +413,13 @@ describe('World to AP verified authority projection', () => {
       approval: {
         ...harness.input.approval,
         actionHumanPrincipals:
-          projection.identityClaims.actionHumanPrincipals.slice(0, 1),
+          bundle.identityClaims.approval.actionHumanPrincipals.slice(0, 1),
         agentTenantPrincipals:
-          projection.identityClaims.agentTenantPrincipals.slice(0, 1),
+          bundle.identityClaims.approval.agentTenantPrincipals.slice(0, 1),
       },
     };
     await expect(
-      verifyAndProjectWorldAuthority(
+      verifyAndAdmitWorldAuthority(
         forgedInput as unknown as typeof harness.input,
         harness.dependencies,
       ),
@@ -405,7 +433,7 @@ describe('World to AP verified authority projection', () => {
       fabricatedHarness.input.approval.agentkitClaim,
     );
     await expect(
-      verifyAndProjectWorldAuthority(
+      verifyAndAdmitWorldAuthority(
         {
           ...fabricatedHarness.input,
           approval: {
@@ -426,7 +454,7 @@ describe('World to AP verified authority projection', () => {
       actionDigest: 'f'.repeat(64),
     };
     await expect(
-      verifyAndProjectWorldAuthority(
+      verifyAndAdmitWorldAuthority(
         {
           ...claimHarness.input,
           approval: {
@@ -451,7 +479,7 @@ describe('World to AP verified authority projection', () => {
     }
     proofResponse.signal_hash = `0x${'0'.repeat(64)}`;
     await expect(
-      verifyAndProjectWorldAuthority(
+      verifyAndAdmitWorldAuthority(
         {
           ...proofHarness.input,
           approval: {
@@ -470,17 +498,15 @@ describe('World to AP verified authority projection', () => {
     const backingHarness = createHarness();
     const substitutedBackingDependencies = {
       ...backingHarness.dependencies,
-      resolveAgentBookBacking: vi.fn(async (claim: VerifiedAgentkitClaim) => ({
-        agentAddress: claim.agentAddress,
-        backingRecordId: 'agentbook-record:substituted',
-        expiresAt: BACKING_EXPIRES_AT,
-        humanId: '0xdeadbeef',
-        status: 'backed' as const,
-        verifiedAt: '2026-07-25T10:00:20.000Z',
-      })),
+      resolveAgentBookBacking: vi.fn(async (claim: VerifiedAgentkitClaim) =>
+        backingForClaim(claim, {
+          backingRecordId: 'agentbook-record:substituted',
+          humanId: '0xdeadbeef',
+        }),
+      ),
     };
     await expect(
-      verifyAndProjectWorldAuthority(
+      verifyAndAdmitWorldAuthority(
         backingHarness.input,
         substitutedBackingDependencies,
       ),
@@ -502,7 +528,7 @@ describe('World to AP verified authority projection', () => {
       ),
     };
     await expect(
-      verifyAndProjectWorldAuthority(
+      verifyAndAdmitWorldAuthority(
         roleHarness.input,
         substitutedRoleDependencies,
       ),
@@ -510,6 +536,163 @@ describe('World to AP verified authority projection', () => {
       ok: false,
       reason: 'AUTHORITY_MISMATCH',
     });
+  });
+
+  it.each([
+    ['numeric chain', { observedNumericChainId: 296 }],
+    ['network', { observedNetworkId: 'eip155:296' }],
+    ['registry ID', { registryId: 'world-agentbook:eip155:296' }],
+    ['registry contract', { registryAddress: requesterAccount.address }],
+    ['adapter ID', { agentBookAdapterId: 'substituted-agentbook-adapter' }],
+    ['adapter version', { agentBookAdapterVersion: '2' }],
+    ['backing record source', { backingRecordSource: 'substituted:lookup' }],
+  ] as const)(
+    'rejects substituted AgentBook %s before CURRENT admission',
+    async (_label, provenanceOverride) => {
+      const harness = createHarness();
+      const dependencies = {
+        ...harness.dependencies,
+        resolveAgentBookBacking: vi.fn(async (claim: VerifiedAgentkitClaim) =>
+          backingForClaim(claim, provenanceOverride),
+        ),
+      };
+
+      await expect(
+        verifyAndAdmitWorldAuthority(harness.input, dependencies),
+      ).resolves.toEqual({
+        ok: false,
+        reason: 'AGENTBOOK_PROVENANCE_MISMATCH',
+      });
+      expect(harness.writeAtomically).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects serialized policies and whole deployment/RP substitution', async () => {
+    const harness = createHarness();
+    const alternateDeployment = createTrustedWorldDeploymentContext({
+      appId: 'app_substituted',
+      environment: 'production',
+      mode: 'live',
+      rpId: 'rp_substituted',
+    });
+    const alternateRequest = createWorldProofOfHumanRequest({
+      binding: harness.request.binding,
+      deployment: alternateDeployment,
+      rpContext: {
+        created_at: ISSUED_AT.getTime() / 1_000,
+        expires_at: RP_EXPIRES_AT.getTime() / 1_000,
+        nonce: 'rp-substituted-boundary',
+        rp_id: alternateDeployment.rpId,
+        signature: '0xsubstituted-rp-signature',
+      },
+    });
+    const substitutedPolicy = {
+      ...compositionPolicy,
+      worldDeployment: alternateDeployment,
+      worldDeploymentId: alternateDeployment.deploymentId,
+    };
+    const substitutedInput = {
+      ...harness.input,
+      approval: {
+        ...harness.input.approval,
+        proof: createProof(alternateRequest),
+        request: alternateRequest,
+      },
+    };
+
+    await expect(
+      verifyAndAdmitWorldAuthority(substitutedInput, {
+        ...harness.dependencies,
+        compositionPolicy:
+          substitutedPolicy as typeof harness.dependencies.compositionPolicy,
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'COMPOSITION_POLICY_INVALID',
+    });
+    await expect(
+      verifyAndAdmitWorldAuthority(substitutedInput, harness.dependencies),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'REQUEST_INVALID',
+    });
+    await expect(
+      verifyAndAdmitWorldAuthority(harness.input, {
+        ...harness.dependencies,
+        compositionPolicy: structuredClone(
+          compositionPolicy,
+        ) as typeof compositionPolicy,
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'COMPOSITION_POLICY_INVALID',
+    });
+    expect(harness.verifyWorldProof).not.toHaveBeenCalled();
+    expect(harness.writeAtomically).not.toHaveBeenCalled();
+  });
+
+  it('rejects serialized bundles and any identity-claim omission at the writer capability', async () => {
+    const harness = createHarness();
+    const { bundle } = await requireAdmission(harness);
+    const serialized = structuredClone(
+      bundle,
+    ) as VerifiedWorldAuthorityAdmissionBundle;
+    const omittedRequesterClaims = {
+      ...bundle,
+      identityClaims: {
+        actionDigest: bundle.identityClaims.actionDigest,
+        approval: bundle.identityClaims.approval,
+        compositionPolicyId: bundle.identityClaims.compositionPolicyId,
+        organizationId: bundle.identityClaims.organizationId,
+        worldDeploymentId: bundle.identityClaims.worldDeploymentId,
+      },
+    } as unknown as VerifiedWorldAuthorityAdmissionBundle;
+    const truncatedApprovalAliases = {
+      ...bundle,
+      identityClaims: {
+        ...bundle.identityClaims,
+        approval: {
+          ...bundle.identityClaims.approval,
+          agentTenantPrincipals:
+            bundle.identityClaims.approval.agentTenantPrincipals.slice(0, 1),
+        },
+      },
+    } as VerifiedWorldAuthorityAdmissionBundle;
+
+    await expect(harness.admissionWriter.admit(serialized)).resolves.toEqual({
+      reason: 'BUNDLE_INVALID',
+      status: 'rejected',
+    });
+    await expect(
+      harness.admissionWriter.admit(omittedRequesterClaims),
+    ).resolves.toEqual({
+      reason: 'BUNDLE_INVALID',
+      status: 'rejected',
+    });
+    await expect(
+      harness.admissionWriter.admit(truncatedApprovalAliases),
+    ).resolves.toEqual({
+      reason: 'BUNDLE_INVALID',
+      status: 'rejected',
+    });
+    expect(harness.writeAtomically).toHaveBeenCalledOnce();
+  });
+
+  it('requires the configured admission-writer capability', async () => {
+    const harness = createHarness();
+    const structuralWriter = { ...harness.admissionWriter };
+
+    await expect(
+      verifyAndAdmitWorldAuthority(harness.input, {
+        ...harness.dependencies,
+        admissionWriter:
+          structuralWriter as typeof harness.dependencies.admissionWriter,
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'ADMISSION_WRITER_INVALID',
+    });
+    expect(harness.writeAtomically).not.toHaveBeenCalled();
   });
 
   it('accepts no truthy verification shortcut or caller-selected expiry', async () => {
@@ -522,7 +705,7 @@ describe('World to AP verified authority projection', () => {
       })),
     };
     await expect(
-      verifyAndProjectWorldAuthority(
+      verifyAndAdmitWorldAuthority(
         malformedVerification.input,
         malformedVerificationDependencies,
       ),
@@ -531,14 +714,10 @@ describe('World to AP verified authority projection', () => {
       reason: 'WORLD_PROOF_INVALID',
     });
 
-    const projection = await requireProjection();
-    expect(projection.approvalFact.expiresAt).toBe(
-      APPROVAL_AUTHORITY_EXPIRES_AT,
-    );
-    expect(projection.requesterFact.expiresAt).toBe(
-      REQUESTER_AUTHORITY_EXPIRES_AT,
-    );
-    expect(Date.parse(projection.approvalFact.expiresAt)).toBeLessThan(
+    const { bundle } = await requireAdmission();
+    expect(bundle.approvalFact.expiresAt).toBe(APPROVAL_AUTHORITY_EXPIRES_AT);
+    expect(bundle.requesterFact.expiresAt).toBe(REQUESTER_AUTHORITY_EXPIRES_AT);
+    expect(Date.parse(bundle.approvalFact.expiresAt)).toBeLessThan(
       SESSION_EXPIRES_AT.getTime(),
     );
   });

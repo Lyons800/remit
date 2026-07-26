@@ -4,8 +4,6 @@ import {
   actionFactBinding,
   createAdapterVerifiedApprovalFact,
   createRequestingAgentExecutionFact,
-  type AdapterVerifiedApprovalFact,
-  type RequestingAgentExecutionFact,
 } from '@invoiceguard/domain';
 import type { IDKitResult, ResponseItemV4 } from '@worldcoin/idkit-core';
 import {
@@ -16,11 +14,21 @@ import {
 import { getAddress, isAddress } from 'viem';
 
 import {
+  createVerifiedWorldAuthorityAdmissionBundle,
+  validateWorldAuthorityAdmissionWriter,
+  validateWorldAuthorityCompositionPolicy,
+  type TrustedWorldAuthorityCompositionPolicy,
+  type WorldAgentBookAdmissionEvidence,
+  type WorldAgentBookBoundaryPolicy,
+  type WorldAuthorityAdmissionReceipt,
+  type WorldAuthorityAdmissionWriter,
+  type WorldAuthorityIdentityClaims,
+} from './authority-admission.js';
+import {
   validateVerifiedAgentkitClaim,
   type VerifiedAgentkitClaim,
 } from './agentkit.js';
 import {
-  validateTrustedWorldDeploymentContext,
   validateWorldProofOfHumanRequest,
   type TrustedWorldDeploymentContext,
   type WorldHumanApprovalBinding,
@@ -43,7 +51,6 @@ const HEX_IDENTIFIER_PATTERN = /^0x[0-9a-fA-F]+$/u;
 const WORLD_PRINCIPAL_PATTERN = /^hmac-sha256:[A-Za-z0-9_-]{43}$/u;
 const PROOF_OF_HUMAN_ISSUER_SCHEMA_ID = 1;
 const MAXIMUM_UINT256 = (1n << 256n) - 1n;
-const projectionBrand = Symbol('verified-world-authority-projection');
 
 type WorldIdKitResultV4 = Extract<
   IDKitResult,
@@ -104,10 +111,17 @@ export type WorldCompanyAuthorityResolution =
 
 export type WorldAgentBookAuthorityResolution =
   | Readonly<{
+      agentBookAdapterId: string;
+      agentBookAdapterVersion: string;
       agentAddress: `0x${string}`;
       backingRecordId: string;
+      backingRecordSource: string;
       expiresAt: string;
       humanId: string;
+      observedNetworkId: string;
+      observedNumericChainId: number;
+      registryAddress: `0x${string}`;
+      registryId: string;
       status: 'backed';
       verifiedAt: string;
     }>
@@ -126,30 +140,13 @@ export type WorldProofVerificationResult =
   | Readonly<{ status: 'invalid' }>
   | Readonly<{ status: 'unavailable' }>;
 
-export type WorldApprovalIdentityClaims = Readonly<{
-  actionDigest: string;
-  actionHumanPrincipals: readonly VersionedScopedWorldPrincipal[];
-  agentKitChallengeId: string;
-  agentTenantPrincipals: readonly VersionedScopedWorldPrincipal[];
-  approvalId: string;
-  approvalSessionId: string;
-  consumptionClaimId: string;
-  decisionId: string;
-  organizationId: string;
-  subjectId: string;
-  worldProofId: string;
-}>;
-
-export type VerifiedWorldAuthorityProjection = Readonly<{
-  approvalFact: AdapterVerifiedApprovalFact;
-  identityClaims: WorldApprovalIdentityClaims;
-  requesterFact: RequestingAgentExecutionFact;
-  [projectionBrand]: true;
-}>;
-
-export type WorldAuthorityProjectionRefusal =
+export type WorldAuthorityAdmissionRefusal =
+  | 'ADMISSION_REJECTED'
+  | 'ADMISSION_UNAVAILABLE'
+  | 'ADMISSION_WRITER_INVALID'
   | 'AGENTBOOK_BACKING_INVALID'
   | 'AGENTBOOK_BACKING_MISMATCH'
+  | 'AGENTBOOK_PROVENANCE_MISMATCH'
   | 'AGENTBOOK_BACKING_UNAVAILABLE'
   | 'AGENTBOOK_UNREGISTERED'
   | 'AGENTKIT_CLAIM_INVALID'
@@ -160,6 +157,7 @@ export type WorldAuthorityProjectionRefusal =
   | 'AUTHORITY_MISMATCH'
   | 'AUTHORITY_STALE'
   | 'AUTHORITY_UNAVAILABLE'
+  | 'COMPOSITION_POLICY_INVALID'
   | 'DEPLOYMENT_INVALID'
   | 'INPUT_INVALID'
   | 'NOT_AN_APPROVAL'
@@ -172,17 +170,17 @@ export type WorldAuthorityProjectionRefusal =
   | 'WORLD_PROOF_STALE'
   | 'WORLD_PROOF_UNAVAILABLE';
 
-export type WorldAuthorityProjectionResult =
+export type WorldAuthorityAdmissionResult =
   | Readonly<{
+      admission: WorldAuthorityAdmissionReceipt;
       ok: true;
-      projection: VerifiedWorldAuthorityProjection;
     }>
   | Readonly<{
       ok: false;
-      reason: WorldAuthorityProjectionRefusal;
+      reason: WorldAuthorityAdmissionRefusal;
     }>;
 
-export type VerifyAndProjectWorldAuthorityInput = Readonly<{
+export type VerifyAndAdmitWorldAuthorityInput = Readonly<{
   approval: Readonly<{
     agentkitClaim: VerifiedAgentkitClaim;
     proof: unknown;
@@ -196,7 +194,9 @@ export type VerifyAndProjectWorldAuthorityInput = Readonly<{
   }>;
 }>;
 
-export type WorldAuthorityProjectionDependencies = Readonly<{
+export type WorldAuthorityAdmissionDependencies = Readonly<{
+  admissionWriter: WorldAuthorityAdmissionWriter;
+  compositionPolicy: TrustedWorldAuthorityCompositionPolicy;
   principalKeyring: WorldPrincipalKeyring;
   resolveAgentBookBacking: (
     claim: VerifiedAgentkitClaim,
@@ -208,7 +208,6 @@ export type WorldAuthorityProjectionDependencies = Readonly<{
     proof: WorldIdKitResultV4,
     deployment: TrustedWorldDeploymentContext,
   ) => Promise<WorldProofVerificationResult>;
-  worldDeployment: TrustedWorldDeploymentContext;
 }>;
 
 type ParsedWorldProof = Readonly<{
@@ -218,13 +217,14 @@ type ParsedWorldProof = Readonly<{
 
 type VerifiedBacking = Readonly<{
   aliases: readonly VersionedScopedWorldPrincipal[];
+  evidence: WorldAgentBookAdmissionEvidence;
   recordId: string;
   resolution: Extract<WorldAgentBookAuthorityResolution, { status: 'backed' }>;
 }>;
 
 function refusal(
-  reason: WorldAuthorityProjectionRefusal,
-): WorldAuthorityProjectionResult {
+  reason: WorldAuthorityAdmissionRefusal,
+): WorldAuthorityAdmissionResult {
   return Object.freeze({ ok: false, reason });
 }
 
@@ -358,7 +358,7 @@ function minimumExpiry(values: readonly string[]): string | null {
 
 function exactInputShape(
   value: unknown,
-): value is VerifyAndProjectWorldAuthorityInput {
+): value is VerifyAndAdmitWorldAuthorityInput {
   return (
     isRecord(value) &&
     hasExactKeys(
@@ -432,10 +432,10 @@ function authorityMatches(
 async function resolveAuthority(
   requirement: WorldCompanyAuthorityRequirement,
   now: number,
-  resolve: WorldAuthorityProjectionDependencies['resolveCompanyAuthority'],
+  resolve: WorldAuthorityAdmissionDependencies['resolveCompanyAuthority'],
 ): Promise<
   | Readonly<{ authority: VerifiedWorldCompanyAuthority; ok: true }>
-  | Readonly<{ ok: false; reason: WorldAuthorityProjectionRefusal }>
+  | Readonly<{ ok: false; reason: WorldAuthorityAdmissionRefusal }>
 > {
   let resolution: unknown;
   try {
@@ -479,10 +479,13 @@ async function resolveBacking(
   organizationId: string,
   now: number,
   keyring: WorldPrincipalKeyring,
-  resolve: WorldAuthorityProjectionDependencies['resolveAgentBookBacking'],
+  boundary: WorldAgentBookBoundaryPolicy,
+  expectedRegistryId: string,
+  purpose: 'APPROVAL' | 'REQUESTER',
+  resolve: WorldAuthorityAdmissionDependencies['resolveAgentBookBacking'],
 ): Promise<
   | Readonly<{ backing: VerifiedBacking; ok: true }>
-  | Readonly<{ ok: false; reason: WorldAuthorityProjectionRefusal }>
+  | Readonly<{ ok: false; reason: WorldAuthorityAdmissionRefusal }>
 > {
   let resolution: unknown;
   try {
@@ -501,17 +504,53 @@ async function resolveBacking(
   }
   if (
     resolution.status !== 'backed' ||
+    !hasExactKeys(resolution, [
+      'agentBookAdapterId',
+      'agentBookAdapterVersion',
+      'agentAddress',
+      'backingRecordId',
+      'backingRecordSource',
+      'expiresAt',
+      'humanId',
+      'observedNetworkId',
+      'observedNumericChainId',
+      'registryAddress',
+      'registryId',
+      'status',
+      'verifiedAt',
+    ]) ||
+    !isNonemptyString(resolution.agentBookAdapterId) ||
+    !isNonemptyString(resolution.agentBookAdapterVersion) ||
     !isCanonicalAddress(resolution.agentAddress) ||
-    !sameAddress(resolution.agentAddress, claim.agentAddress) ||
     !isNonemptyString(resolution.backingRecordId) ||
+    !isNonemptyString(resolution.backingRecordSource) ||
     !isCanonicalInstant(resolution.verifiedAt) ||
     !isCanonicalInstant(resolution.expiresAt) ||
     Date.parse(resolution.verifiedAt) > now ||
     now >= Date.parse(resolution.expiresAt) ||
     typeof resolution.humanId !== 'string' ||
-    parseNonzeroUint256(resolution.humanId) === null
+    parseNonzeroUint256(resolution.humanId) === null ||
+    !isNonemptyString(resolution.observedNetworkId) ||
+    !isPositiveSafeInteger(resolution.observedNumericChainId) ||
+    !isCanonicalAddress(resolution.registryAddress) ||
+    !isNonemptyString(resolution.registryId)
   ) {
     return { ok: false, reason: 'AGENTBOOK_BACKING_INVALID' };
+  }
+  if (!sameAddress(resolution.agentAddress, claim.agentAddress)) {
+    return { ok: false, reason: 'AGENTBOOK_BACKING_MISMATCH' };
+  }
+  if (
+    resolution.agentBookAdapterId !== boundary.adapterId ||
+    resolution.agentBookAdapterVersion !== boundary.adapterVersion ||
+    resolution.backingRecordSource !== boundary.backingRecordSource ||
+    resolution.observedNetworkId !== boundary.networkId ||
+    resolution.observedNumericChainId !== boundary.numericChainId ||
+    resolution.registryAddress !== boundary.registryAddress ||
+    resolution.registryId !== boundary.registryId ||
+    resolution.registryId !== expectedRegistryId
+  ) {
+    return { ok: false, reason: 'AGENTBOOK_PROVENANCE_MISMATCH' };
   }
 
   let aliases: readonly VersionedScopedWorldPrincipal[];
@@ -524,9 +563,24 @@ async function resolveBacking(
   } catch {
     return { ok: false, reason: 'AGENTBOOK_BACKING_INVALID' };
   }
+  const evidence = Object.freeze({
+    adapterId: resolution.agentBookAdapterId,
+    adapterVersion: resolution.agentBookAdapterVersion,
+    agentAddress: resolution.agentAddress,
+    backingRecordId: resolution.backingRecordId,
+    backingRecordSource: resolution.backingRecordSource,
+    expiresAt: resolution.expiresAt,
+    networkId: resolution.observedNetworkId,
+    numericChainId: resolution.observedNumericChainId,
+    purpose,
+    registryAddress: resolution.registryAddress,
+    registryId: resolution.registryId,
+    verifiedAt: resolution.verifiedAt,
+  });
   return {
     backing: Object.freeze({
       aliases,
+      evidence,
       recordId: resolution.backingRecordId,
       resolution: resolution as Extract<
         WorldAgentBookAuthorityResolution,
@@ -542,7 +596,7 @@ function exactClaim(
   actionDigest: string,
   organizationId: string,
   now: number,
-): VerifiedAgentkitClaim | WorldAuthorityProjectionRefusal {
+): VerifiedAgentkitClaim | WorldAuthorityAdmissionRefusal {
   const validation = validateVerifiedAgentkitClaim(value);
   if (!validation.ok) {
     return 'AGENTKIT_CLAIM_INVALID';
@@ -599,23 +653,10 @@ function worldCredentialExpiry(response: ResponseItemV4): string | null {
   }
 }
 
-function createProjection(
-  approvalFact: AdapterVerifiedApprovalFact,
-  identityClaims: WorldApprovalIdentityClaims,
-  requesterFact: RequestingAgentExecutionFact,
-): VerifiedWorldAuthorityProjection {
-  return Object.freeze({
-    approvalFact,
-    identityClaims,
-    requesterFact,
-    [projectionBrand]: true as const,
-  });
-}
-
-export async function verifyAndProjectWorldAuthority(
-  input: VerifyAndProjectWorldAuthorityInput,
-  dependencies: WorldAuthorityProjectionDependencies,
-): Promise<WorldAuthorityProjectionResult> {
+export async function verifyAndAdmitWorldAuthority(
+  input: VerifyAndAdmitWorldAuthorityInput,
+  dependencies: WorldAuthorityAdmissionDependencies,
+): Promise<WorldAuthorityAdmissionResult> {
   if (!exactInputShape(input)) {
     return refusal('INPUT_INVALID');
   }
@@ -630,13 +671,16 @@ export async function verifyAndProjectWorldAuthority(
     return refusal('POLICY_ROUTE_MISMATCH');
   }
 
-  const deploymentValidation = validateTrustedWorldDeploymentContext(
-    dependencies.worldDeployment,
-  );
-  if (!deploymentValidation.ok) {
-    return refusal('DEPLOYMENT_INVALID');
+  if (
+    !validateWorldAuthorityCompositionPolicy(dependencies.compositionPolicy)
+  ) {
+    return refusal('COMPOSITION_POLICY_INVALID');
   }
-  const deployment = deploymentValidation.context;
+  if (!validateWorldAuthorityAdmissionWriter(dependencies.admissionWriter)) {
+    return refusal('ADMISSION_WRITER_INVALID');
+  }
+  const compositionPolicy = dependencies.compositionPolicy;
+  const deployment = compositionPolicy.worldDeployment;
 
   let keyring: WorldPrincipalKeyring;
   try {
@@ -656,6 +700,14 @@ export async function verifyAndProjectWorldAuthority(
   const verifiedAt = nowDate.toISOString();
   const actionDigest = authorization.envelope.actionDigest;
   const organizationId = authorization.actionCore.organizationId;
+  const requiredExecutor = authorization.decision.requiredExecutor;
+  if (
+    requiredExecutor.adapterId !== compositionPolicy.agentBook.adapterId ||
+    requiredExecutor.agentBookRegistry !==
+      compositionPolicy.agentBook.registryId
+  ) {
+    return refusal('POLICY_ROUTE_MISMATCH');
+  }
 
   const requestValidation = validateWorldProofOfHumanRequest(
     input.approval.request,
@@ -713,6 +765,9 @@ export async function verifyAndProjectWorldAuthority(
     organizationId,
     now,
     keyring,
+    compositionPolicy.agentBook,
+    requiredExecutor.agentBookRegistry,
+    'APPROVAL',
     dependencies.resolveAgentBookBacking,
   );
   if (!approvalBackingResult.ok) {
@@ -734,6 +789,9 @@ export async function verifyAndProjectWorldAuthority(
     organizationId,
     now,
     keyring,
+    compositionPolicy.agentBook,
+    requiredExecutor.agentBookRegistry,
+    'REQUESTER',
     dependencies.resolveAgentBookBacking,
   );
   if (!requesterBackingResult.ok) {
@@ -772,7 +830,6 @@ export async function verifyAndProjectWorldAuthority(
   }
   const approvalAuthority = approvalAuthorityResult.authority;
 
-  const requiredExecutor = authorization.decision.requiredExecutor;
   const requesterAuthorityRequirement = Object.freeze({
     actionDigest,
     agentAddress: requesterClaim.agentAddress,
@@ -880,17 +937,22 @@ export async function verifyAndProjectWorldAuthority(
   const approvalEvidenceDigest = hashRecord(
     'invoiceguard:world-approval-evidence:v1',
     {
+      agentBookEvidence: approvalBacking.evidence,
       agentkitSignedProofDigest: approvalClaim.signedProofDigest,
       companyCredentialDigest: approvalAuthority.credentialDigest,
+      compositionPolicyId: compositionPolicy.policyId,
       proofDigest,
+      worldDeploymentId: deployment.deploymentId,
     },
   );
   const approvalIdentity = {
     actionDigest,
     agentKitChallengeId: approvalClaim.challengeId,
     approvalSessionId: binding.approvalSessionId,
+    compositionPolicyId: compositionPolicy.policyId,
     roleCredentialId: approvalAuthority.credentialId,
     subjectId: binding.subjectId,
+    worldDeploymentId: deployment.deploymentId,
     worldProofId,
   };
   const approvalId = prefixedId(
@@ -943,15 +1005,18 @@ export async function verifyAndProjectWorldAuthority(
     {
       actionDigest,
       agentId: input.requester.agentId,
+      agentBookEvidence: requesterBacking.evidence,
       agentKitChallengeId: requesterClaim.challengeId,
+      compositionPolicyId: compositionPolicy.policyId,
       credentialDigest: requesterAuthority.credentialDigest,
+      worldDeploymentId: deployment.deploymentId,
     },
   );
   const requesterFact = createRequestingAgentExecutionFact(authorization, {
     actionHumanPrincipal: requesterPrincipal.principal,
-    adapterId: requiredExecutor.adapterId,
+    adapterId: requesterBacking.evidence.adapterId,
     agentBackingRecordId: requesterBacking.recordId,
-    agentBookRegistry: requiredExecutor.agentBookRegistry,
+    agentBookRegistry: requesterBacking.evidence.registryId,
     agentBookStatus: 'CURRENT',
     agentId: input.requester.agentId,
     agentKitChallengeId: requesterClaim.challengeId,
@@ -973,22 +1038,51 @@ export async function verifyAndProjectWorldAuthority(
     verifiedAt,
   });
 
-  const identityClaims = Object.freeze({
+  const identityClaims: WorldAuthorityIdentityClaims = Object.freeze({
     actionDigest,
-    actionHumanPrincipals: actionHumanAliases,
-    agentKitChallengeId: approvalClaim.challengeId,
-    agentTenantPrincipals: approvalBacking.aliases,
-    approvalId,
-    approvalSessionId: binding.approvalSessionId,
-    consumptionClaimId,
-    decisionId,
+    approval: Object.freeze({
+      actionHumanPrincipals: actionHumanAliases,
+      agentKitChallengeId: approvalClaim.challengeId,
+      agentTenantPrincipals: approvalBacking.aliases,
+      approvalId,
+      approvalSessionId: binding.approvalSessionId,
+      consumptionClaimId,
+      decisionId,
+      subjectId: binding.subjectId,
+      worldProofId,
+    }),
+    compositionPolicyId: compositionPolicy.policyId,
     organizationId,
-    subjectId: binding.subjectId,
-    worldProofId,
+    requester: Object.freeze({
+      agentId: input.requester.agentId,
+      agentKitChallengeId: requesterClaim.challengeId,
+      agentTenantPrincipals: requesterBacking.aliases,
+      factId: requesterFactId,
+      subjectId: input.requester.agentId,
+    }),
+    worldDeploymentId: deployment.deploymentId,
   });
 
-  return Object.freeze({
-    ok: true,
-    projection: createProjection(approvalFact, identityClaims, requesterFact),
+  const bundle = createVerifiedWorldAuthorityAdmissionBundle({
+    agentBookEvidence: Object.freeze({
+      approval: approvalBacking.evidence,
+      requester: requesterBacking.evidence,
+    }),
+    approvalFact,
+    compositionPolicyId: compositionPolicy.policyId,
+    identityClaims,
+    kind: 'WORLD_AUTHORITY_ADMISSION',
+    requesterFact,
+    schemaVersion: 1,
+    verifiedAt,
+    worldDeploymentId: deployment.deploymentId,
   });
+  const admission = await dependencies.admissionWriter.admit(bundle);
+  if (admission.status === 'unavailable') {
+    return refusal('ADMISSION_UNAVAILABLE');
+  }
+  if (admission.status === 'rejected') {
+    return refusal('ADMISSION_REJECTED');
+  }
+  return Object.freeze({ admission, ok: true });
 }

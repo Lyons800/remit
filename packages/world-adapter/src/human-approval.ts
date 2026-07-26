@@ -23,6 +23,8 @@ const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/u;
 const SUBJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/u;
 const TOKEN_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const MAXIMUM_APPROVAL_SESSION_TTL_SECONDS = 300;
+const trustedWorldDeploymentBrand = Symbol('trusted-world-deployment');
+const trustedWorldDeployments = new WeakSet<object>();
 
 export type HumanApprovalDecision = 'APPROVE' | 'REJECT';
 export type WorldProofEnvironment = 'production' | 'sandbox' | 'staging';
@@ -30,9 +32,11 @@ export type WorldDeploymentMode = 'live' | 'test';
 
 export type TrustedWorldDeploymentContext = Readonly<{
   appId: `app_${string}`;
+  deploymentId: string;
   environment: WorldProofEnvironment;
   mode: WorldDeploymentMode;
   rpId: `rp_${string}`;
+  [trustedWorldDeploymentBrand]: true;
 }>;
 
 export type TrustedWorldDeploymentContextValidationResult =
@@ -64,6 +68,7 @@ export type WorldHumanApprovalBinding = Readonly<{
 export type WorldProofOfHumanRequest = Readonly<{
   binding: WorldHumanApprovalBinding;
   config: Readonly<IDKitRequestConfig>;
+  deploymentId: string;
   environment: WorldProofEnvironment;
   expectedSignalHash: string;
   preset: Readonly<ProofOfHumanPreset>;
@@ -73,6 +78,7 @@ export type WorldProofOfHumanRequestValidationReason =
   | 'ACTION_MISMATCH'
   | 'APP_MISMATCH'
   | 'DEPLOYMENT_INVALID'
+  | 'DEPLOYMENT_MISMATCH'
   | 'ENVIRONMENT_MISMATCH'
   | 'REQUEST_INVALID'
   | 'RP_CONTEXT_INVALID'
@@ -214,30 +220,59 @@ export function createTrustedWorldDeploymentContext({
     throw new Error('Live World deployments cannot use a staging app ID.');
   }
 
-  return Object.freeze({
+  const deploymentId = `world-deployment:${hashBinding(
+    'invoiceguard:world-deployment:v1',
+    [appId, environment, mode, rpId],
+  )}`;
+  const context = Object.freeze({
     appId: appId as `app_${string}`,
+    deploymentId,
     environment,
     mode,
     rpId: rpId as `rp_${string}`,
+    [trustedWorldDeploymentBrand]: true as const,
   });
+  trustedWorldDeployments.add(context);
+  return context;
 }
 
 export function validateTrustedWorldDeploymentContext(
   value: unknown,
 ): TrustedWorldDeploymentContextValidationResult {
-  const snapshot = cloneValue(value);
-
-  if (!isRecord(snapshot)) {
+  if (
+    !isRecord(value) ||
+    !trustedWorldDeployments.has(value) ||
+    !Object.isFrozen(value) ||
+    (
+      value as Record<string, unknown> & {
+        [trustedWorldDeploymentBrand]?: unknown;
+      }
+    )[trustedWorldDeploymentBrand] !== true
+  ) {
     return Object.freeze({ ok: false });
   }
 
-  const appId = stringField(snapshot, 'appId');
-  const environment = stringField(snapshot, 'environment');
-  const mode = stringField(snapshot, 'mode');
-  const rpId = stringField(snapshot, 'rpId');
+  const stringKeys = Object.keys(value).sort();
+  if (
+    stringKeys.length !== 5 ||
+    stringKeys.join('\u0000') !==
+      ['appId', 'deploymentId', 'environment', 'mode', 'rpId']
+        .sort()
+        .join('\u0000') ||
+    Reflect.ownKeys(value).length !== 6
+  ) {
+    return Object.freeze({ ok: false });
+  }
+
+  const appId = stringField(value, 'appId');
+  const deploymentId = stringField(value, 'deploymentId');
+  const environment = stringField(value, 'environment');
+  const mode = stringField(value, 'mode');
+  const rpId = stringField(value, 'rpId');
 
   if (
     appId === undefined ||
+    deploymentId === undefined ||
     environment === undefined ||
     mode === undefined ||
     rpId === undefined
@@ -246,13 +281,25 @@ export function validateTrustedWorldDeploymentContext(
   }
 
   try {
+    const exactEnvironment = requireEnvironment(environment);
+    const exactMode = requireDeploymentMode(mode);
+    requirePattern(appId, APP_ID_PATTERN, 'appId');
+    requirePattern(rpId, RP_ID_PATTERN, 'rpId');
+    if (
+      (exactMode === 'live' && exactEnvironment !== 'production') ||
+      (exactMode === 'live' && appId.startsWith('app_staging_')) ||
+      deploymentId !==
+        `world-deployment:${hashBinding('invoiceguard:world-deployment:v1', [
+          appId,
+          exactEnvironment,
+          exactMode,
+          rpId,
+        ])}`
+    ) {
+      return Object.freeze({ ok: false });
+    }
     return Object.freeze({
-      context: createTrustedWorldDeploymentContext({
-        appId,
-        environment: requireEnvironment(environment),
-        mode: requireDeploymentMode(mode),
-        rpId,
-      }),
+      context: value as TrustedWorldDeploymentContext,
       ok: true,
     });
   } catch {
@@ -436,14 +483,20 @@ export function validateWorldProofOfHumanRequest(
   const rawBinding = snapshot.binding;
   const rawConfig = snapshot.config;
   const rawPreset = snapshot.preset;
+  const requestDeploymentId = stringField(snapshot, 'deploymentId');
 
   if (
     !isRecord(rawBinding) ||
     !isRecord(rawConfig) ||
     !isRecord(rawConfig.rp_context) ||
-    !isRecord(rawPreset)
+    !isRecord(rawPreset) ||
+    requestDeploymentId === undefined
   ) {
     return invalidRequest('REQUEST_INVALID');
+  }
+
+  if (requestDeploymentId !== deployment.deploymentId) {
+    return invalidRequest('DEPLOYMENT_MISMATCH');
   }
 
   const actionDigest = stringField(rawBinding, 'actionDigest');
@@ -628,6 +681,7 @@ export function validateWorldProofOfHumanRequest(
       require_user_presence: true,
       rp_context: rpContext,
     } satisfies IDKitRequestConfig),
+    deploymentId: deployment.deploymentId,
     environment,
     expectedSignalHash,
     preset: Object.freeze({
@@ -680,6 +734,7 @@ export function createWorldProofOfHumanRequest({
   const candidate = Object.freeze({
     binding,
     config,
+    deploymentId: deployment.deploymentId,
     environment: deployment.environment,
     expectedSignalHash: hashSignal(binding.worldSignal),
     preset,
