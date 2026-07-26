@@ -157,9 +157,7 @@ try {
     process.exitCode = 1;
     process.stderr.write(
       `Better Auth schema failed UUID validation${
-        missingTables.length > 0
-          ? `; missing: ${missingTables.join(', ')}`
-          : ''
+        missingTables.length > 0 ? `; missing: ${missingTables.join(', ')}` : ''
       }\n`,
     );
   } else if (!checkOnly) {
