@@ -5,7 +5,10 @@
     "declaration": false,
     "declarationMap": false,
     "lib": ["DOM", "DOM.Iterable", "ES2024"],
-    "noEmit": true
+    "noEmit": true,
+    // The Hedera SDK declarations do not compile cleanly under node16
+    // resolution. Test source remains fully checked.
+    "skipLibCheck": true
   },
   "include": [
     "apps/**/*.test.ts",

@@ -14,6 +14,7 @@
     "check": "pnpm format && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "clean": "turbo run clean && rm -rf .turbo coverage",
     "demo": "tsx scripts/demo.ts",
+    "demo:dual-token": "tsx scripts/dual-token-demo.ts",
     "dev": "turbo run dev --parallel",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
@@ -29,6 +30,7 @@
   },
   "devDependencies": {
     "@eslint/js": "catalog:",
+    "@hiero-ledger/proto": "2.31.0",
     "@hiero-ledger/sdk": "2.85.0",
     "@remit/domain": "workspace:*",
     "@remit/persistence": "workspace:*",
