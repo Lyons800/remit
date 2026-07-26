@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
 import {
@@ -26,6 +26,8 @@ const ORGANIZATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u;
 const MINIMUM_CHALLENGE_TTL_SECONDS = 60;
 const MAXIMUM_CHALLENGE_TTL_SECONDS = 120;
 const DEFAULT_CHALLENGE_TTL_SECONDS = 90;
+const verifiedAgentkitClaimBrand = Symbol('verified-agentkit-claim');
+const verifiedAgentkitClaims = new WeakSet<object>();
 
 export type AgentkitApprovalChallenge = Readonly<{
   actionDigest: string;
@@ -49,15 +51,19 @@ export type AgentkitApprovalChallengeValidationResult =
       ok: false;
     }>;
 
-export type VerifiedAgentkitClaim = Readonly<{
+type VerifiedAgentkitClaimCore = Readonly<{
   actionDigest: string;
   agentAddress: `0x${string}`;
   approvalUri: string;
+  challengeId: string;
   expiresAt: string;
   issuedAt: string;
   nonce: string;
   organizationId: string;
+  signedProofDigest: string;
 }>;
+export type VerifiedAgentkitClaim = VerifiedAgentkitClaimCore &
+  Readonly<{ [verifiedAgentkitClaimBrand]: true }>;
 
 export type VerifiedAgentkitClaimValidationResult =
   | Readonly<{ claim: VerifiedAgentkitClaim; ok: true }>
@@ -123,7 +129,7 @@ type AuthorizeAgentkitRequestInput = Readonly<{
 }>;
 
 type AuthorizeAgentkitRequestDependencies = Readonly<{
-  commitAuthorization: (claim: VerifiedAgentkitClaim) => Promise<unknown>;
+  commitAuthorization: (claim: VerifiedAgentkitClaimCore) => Promise<unknown>;
   validateMessage?: (
     payload: AgentkitPayload,
     expectedResourceUri: string,
@@ -236,37 +242,72 @@ function createApprovalUri(
   );
 }
 
+function hashAgentkitValue(domain: string, value: string): string {
+  const hash = createHash('sha256');
+  hash.update(domain, 'ascii');
+  hash.update(Uint8Array.of(0));
+  hash.update(value, 'utf8');
+  return hash.digest('hex');
+}
+
+function deriveAgentkitChallengeId(
+  claim: Pick<
+    VerifiedAgentkitClaimCore,
+    | 'actionDigest'
+    | 'agentAddress'
+    | 'approvalUri'
+    | 'expiresAt'
+    | 'issuedAt'
+    | 'nonce'
+    | 'organizationId'
+  >,
+): string {
+  return `world-agentkit:${hashAgentkitValue(
+    'invoiceguard:world-agentkit-challenge:v1',
+    [
+      claim.organizationId,
+      claim.actionDigest,
+      claim.agentAddress,
+      claim.approvalUri,
+      claim.nonce,
+      claim.issuedAt,
+      claim.expiresAt,
+    ].join('\u0000'),
+  )}`;
+}
+
 export function validateVerifiedAgentkitClaim(
   value: unknown,
 ): VerifiedAgentkitClaimValidationResult {
-  let snapshot: unknown;
-
-  try {
-    snapshot = structuredClone(value);
-  } catch {
+  if (
+    !isRecord(value) ||
+    !verifiedAgentkitClaims.has(value) ||
+    !Object.isFrozen(value)
+  ) {
     return Object.freeze({ ok: false });
   }
 
-  if (!isRecord(snapshot)) {
-    return Object.freeze({ ok: false });
-  }
-
-  const actionDigest = stringField(snapshot, 'actionDigest');
-  const agentAddress = stringField(snapshot, 'agentAddress');
-  const approvalUri = stringField(snapshot, 'approvalUri');
-  const expiresAt = stringField(snapshot, 'expiresAt');
-  const issuedAt = stringField(snapshot, 'issuedAt');
-  const nonce = stringField(snapshot, 'nonce');
-  const organizationId = stringField(snapshot, 'organizationId');
+  const actionDigest = stringField(value, 'actionDigest');
+  const agentAddress = stringField(value, 'agentAddress');
+  const approvalUri = stringField(value, 'approvalUri');
+  const challengeId = stringField(value, 'challengeId');
+  const expiresAt = stringField(value, 'expiresAt');
+  const issuedAt = stringField(value, 'issuedAt');
+  const nonce = stringField(value, 'nonce');
+  const organizationId = stringField(value, 'organizationId');
+  const signedProofDigest = stringField(value, 'signedProofDigest');
 
   if (
+    Reflect.ownKeys(value).length !== 9 ||
     actionDigest === undefined ||
     agentAddress === undefined ||
     approvalUri === undefined ||
+    challengeId === undefined ||
     expiresAt === undefined ||
     issuedAt === undefined ||
     nonce === undefined ||
-    organizationId === undefined
+    organizationId === undefined ||
+    signedProofDigest === undefined
   ) {
     return Object.freeze({ ok: false });
   }
@@ -297,7 +338,17 @@ export function validateVerifiedAgentkitClaim(
       canonicalAddress !== agentAddress ||
       expectedApprovalUri !== approvalUri ||
       issuedAtDate.toISOString() !== issuedAt ||
-      expiresAtDate.toISOString() !== expiresAt
+      expiresAtDate.toISOString() !== expiresAt ||
+      !/^[0-9a-f]{64}$/u.test(signedProofDigest) ||
+      deriveAgentkitChallengeId({
+        actionDigest,
+        agentAddress: canonicalAddress,
+        approvalUri: expectedApprovalUri,
+        expiresAt,
+        issuedAt,
+        nonce,
+        organizationId,
+      }) !== challengeId
     ) {
       return Object.freeze({ ok: false });
     }
@@ -305,18 +356,7 @@ export function validateVerifiedAgentkitClaim(
     return Object.freeze({ ok: false });
   }
 
-  return Object.freeze({
-    claim: Object.freeze({
-      actionDigest,
-      agentAddress: agentAddress as `0x${string}`,
-      approvalUri: expectedApprovalUri,
-      expiresAt,
-      issuedAt,
-      nonce,
-      organizationId,
-    }),
-    ok: true,
-  });
+  return Object.freeze({ claim: value as VerifiedAgentkitClaim, ok: true });
 }
 
 export function generateAgentkitNonce(): string {
@@ -681,14 +721,27 @@ export async function authorizeAgentkitRequest(
     return refusal('SIGNATURE_INVALID');
   }
 
-  const claim: VerifiedAgentkitClaim = Object.freeze({
+  const claim = Object.freeze({
     actionDigest: exactChallenge.actionDigest,
     agentAddress: exactChallenge.agentAddress,
     approvalUri: exactChallenge.approvalUri,
+    challengeId: deriveAgentkitChallengeId({
+      actionDigest: exactChallenge.actionDigest,
+      agentAddress: exactChallenge.agentAddress,
+      approvalUri: exactChallenge.approvalUri,
+      expiresAt: exactChallenge.expiresAt,
+      issuedAt: exactChallenge.issuedAt,
+      nonce: exactChallenge.nonce,
+      organizationId: exactChallenge.organizationId,
+    }),
     expiresAt: exactChallenge.expiresAt,
     issuedAt: exactChallenge.issuedAt,
     nonce: exactChallenge.nonce,
     organizationId: exactChallenge.organizationId,
+    signedProofDigest: hashAgentkitValue(
+      'invoiceguard:world-agentkit-signed-header:v1',
+      header,
+    ),
   });
 
   try {
@@ -705,5 +758,10 @@ export async function authorizeAgentkitRequest(
     return refusal('COMMIT_FAILED');
   }
 
-  return Object.freeze({ claim, ok: true });
+  verifiedAgentkitClaims.add(claim);
+  const verifiedClaim = claim as VerifiedAgentkitClaim;
+  return Object.freeze({
+    claim: verifiedClaim,
+    ok: true,
+  });
 }

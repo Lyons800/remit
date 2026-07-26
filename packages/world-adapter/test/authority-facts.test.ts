@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import type { IDKitResult } from '@worldcoin/idkit-core';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { privateKeyToAccount } from 'viem/accounts';
 
 import {
   actionFactBinding,
@@ -7,94 +9,333 @@ import {
   validateApprovalQuorum,
 } from '@invoiceguard/domain';
 
+import { humanAuthorization } from '../../domain/test/fixtures/authorization.js';
+import * as worldAdapter from '../src/index.js';
 import {
-  authorization,
-  humanAuthorization,
-} from '../../domain/test/fixtures/authorization.js';
-import {
-  createWorldApprovalFact,
-  createWorldApprovalIdentityClaims,
+  authorizeAgentkitRequest,
+  createAgentkitApprovalChallenge,
+  createTrustedWorldDeploymentContext,
+  createWorldHumanApprovalBinding,
   createWorldPrincipalKeyring,
-  createWorldRequestingAgentExecutionFact,
-  deriveActionHumanPrincipalAliases,
+  createWorldProofOfHumanRequest,
   deriveAgentTenantPrincipalAliases,
-  refreshWorldApprovalFact,
-  refreshWorldRequestingAgentExecutionFact,
-  type ScopedWorldPrincipal,
-  type VerifiedWorldApprovalEvidence,
-  type VerifiedWorldExecutorEvidence,
+  signAgentkitApprovalChallenge,
+  verifyAndProjectWorldAuthority,
+  WORLD_AGENT_SIGNATURE_CHAIN_ID,
+  type VerifiedAgentkitClaim,
+  type VerifiedWorldCompanyAuthority,
+  type WorldAuthorityProjectionDependencies,
+  type WorldCompanyAuthorityRequirement,
 } from '../src/index.js';
 
-const VERIFIED_AT = '2026-07-25T10:10:00.000Z';
-const REFRESHED_AT = '2026-07-25T10:20:00.000Z';
-const EXPIRES_AT = '2026-07-25T10:50:00.000Z';
-const SHORTER_EXPIRY = '2026-07-25T10:45:00.000Z';
+const ISSUED_AT = new Date('2026-07-25T10:00:00.000Z');
+const NOW = new Date('2026-07-25T10:00:30.000Z');
+const SESSION_EXPIRES_AT = new Date('2026-07-25T10:02:00.000Z');
+const RP_EXPIRES_AT = new Date('2026-07-25T10:01:45.000Z');
+const WORLD_EXPIRES_AT = new Date('2026-07-25T10:01:20.000Z');
+const APPROVAL_AUTHORITY_EXPIRES_AT = '2026-07-25T10:01:10.000Z';
+const REQUESTER_AUTHORITY_EXPIRES_AT = '2026-07-25T10:01:25.000Z';
+const BACKING_EXPIRES_AT = '2026-07-25T10:04:00.000Z';
+const APPROVAL_HUMAN_ID = '0x1234';
+const REQUESTER_HUMAN_ID = '0x9876';
+const APPROVAL_NULLIFIER = '0x5678';
 
-function scopedPrincipal(character: string): ScopedWorldPrincipal {
-  return `hmac-sha256:${character.repeat(43)}`;
+const approvalAccount = privateKeyToAccount(
+  '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+);
+const requesterAccount = privateKeyToAccount(
+  '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+);
+const deployment = createTrustedWorldDeploymentContext({
+  appId: 'app_invoiceguard',
+  environment: 'production',
+  mode: 'live',
+  rpId: 'rp_invoiceguard',
+});
+const keyring = createWorldPrincipalKeyring(
+  { key: new Uint8Array(32).fill(1), version: 'v2' },
+  [{ key: new Uint8Array(32).fill(2), version: 'v1' }],
+);
+
+type WorldIdKitResultV4 = Extract<
+  IDKitResult,
+  { action: string; protocol_version: '4.0' }
+>;
+
+let approvalClaim: VerifiedAgentkitClaim;
+let requesterClaim: VerifiedAgentkitClaim;
+
+async function withFixtureClock<T>(operation: () => Promise<T>): Promise<T> {
+  const realDate = globalThis.Date;
+  const fixedDate = new Proxy(realDate, {
+    construct(target, argumentsList) {
+      return Reflect.construct(
+        target,
+        argumentsList.length === 0 ? [NOW.getTime()] : argumentsList,
+      );
+    },
+    get(target, property, receiver) {
+      return property === 'now'
+        ? () => NOW.getTime()
+        : Reflect.get(target, property, receiver);
+    },
+  });
+  vi.stubGlobal('Date', fixedDate);
+  try {
+    return await operation();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 }
 
-function approvalEvidence(
-  index: number,
-  role: string,
-  overrides: Partial<VerifiedWorldApprovalEvidence> = {},
-): VerifiedWorldApprovalEvidence {
-  return {
-    actionHumanPrincipal: scopedPrincipal(String(index)),
-    agentBackingRecordId: `agent-backing-${index}`,
-    agentKitChallengeId: `agentkit-challenge-${index}`,
-    agentTenantPrincipal: scopedPrincipal(
-      String.fromCodePoint('A'.charCodeAt(0) + index),
+async function createVerifiedClaim(
+  account: typeof approvalAccount,
+  nonce: string,
+): Promise<VerifiedAgentkitClaim> {
+  const challenge = createAgentkitApprovalChallenge({
+    actionDigest: humanAuthorization.envelope.actionDigest,
+    agentAddress: account.address,
+    issuedAt: ISSUED_AT,
+    nonce,
+    organizationId: humanAuthorization.actionCore.organizationId,
+    publicOrigin: 'http://localhost:4100',
+  });
+  const header = await signAgentkitApprovalChallenge(challenge, {
+    address: account.address,
+    chainId: WORLD_AGENT_SIGNATURE_CHAIN_ID,
+    signMessage: (message) => account.signMessage({ message }),
+    type: 'eip191',
+  });
+  const result = await withFixtureClock(() =>
+    authorizeAgentkitRequest(
+      {
+        bodyByteLength: 0,
+        challenge,
+        header,
+        method: 'POST',
+        now: NOW,
+        pathActionDigest: challenge.actionDigest,
+        requestUri: challenge.approvalUri,
+        storedActionDigest: challenge.actionDigest,
+      },
+      { commitAuthorization: async () => true },
     ),
-    approvalId: `approval-${index}`,
-    approvalSessionId: `approval-session-${index}`,
-    consumptionClaimId: `approval-consumption-${index}`,
-    decisionId: `decision-${index}`,
-    expiresAt: EXPIRES_AT,
-    role,
-    roleCredentialId: `role-credential-${index}`,
-    signedProofDigest: String(index).repeat(64),
-    subjectId: `subject-${index}`,
-    verifiedAt: VERIFIED_AT,
-    worldProofId: `world-proof-${index}`,
-    ...overrides,
-  };
+  );
+  if (!result.ok) {
+    throw new Error(`Synthetic AgentKit claim failed: ${result.reason}.`);
+  }
+  return result.claim;
 }
 
-function executorEvidence(
-  overrides: Partial<VerifiedWorldExecutorEvidence> = {},
-): VerifiedWorldExecutorEvidence {
+beforeAll(async () => {
+  approvalClaim = await createVerifiedClaim(
+    approvalAccount,
+    '0123456789abcdef',
+  );
+  requesterClaim = await createVerifiedClaim(
+    requesterAccount,
+    'fedcba9876543210',
+  );
+});
+
+function humanIdForClaim(claim: VerifiedAgentkitClaim): string {
+  return claim.agentAddress === approvalAccount.address
+    ? APPROVAL_HUMAN_ID
+    : REQUESTER_HUMAN_ID;
+}
+
+function authorityFor(
+  requirement: WorldCompanyAuthorityRequirement,
+  overrides: Partial<VerifiedWorldCompanyAuthority> = {},
+): VerifiedWorldCompanyAuthority {
   return {
-    actionHumanPrincipal: scopedPrincipal('X'),
-    agentBackingRecordId: 'requesting-agent-backing-1',
-    agentId: 'payment-agent-1',
-    agentKitChallengeId: 'requesting-agentkit-challenge-1',
-    agentTenantPrincipal: scopedPrincipal('Y'),
-    expiresAt: EXPIRES_AT,
-    factId: 'requesting-agent-fact-1',
-    roleCredentialId: 'requesting-agent-role-credential-1',
-    signedProofDigest: 'a'.repeat(64),
-    verifiedAt: VERIFIED_AT,
+    agentAddress: requirement.agentAddress,
+    agentTenantPrincipal: requirement.agentTenantPrincipal,
+    agentTenantPrincipalDerivationVersion:
+      requirement.agentTenantPrincipalDerivationVersion,
+    audience: requirement.audience ?? 'invoiceguard:approval',
+    credentialDigest:
+      requirement.kind === 'APPROVAL' ? '1'.repeat(64) : '2'.repeat(64),
+    credentialId:
+      requirement.kind === 'APPROVAL'
+        ? 'approval-role-credential-1'
+        : 'requester-role-credential-1',
+    expiresAt:
+      requirement.kind === 'APPROVAL'
+        ? APPROVAL_AUTHORITY_EXPIRES_AT
+        : REQUESTER_AUTHORITY_EXPIRES_AT,
+    grantDigest: requirement.grantDigest ?? '3'.repeat(64),
+    grantId: requirement.grantId,
+    grantVersion: requirement.grantVersion ?? 7,
+    notBefore: '2026-07-25T09:59:00.000Z',
+    organizationId: requirement.organizationId,
+    role: requirement.requiredRole,
+    scope: requirement.scope ?? 'payments:approve',
+    scopeActionDigest: requirement.actionDigest,
+    subjectId: requirement.subjectId,
     ...overrides,
   };
 }
 
-describe('World to AP authority facts', () => {
-  it('emits the canonical AP approval and requester fact types', () => {
-    const approvals = [
-      createWorldApprovalFact(
-        humanAuthorization,
-        approvalEvidence(1, 'FINANCE_APPROVER'),
-      ),
-      createWorldApprovalFact(
-        humanAuthorization,
-        approvalEvidence(2, 'TREASURY_APPROVER'),
-      ),
-    ];
-    for (const approval of approvals) {
-      expect(parseAdapterVerifiedApprovalFact(approval)).toEqual(approval);
-    }
+function createProof(
+  request: ReturnType<typeof createWorldProofOfHumanRequest>,
+  nullifier = APPROVAL_NULLIFIER,
+): WorldIdKitResultV4 {
+  return {
+    action: request.binding.worldActionId,
+    environment: request.environment,
+    nonce: request.config.rp_context.nonce,
+    protocol_version: '4.0',
+    responses: [
+      {
+        expires_at_min: WORLD_EXPIRES_AT.getTime() / 1_000,
+        identifier: 'proof_of_human',
+        issuer_schema_id: 1,
+        nullifier,
+        proof: ['0x1', '0x2', '0x3', '0x4', '0x5'],
+        signal_hash: request.expectedSignalHash,
+      },
+    ],
+    user_presence_completed: true,
+  };
+}
 
+function createHarness(
+  overrides: Readonly<{
+    approvalClaim?: VerifiedAgentkitClaim;
+    approvalHumanId?: string;
+    nullifier?: string;
+    requesterClaim?: VerifiedAgentkitClaim;
+    role?: string;
+    roleGrantId?: string;
+    subjectId?: string;
+  }> = {},
+) {
+  const selectedApprovalClaim = overrides.approvalClaim ?? approvalClaim;
+  const selectedRequesterClaim = overrides.requesterClaim ?? requesterClaim;
+  const approvalHumanId =
+    overrides.approvalHumanId ?? humanIdForClaim(selectedApprovalClaim);
+  const aliases = deriveAgentTenantPrincipalAliases({
+    humanId: approvalHumanId,
+    keyring,
+    organizationId: humanAuthorization.actionCore.organizationId,
+  });
+  const currentAlias = aliases[0];
+  if (currentAlias === undefined) {
+    throw new Error('Synthetic keyring must have a current alias.');
+  }
+  const binding = createWorldHumanApprovalBinding({
+    actionDigest: humanAuthorization.envelope.actionDigest,
+    agentAddress: selectedApprovalClaim.agentAddress,
+    agentTenantPrincipal: currentAlias.principal,
+    agentTenantPrincipalDerivationVersion: currentAlias.derivationVersion,
+    approvalSessionId: `approval-session-${selectedApprovalClaim.nonce}`,
+    createdAt: ISSUED_AT,
+    decision: 'APPROVE',
+    expiresAt: SESSION_EXPIRES_AT,
+    organizationId: humanAuthorization.actionCore.organizationId,
+    requiredRole: overrides.role ?? 'FINANCE_APPROVER',
+    roleGrantId: overrides.roleGrantId ?? 'approval-role-grant-1',
+    subjectId: overrides.subjectId ?? 'subject:finance-approver-1',
+  });
+  const request = createWorldProofOfHumanRequest({
+    binding,
+    deployment,
+    rpContext: {
+      created_at: ISSUED_AT.getTime() / 1_000,
+      expires_at: RP_EXPIRES_AT.getTime() / 1_000,
+      nonce: `rp-${selectedApprovalClaim.nonce}`,
+      rp_id: deployment.rpId,
+      signature: '0xsynthetic-rp-signature',
+    },
+  });
+  const verifyWorldProof = vi.fn(async () => ({ status: 'verified' as const }));
+  const resolveAgentBookBacking = vi.fn(
+    async (claim: VerifiedAgentkitClaim) => ({
+      agentAddress: claim.agentAddress,
+      backingRecordId: `agentbook-record:${claim.agentAddress}`,
+      expiresAt: BACKING_EXPIRES_AT,
+      humanId: humanIdForClaim(claim),
+      status: 'backed' as const,
+      verifiedAt: '2026-07-25T10:00:20.000Z',
+    }),
+  );
+  const resolveCompanyAuthority = vi.fn(
+    async (requirement: WorldCompanyAuthorityRequirement) => ({
+      authority: authorityFor(requirement),
+      status: 'valid' as const,
+    }),
+  );
+  const dependencies: WorldAuthorityProjectionDependencies = {
+    principalKeyring: keyring,
+    resolveAgentBookBacking,
+    resolveCompanyAuthority,
+    verifyWorldProof,
+    worldDeployment: deployment,
+  };
+  return {
+    dependencies,
+    input: {
+      approval: {
+        agentkitClaim: selectedApprovalClaim,
+        proof: createProof(request, overrides.nullifier),
+        request,
+      },
+      authorization: humanAuthorization,
+      now: NOW,
+      requester: {
+        agentId: 'payment-agent-1',
+        agentkitClaim: selectedRequesterClaim,
+      },
+    },
+    request,
+    resolveAgentBookBacking,
+    resolveCompanyAuthority,
+    verifyWorldProof,
+  };
+}
+
+async function requireProjection(harness = createHarness()) {
+  const result = await verifyAndProjectWorldAuthority(
+    harness.input,
+    harness.dependencies,
+  );
+  if (!result.ok) {
+    throw new Error(`Synthetic projection failed: ${result.reason}.`);
+  }
+  return result.projection;
+}
+
+describe('World to AP verified authority projection', () => {
+  it('exposes one verifier path and no structural fact constructors', () => {
+    expect('createWorldApprovalFact' in worldAdapter).toBe(false);
+    expect('createWorldRequestingAgentExecutionFact' in worldAdapter).toBe(
+      false,
+    );
+    expect('createWorldApprovalIdentityClaims' in worldAdapter).toBe(false);
+    expect('refreshWorldApprovalFact' in worldAdapter).toBe(false);
+  });
+
+  it('projects only correlated verified evidence into canonical AP facts', async () => {
+    const financeHarness = createHarness();
+    const treasuryHarness = createHarness({
+      approvalClaim: requesterClaim,
+      approvalHumanId: REQUESTER_HUMAN_ID,
+      nullifier: '0x8765',
+      requesterClaim: approvalClaim,
+      role: 'TREASURY_APPROVER',
+      roleGrantId: 'approval-role-grant-2',
+      subjectId: 'subject:treasury-approver-1',
+    });
+    const finance = await requireProjection(financeHarness);
+    const treasury = await requireProjection(treasuryHarness);
+
+    expect(parseAdapterVerifiedApprovalFact(finance.approvalFact)).toEqual(
+      finance.approvalFact,
+    );
+    expect(parseRequestingAgentExecutionFact(finance.requesterFact)).toEqual(
+      finance.requesterFact,
+    );
     expect(
       validateApprovalQuorum(
         {
@@ -102,206 +343,203 @@ describe('World to AP authority facts', () => {
           minimumVerifiedAt: humanAuthorization.decision.evaluatedAt,
         },
         humanAuthorization.decision.requiredAuthority,
-        approvals,
-        VERIFIED_AT,
+        [finance.approvalFact, treasury.approvalFact],
+        NOW.toISOString(),
       ),
-    ).toEqual({ ok: true, value: approvals });
-
-    const requester = createWorldRequestingAgentExecutionFact(
-      humanAuthorization,
-      executorEvidence(),
-    );
-    expect(parseRequestingAgentExecutionFact(requester)).toEqual(requester);
-    expect(requester).toMatchObject({
+    ).toEqual({
+      ok: true,
+      value: [finance.approvalFact, treasury.approvalFact],
+    });
+    expect(finance.approvalFact).toMatchObject({
+      agentBackingStatus: 'CURRENT',
+      companyRoleStatus: 'CURRENT',
+      expiresAt: APPROVAL_AUTHORITY_EXPIRES_AT,
+      humanDecisionStatus: 'VERIFIED',
+    });
+    expect(finance.requesterFact).toMatchObject({
       adapterId: humanAuthorization.decision.requiredExecutor.adapterId,
-      agentBookRegistry:
-        humanAuthorization.decision.requiredExecutor.agentBookRegistry,
-      audience: humanAuthorization.decision.requiredExecutor.audience,
-      grantDigest: humanAuthorization.decision.requiredExecutor.grant.digest,
-      grantId: humanAuthorization.decision.requiredExecutor.grant.id,
-      grantVersion: humanAuthorization.decision.requiredExecutor.grant.version,
-      role: humanAuthorization.decision.requiredExecutor.requiredRole,
-      scope: humanAuthorization.decision.requiredExecutor.requiredScope,
-      subjectId: 'payment-agent-1',
-      tenantId: humanAuthorization.actionCore.organizationId,
+      agentBookStatus: 'CURRENT',
+      companyRoleStatus: 'CURRENT',
+      expiresAt: REQUESTER_AUTHORITY_EXPIRES_AT,
+      grantStatus: 'CURRENT',
     });
-  });
-
-  it('refuses non-policy approval roles, non-human routes, and invalid ceilings', () => {
-    expect(() =>
-      createWorldApprovalFact(
-        humanAuthorization,
-        approvalEvidence(1, 'UNREQUESTED_ROLE'),
-      ),
-    ).toThrow(/required by the frozen human-approval policy/u);
-    expect(() =>
-      createWorldApprovalFact(
-        authorization,
-        approvalEvidence(1, 'FINANCE_APPROVER'),
-      ),
-    ).toThrow(/required by the frozen human-approval policy/u);
-    expect(() =>
-      createWorldRequestingAgentExecutionFact(
-        humanAuthorization,
-        executorEvidence({
-          expiresAt: '2026-07-25T11:00:00.001Z',
-        }),
-      ),
-    ).toThrow(/cannot outlive the action/u);
-    expect(() =>
-      createWorldApprovalFact(
-        humanAuthorization,
-        approvalEvidence(1, 'FINANCE_APPROVER', {
-          actionHumanPrincipal: 'hmac-sha256:short',
-        }),
-      ),
-    ).toThrow(/must be a scoped World HMAC principal/u);
-  });
-
-  it('refreshes status without substituting provenance or extending validity', () => {
-    const originalApproval = createWorldApprovalFact(
-      humanAuthorization,
-      approvalEvidence(1, 'FINANCE_APPROVER'),
-    );
     expect(
-      refreshWorldApprovalFact(
-        humanAuthorization,
-        originalApproval,
-        approvalEvidence(1, 'FINANCE_APPROVER', {
-          expiresAt: SHORTER_EXPIRY,
-          verifiedAt: REFRESHED_AT,
-        }),
+      Reflect.ownKeys(finance).some((key) => typeof key === 'symbol'),
+    ).toBe(true);
+  });
+
+  it('derives every rotation alias internally and rejects caller alias lists', async () => {
+    const harness = createHarness();
+    const projection = await requireProjection(harness);
+
+    expect(projection.identityClaims.actionHumanPrincipals).toHaveLength(2);
+    expect(projection.identityClaims.agentTenantPrincipals).toHaveLength(2);
+    expect(
+      projection.identityClaims.actionHumanPrincipals.map(
+        ({ derivationVersion }) => derivationVersion,
       ),
-    ).toMatchObject({
-      approvalId: originalApproval.approvalId,
-      expiresAt: SHORTER_EXPIRY,
-      verifiedAt: REFRESHED_AT,
-    });
-    expect(() =>
-      refreshWorldApprovalFact(
-        humanAuthorization,
-        originalApproval,
-        approvalEvidence(1, 'FINANCE_APPROVER', {
-          decisionId: 'substituted-decision',
-          verifiedAt: REFRESHED_AT,
-        }),
+    ).toEqual(['v2', 'v1']);
+
+    const forgedInput = {
+      ...harness.input,
+      approval: {
+        ...harness.input.approval,
+        actionHumanPrincipals:
+          projection.identityClaims.actionHumanPrincipals.slice(0, 1),
+        agentTenantPrincipals:
+          projection.identityClaims.agentTenantPrincipals.slice(0, 1),
+      },
+    };
+    await expect(
+      verifyAndProjectWorldAuthority(
+        forgedInput as unknown as typeof harness.input,
+        harness.dependencies,
       ),
-    ).toThrow(/cannot substitute authority provenance/u);
-    expect(() =>
-      refreshWorldApprovalFact(
+    ).resolves.toEqual({ ok: false, reason: 'INPUT_INVALID' });
+    expect(harness.verifyWorldProof).toHaveBeenCalledOnce();
+  });
+
+  it('refuses fabricated or substituted AgentKit, proof, backing, and role evidence', async () => {
+    const fabricatedHarness = createHarness();
+    const fabricatedClaim = structuredClone(
+      fabricatedHarness.input.approval.agentkitClaim,
+    );
+    await expect(
+      verifyAndProjectWorldAuthority(
         {
-          ...humanAuthorization,
-          actionCore: {
-            ...humanAuthorization.actionCore,
-            actionId: 'substituted-action',
+          ...fabricatedHarness.input,
+          approval: {
+            ...fabricatedHarness.input.approval,
+            agentkitClaim: fabricatedClaim,
           },
         },
-        originalApproval,
-        approvalEvidence(1, 'FINANCE_APPROVER', {
-          verifiedAt: REFRESHED_AT,
-        }),
+        fabricatedHarness.dependencies,
       ),
-    ).toThrow();
-    expect(() =>
-      refreshWorldApprovalFact(
-        humanAuthorization,
-        originalApproval,
-        approvalEvidence(1, 'FINANCE_APPROVER', {
-          expiresAt: '2026-07-25T10:55:00.000Z',
-          verifiedAt: REFRESHED_AT,
-        }),
-      ),
-    ).toThrow(/cannot move verification backward or extend expiry/u);
-
-    const originalRequester = createWorldRequestingAgentExecutionFact(
-      humanAuthorization,
-      executorEvidence(),
-    );
-    expect(
-      refreshWorldRequestingAgentExecutionFact(
-        humanAuthorization,
-        originalRequester,
-        executorEvidence({
-          expiresAt: SHORTER_EXPIRY,
-          verifiedAt: REFRESHED_AT,
-        }),
-      ),
-    ).toMatchObject({
-      expiresAt: SHORTER_EXPIRY,
-      factId: originalRequester.factId,
-      verifiedAt: REFRESHED_AT,
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'AGENTKIT_CLAIM_INVALID',
     });
-    expect(() =>
-      refreshWorldRequestingAgentExecutionFact(
-        humanAuthorization,
-        originalRequester,
-        executorEvidence({
-          agentKitChallengeId: 'substituted-challenge',
-          verifiedAt: REFRESHED_AT,
+
+    const claimHarness = createHarness();
+    const substitutedClaim = {
+      ...claimHarness.input.approval.agentkitClaim,
+      actionDigest: 'f'.repeat(64),
+    };
+    await expect(
+      verifyAndProjectWorldAuthority(
+        {
+          ...claimHarness.input,
+          approval: {
+            ...claimHarness.input.approval,
+            agentkitClaim: substitutedClaim,
+          },
+        },
+        claimHarness.dependencies,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'AGENTKIT_CLAIM_INVALID',
+    });
+
+    const proofHarness = createHarness();
+    const substitutedProof = structuredClone(
+      proofHarness.input.approval.proof,
+    ) as WorldIdKitResultV4;
+    const proofResponse = substitutedProof.responses[0];
+    if (proofResponse === undefined) {
+      throw new Error('Synthetic World proof must have one response.');
+    }
+    proofResponse.signal_hash = `0x${'0'.repeat(64)}`;
+    await expect(
+      verifyAndProjectWorldAuthority(
+        {
+          ...proofHarness.input,
+          approval: {
+            ...proofHarness.input.approval,
+            proof: substitutedProof,
+          },
+        },
+        proofHarness.dependencies,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'WORLD_PROOF_MISMATCH',
+    });
+    expect(proofHarness.verifyWorldProof).not.toHaveBeenCalled();
+
+    const backingHarness = createHarness();
+    const substitutedBackingDependencies = {
+      ...backingHarness.dependencies,
+      resolveAgentBookBacking: vi.fn(async (claim: VerifiedAgentkitClaim) => ({
+        agentAddress: claim.agentAddress,
+        backingRecordId: 'agentbook-record:substituted',
+        expiresAt: BACKING_EXPIRES_AT,
+        humanId: '0xdeadbeef',
+        status: 'backed' as const,
+        verifiedAt: '2026-07-25T10:00:20.000Z',
+      })),
+    };
+    await expect(
+      verifyAndProjectWorldAuthority(
+        backingHarness.input,
+        substitutedBackingDependencies,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'AGENTBOOK_BACKING_MISMATCH',
+    });
+
+    const roleHarness = createHarness();
+    const substitutedRoleDependencies = {
+      ...roleHarness.dependencies,
+      resolveCompanyAuthority: vi.fn(
+        async (requirement: WorldCompanyAuthorityRequirement) => ({
+          authority: authorityFor(requirement, {
+            subjectId: 'subject:substituted',
+          }),
+          status: 'valid' as const,
         }),
       ),
-    ).toThrow(/cannot substitute authority provenance/u);
+    };
+    await expect(
+      verifyAndProjectWorldAuthority(
+        roleHarness.input,
+        substitutedRoleDependencies,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'AUTHORITY_MISMATCH',
+    });
   });
 
-  it('reserves every HMAC rotation alias under AP identity claims', () => {
-    const keyring = createWorldPrincipalKeyring(
-      { key: new Uint8Array(32).fill(1), version: 'v2' },
-      [{ key: new Uint8Array(32).fill(2), version: 'v1' }],
+  it('accepts no truthy verification shortcut or caller-selected expiry', async () => {
+    const malformedVerification = createHarness();
+    const malformedVerificationDependencies = {
+      ...malformedVerification.dependencies,
+      verifyWorldProof: vi.fn(async () => ({
+        status: 'verified' as const,
+        trusted: true,
+      })),
+    };
+    await expect(
+      verifyAndProjectWorldAuthority(
+        malformedVerification.input,
+        malformedVerificationDependencies,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'WORLD_PROOF_INVALID',
+    });
+
+    const projection = await requireProjection();
+    expect(projection.approvalFact.expiresAt).toBe(
+      APPROVAL_AUTHORITY_EXPIRES_AT,
     );
-    const agentAliases = deriveAgentTenantPrincipalAliases({
-      humanId: '0x1234',
-      keyring,
-      organizationId: humanAuthorization.actionCore.organizationId,
-    });
-    const humanAliases = deriveActionHumanPrincipalAliases({
-      actionDigest: humanAuthorization.envelope.actionDigest,
-      keyring,
-      nullifier: '0x5678',
-      organizationId: humanAuthorization.actionCore.organizationId,
-      worldActionId: 'invoiceguard-approval-v1-test',
-    });
-    const currentAgentAlias = agentAliases[0];
-    const currentHumanAlias = humanAliases[0];
-    if (currentAgentAlias === undefined || currentHumanAlias === undefined) {
-      throw new Error('Expected current World principal aliases.');
-    }
-    const approval = createWorldApprovalFact(
-      humanAuthorization,
-      approvalEvidence(1, 'FINANCE_APPROVER', {
-        actionHumanPrincipal: currentHumanAlias.principal,
-        agentTenantPrincipal: currentAgentAlias.principal,
-      }),
+    expect(projection.requesterFact.expiresAt).toBe(
+      REQUESTER_AUTHORITY_EXPIRES_AT,
     );
-    const claims = createWorldApprovalIdentityClaims(approval, {
-      actionHumanPrincipals: humanAliases,
-      agentTenantPrincipals: agentAliases,
-    });
-    expect(claims.actionHumanPrincipals).toHaveLength(2);
-    expect(claims.agentTenantPrincipals).toHaveLength(2);
-    expect(claims).toMatchObject({
-      actionDigest: humanAuthorization.envelope.actionDigest,
-      agentKitChallengeId: approval.agentKitChallengeId,
-      decisionId: approval.decisionId,
-      worldProofId: approval.worldProofId,
-    });
-    expect(() =>
-      createWorldApprovalIdentityClaims(approval, {
-        actionHumanPrincipals: [
-          humanAliases[1] as (typeof humanAliases)[number],
-        ],
-        agentTenantPrincipals: agentAliases,
-      }),
-    ).toThrow(/include the admitted principal/u);
-    expect(() =>
-      createWorldApprovalIdentityClaims(approval, {
-        actionHumanPrincipals: [
-          {
-            derivationVersion: 'v2',
-            principal: 'hmac-sha256:short',
-          },
-        ],
-        agentTenantPrincipals: agentAliases,
-      }),
-    ).toThrow(/aliases must be unique/u);
+    expect(Date.parse(projection.approvalFact.expiresAt)).toBeLessThan(
+      SESSION_EXPIRES_AT.getTime(),
+    );
   });
 });

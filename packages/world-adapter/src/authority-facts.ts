@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   actionFactBinding,
   createAdapterVerifiedApprovalFact,
@@ -5,51 +7,124 @@ import {
   type AdapterVerifiedApprovalFact,
   type RequestingAgentExecutionFact,
 } from '@invoiceguard/domain';
+import type { IDKitResult, ResponseItemV4 } from '@worldcoin/idkit-core';
 import {
+  canonicalizeJson,
   verifyAuthorizationBundle,
   type AuthorizationBundleV1,
 } from '@invoiceguard/protocol/hashing';
+import { getAddress, isAddress } from 'viem';
 
-import type {
-  ScopedWorldPrincipal,
-  VersionedScopedWorldPrincipal,
+import {
+  validateVerifiedAgentkitClaim,
+  type VerifiedAgentkitClaim,
+} from './agentkit.js';
+import {
+  validateTrustedWorldDeploymentContext,
+  validateWorldProofOfHumanRequest,
+  type TrustedWorldDeploymentContext,
+  type WorldHumanApprovalBinding,
+  type WorldProofOfHumanRequest,
+} from './human-approval.js';
+import {
+  createWorldPrincipalKeyring,
+  deriveActionHumanPrincipalAliases,
+  deriveAgentTenantPrincipalAliases,
+  type ScopedWorldPrincipal,
+  type VersionedScopedWorldPrincipal,
+  type WorldPrincipalDerivationVersion,
+  type WorldPrincipalKeyring,
 } from './privacy.js';
 
 export const WORLD_APPROVAL_ADAPTER_ID = 'world-approval-adapter' as const;
 
+const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+const HEX_IDENTIFIER_PATTERN = /^0x[0-9a-fA-F]+$/u;
 const WORLD_PRINCIPAL_PATTERN = /^hmac-sha256:[A-Za-z0-9_-]{43}$/u;
-const WORLD_PRINCIPAL_VERSION_PATTERN = /^v[1-9][0-9]{0,8}$/u;
+const PROOF_OF_HUMAN_ISSUER_SCHEMA_ID = 1;
+const MAXIMUM_UINT256 = (1n << 256n) - 1n;
+const projectionBrand = Symbol('verified-world-authority-projection');
 
-export type VerifiedWorldApprovalEvidence = Readonly<{
-  actionHumanPrincipal: ScopedWorldPrincipal;
-  agentBackingRecordId: string;
-  agentKitChallengeId: string;
+type WorldIdKitResultV4 = Extract<
+  IDKitResult,
+  { action: string; protocol_version: '4.0' }
+>;
+
+export type VerifiedWorldCompanyAuthority = Readonly<{
+  agentAddress: `0x${string}`;
   agentTenantPrincipal: ScopedWorldPrincipal;
-  approvalId: string;
-  approvalSessionId: string;
-  consumptionClaimId: string;
-  decisionId: string;
+  agentTenantPrincipalDerivationVersion: WorldPrincipalDerivationVersion;
+  audience: string;
+  credentialDigest: string;
+  credentialId: string;
   expiresAt: string;
+  grantDigest: string;
+  grantId: string;
+  grantVersion: number;
+  notBefore: string;
+  organizationId: string;
   role: string;
-  roleCredentialId: string;
-  signedProofDigest: string;
+  scope: string;
+  scopeActionDigest: string;
   subjectId: string;
-  verifiedAt: string;
-  worldProofId: string;
 }>;
 
-export type VerifiedWorldExecutorEvidence = Readonly<{
-  actionHumanPrincipal: ScopedWorldPrincipal;
-  agentBackingRecordId: string;
-  agentId: string;
-  agentKitChallengeId: string;
+export type WorldCompanyAuthorityRequirement = Readonly<{
+  actionDigest: string;
+  agentAddress: `0x${string}`;
   agentTenantPrincipal: ScopedWorldPrincipal;
-  expiresAt: string;
-  factId: string;
-  roleCredentialId: string;
-  signedProofDigest: string;
-  verifiedAt: string;
+  agentTenantPrincipalDerivationVersion: WorldPrincipalDerivationVersion;
+  at: string;
+  audience: string | null;
+  grantDigest: string | null;
+  grantId: string;
+  grantVersion: number | null;
+  kind: 'APPROVAL' | 'REQUESTER';
+  organizationId: string;
+  requiredRole: string;
+  scope: string | null;
+  subjectId: string;
 }>;
+
+export type WorldCompanyAuthorityResolution =
+  | Readonly<{
+      authority: VerifiedWorldCompanyAuthority;
+      status: 'valid';
+    }>
+  | Readonly<{
+      reason:
+        | 'EXPIRED'
+        | 'MISSING'
+        | 'NOT_YET_VALID'
+        | 'REVOKED'
+        | 'SIGNATURE_INVALID';
+      status: 'invalid';
+    }>
+  | Readonly<{ status: 'unavailable' }>;
+
+export type WorldAgentBookAuthorityResolution =
+  | Readonly<{
+      agentAddress: `0x${string}`;
+      backingRecordId: string;
+      expiresAt: string;
+      humanId: string;
+      status: 'backed';
+      verifiedAt: string;
+    }>
+  | Readonly<{
+      agentAddress: `0x${string}`;
+      status: 'unregistered';
+    }>
+  | Readonly<{
+      agentAddress: `0x${string}`;
+      reason: 'LOOKUP_INDETERMINATE' | 'RPC_UNAVAILABLE' | 'WRONG_CHAIN';
+      status: 'unavailable';
+    }>;
+
+export type WorldProofVerificationResult =
+  | Readonly<{ status: 'verified' }>
+  | Readonly<{ status: 'invalid' }>
+  | Readonly<{ status: 'unavailable' }>;
 
 export type WorldApprovalIdentityClaims = Readonly<{
   actionDigest: string;
@@ -65,306 +140,855 @@ export type WorldApprovalIdentityClaims = Readonly<{
   worldProofId: string;
 }>;
 
-function requireVerifiedBundle(
-  input: AuthorizationBundleV1,
-): AuthorizationBundleV1 {
-  return verifyAuthorizationBundle(input);
+export type VerifiedWorldAuthorityProjection = Readonly<{
+  approvalFact: AdapterVerifiedApprovalFact;
+  identityClaims: WorldApprovalIdentityClaims;
+  requesterFact: RequestingAgentExecutionFact;
+  [projectionBrand]: true;
+}>;
+
+export type WorldAuthorityProjectionRefusal =
+  | 'AGENTBOOK_BACKING_INVALID'
+  | 'AGENTBOOK_BACKING_MISMATCH'
+  | 'AGENTBOOK_BACKING_UNAVAILABLE'
+  | 'AGENTBOOK_UNREGISTERED'
+  | 'AGENTKIT_CLAIM_INVALID'
+  | 'AGENTKIT_CLAIM_MISMATCH'
+  | 'AGENTKIT_CLAIM_STALE'
+  | 'AUTHORIZATION_INVALID'
+  | 'AUTHORITY_INVALID'
+  | 'AUTHORITY_MISMATCH'
+  | 'AUTHORITY_STALE'
+  | 'AUTHORITY_UNAVAILABLE'
+  | 'DEPLOYMENT_INVALID'
+  | 'INPUT_INVALID'
+  | 'NOT_AN_APPROVAL'
+  | 'POLICY_ROUTE_MISMATCH'
+  | 'PRINCIPAL_KEYRING_INVALID'
+  | 'REQUEST_INVALID'
+  | 'VALIDITY_WINDOW_EMPTY'
+  | 'WORLD_PROOF_INVALID'
+  | 'WORLD_PROOF_MISMATCH'
+  | 'WORLD_PROOF_STALE'
+  | 'WORLD_PROOF_UNAVAILABLE';
+
+export type WorldAuthorityProjectionResult =
+  | Readonly<{
+      ok: true;
+      projection: VerifiedWorldAuthorityProjection;
+    }>
+  | Readonly<{
+      ok: false;
+      reason: WorldAuthorityProjectionRefusal;
+    }>;
+
+export type VerifyAndProjectWorldAuthorityInput = Readonly<{
+  approval: Readonly<{
+    agentkitClaim: VerifiedAgentkitClaim;
+    proof: unknown;
+    request: WorldProofOfHumanRequest;
+  }>;
+  authorization: AuthorizationBundleV1;
+  now?: Date;
+  requester: Readonly<{
+    agentId: string;
+    agentkitClaim: VerifiedAgentkitClaim;
+  }>;
+}>;
+
+export type WorldAuthorityProjectionDependencies = Readonly<{
+  principalKeyring: WorldPrincipalKeyring;
+  resolveAgentBookBacking: (
+    claim: VerifiedAgentkitClaim,
+  ) => Promise<WorldAgentBookAuthorityResolution>;
+  resolveCompanyAuthority: (
+    requirement: WorldCompanyAuthorityRequirement,
+  ) => Promise<WorldCompanyAuthorityResolution>;
+  verifyWorldProof: (
+    proof: WorldIdKitResultV4,
+    deployment: TrustedWorldDeploymentContext,
+  ) => Promise<WorldProofVerificationResult>;
+  worldDeployment: TrustedWorldDeploymentContext;
+}>;
+
+type ParsedWorldProof = Readonly<{
+  proof: WorldIdKitResultV4;
+  response: ResponseItemV4;
+}>;
+
+type VerifiedBacking = Readonly<{
+  aliases: readonly VersionedScopedWorldPrincipal[];
+  recordId: string;
+  resolution: Extract<WorldAgentBookAuthorityResolution, { status: 'backed' }>;
+}>;
+
+function refusal(
+  reason: WorldAuthorityProjectionRefusal,
+): WorldAuthorityProjectionResult {
+  return Object.freeze({ ok: false, reason });
 }
 
-function requireCurrentWindow(
-  verifiedAt: string,
-  expiresAt: string,
-  actionExpiresAt: string,
-): void {
-  if (verifiedAt >= expiresAt || expiresAt > actionExpiresAt) {
-    throw new Error(
-      'World authority validity must be non-empty and cannot outlive the action.',
-    );
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: object, expected: readonly string[]): boolean {
+  const keys = Reflect.ownKeys(value);
+  return (
+    keys.every((key): key is string => typeof key === 'string') &&
+    keys.length === expected.length &&
+    [...keys].sort().every((key, index) => key === [...expected].sort()[index])
+  );
+}
+
+function isCanonicalInstant(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const milliseconds = Date.parse(value);
+  return (
+    Number.isFinite(milliseconds) &&
+    new Date(milliseconds).toISOString() === value
+  );
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function isNonemptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 1024;
+}
+
+function isCanonicalAddress(value: unknown): value is `0x${string}` {
+  return (
+    typeof value === 'string' &&
+    isAddress(value, { strict: false }) &&
+    getAddress(value) === value
+  );
+}
+
+function sameAddress(left: string, right: string): boolean {
+  return (
+    isAddress(left, { strict: false }) &&
+    isAddress(right, { strict: false }) &&
+    getAddress(left) === getAddress(right)
+  );
+}
+
+function hashRecord(domain: string, value: unknown): string {
+  const hash = createHash('sha256');
+  hash.update(domain, 'ascii');
+  hash.update(Uint8Array.of(0));
+  hash.update(canonicalizeJson(value), 'utf8');
+  return hash.digest('hex');
+}
+
+function prefixedId(prefix: string, domain: string, value: unknown): string {
+  return `${prefix}:${hashRecord(domain, value)}`;
+}
+
+function cloneValue(value: unknown): unknown {
+  try {
+    return structuredClone(value);
+  } catch {
+    return undefined;
   }
 }
 
-function requireHumanApprovalRoute(
-  authorization: AuthorizationBundleV1,
-  role: string,
-): void {
+function parseNonzeroUint256(value: unknown): string | null {
+  if (typeof value !== 'string' || !HEX_IDENTIFIER_PATTERN.test(value)) {
+    return null;
+  }
+  const integer = BigInt(value);
+  return integer > 0n && integer <= MAXIMUM_UINT256 ? value : null;
+}
+
+function parseWorldProof(
+  value: unknown,
+  request: WorldProofOfHumanRequest,
+): ParsedWorldProof | null {
+  const proof = cloneValue(value);
   if (
-    authorization.decision.route !== 'HUMAN_APPROVAL' ||
-    !authorization.decision.requiredAuthority.roles.some(
-      (requirement) => requirement.role === role,
+    !isRecord(proof) ||
+    proof.protocol_version !== '4.0' ||
+    'session_id' in proof ||
+    proof.action !== request.binding.worldActionId ||
+    proof.nonce !== request.config.rp_context.nonce ||
+    proof.environment !== request.environment ||
+    proof.user_presence_completed !== true ||
+    !Array.isArray(proof.responses) ||
+    proof.responses.length !== 1
+  ) {
+    return null;
+  }
+
+  const response = proof.responses[0];
+  if (
+    !isRecord(response) ||
+    response.identifier !== 'proof_of_human' ||
+    response.issuer_schema_id !== PROOF_OF_HUMAN_ISSUER_SCHEMA_ID ||
+    response.signal_hash !== request.expectedSignalHash ||
+    parseNonzeroUint256(response.nullifier) === null ||
+    typeof response.expires_at_min !== 'number' ||
+    !Number.isSafeInteger(response.expires_at_min) ||
+    response.expires_at_min <= 0 ||
+    !Array.isArray(response.proof) ||
+    response.proof.length !== 5 ||
+    !response.proof.every(
+      (item) => typeof item === 'string' && HEX_IDENTIFIER_PATTERN.test(item),
     )
   ) {
-    throw new Error(
-      'World approval role must be required by the frozen human-approval policy.',
-    );
-  }
-}
-
-function requireWorldPrincipal(
-  value: string,
-  name: string,
-): ScopedWorldPrincipal {
-  if (!WORLD_PRINCIPAL_PATTERN.test(value)) {
-    throw new Error(`${name} must be a scoped World HMAC principal.`);
-  }
-  return value as ScopedWorldPrincipal;
-}
-
-export function createWorldApprovalFact(
-  authorizationInput: AuthorizationBundleV1,
-  evidence: VerifiedWorldApprovalEvidence,
-): AdapterVerifiedApprovalFact {
-  const authorization = requireVerifiedBundle(authorizationInput);
-  requireHumanApprovalRoute(authorization, evidence.role);
-  requireCurrentWindow(
-    evidence.verifiedAt,
-    evidence.expiresAt,
-    authorization.actionCore.expiresAt,
-  );
-
-  return createAdapterVerifiedApprovalFact({
-    ...actionFactBinding(authorization),
-    actionHumanPrincipal: requireWorldPrincipal(
-      evidence.actionHumanPrincipal,
-      'actionHumanPrincipal',
-    ),
-    adapterId: WORLD_APPROVAL_ADAPTER_ID,
-    agentBackingRecordId: evidence.agentBackingRecordId,
-    agentBackingStatus: 'CURRENT',
-    agentKitChallengeId: evidence.agentKitChallengeId,
-    agentTenantPrincipal: requireWorldPrincipal(
-      evidence.agentTenantPrincipal,
-      'agentTenantPrincipal',
-    ),
-    approvalId: evidence.approvalId,
-    approvalSessionId: evidence.approvalSessionId,
-    companyRoleStatus: 'CURRENT',
-    consumptionClaimId: evidence.consumptionClaimId,
-    decision: 'APPROVE',
-    decisionId: evidence.decisionId,
-    expiresAt: evidence.expiresAt,
-    humanDecisionStatus: 'VERIFIED',
-    kind: 'APPROVAL_FACT',
-    role: evidence.role,
-    roleCredentialId: evidence.roleCredentialId,
-    signedProofDigest: evidence.signedProofDigest,
-    subjectId: evidence.subjectId,
-    verifiedAt: evidence.verifiedAt,
-    worldProofId: evidence.worldProofId,
-  });
-}
-
-export function createWorldRequestingAgentExecutionFact(
-  authorizationInput: AuthorizationBundleV1,
-  evidence: VerifiedWorldExecutorEvidence,
-): RequestingAgentExecutionFact {
-  const authorization = requireVerifiedBundle(authorizationInput);
-  const required = authorization.decision.requiredExecutor;
-  requireCurrentWindow(
-    evidence.verifiedAt,
-    evidence.expiresAt,
-    authorization.actionCore.expiresAt,
-  );
-
-  return createRequestingAgentExecutionFact(authorization, {
-    actionHumanPrincipal: requireWorldPrincipal(
-      evidence.actionHumanPrincipal,
-      'actionHumanPrincipal',
-    ),
-    adapterId: required.adapterId,
-    agentBackingRecordId: evidence.agentBackingRecordId,
-    agentBookRegistry: required.agentBookRegistry,
-    agentBookStatus: 'CURRENT',
-    agentId: evidence.agentId,
-    agentKitChallengeId: evidence.agentKitChallengeId,
-    agentTenantPrincipal: requireWorldPrincipal(
-      evidence.agentTenantPrincipal,
-      'agentTenantPrincipal',
-    ),
-    audience: required.audience,
-    companyRoleStatus: 'CURRENT',
-    expiresAt: evidence.expiresAt,
-    factId: evidence.factId,
-    grantDigest: required.grant.digest,
-    grantId: required.grant.id,
-    grantStatus: 'CURRENT',
-    grantVersion: required.grant.version,
-    role: required.requiredRole,
-    roleCredentialId: evidence.roleCredentialId,
-    scope: required.requiredScope,
-    signedProofDigest: evidence.signedProofDigest,
-    subjectId: evidence.agentId,
-    tenantId: authorization.actionCore.organizationId,
-    verifiedAt: evidence.verifiedAt,
-  });
-}
-
-const approvalIdentityFields = [
-  'actionDigest',
-  'actionHumanPrincipal',
-  'actionId',
-  'adapterId',
-  'agentBackingRecordId',
-  'agentKitChallengeId',
-  'agentTenantPrincipal',
-  'approvalId',
-  'approvalSessionId',
-  'consumptionClaimId',
-  'decisionId',
-  'invoiceRevisionId',
-  'nonce',
-  'obligationId',
-  'organizationId',
-  'role',
-  'roleCredentialId',
-  'signedProofDigest',
-  'subjectId',
-  'worldProofId',
-] as const satisfies readonly (keyof AdapterVerifiedApprovalFact)[];
-
-const executorIdentityFields = [
-  'actionDigest',
-  'actionHumanPrincipal',
-  'actionId',
-  'adapterId',
-  'agentBackingRecordId',
-  'agentBookRegistry',
-  'agentId',
-  'agentKitChallengeId',
-  'agentTenantPrincipal',
-  'audience',
-  'factId',
-  'grantDigest',
-  'grantId',
-  'grantVersion',
-  'invoiceRevisionId',
-  'nonce',
-  'obligationId',
-  'organizationId',
-  'role',
-  'roleCredentialId',
-  'scope',
-  'signedProofDigest',
-  'subjectId',
-  'tenantId',
-] as const satisfies readonly (keyof RequestingAgentExecutionFact)[];
-
-function requireSameFields<T extends object>(
-  original: T,
-  refreshed: T,
-  fields: readonly (keyof T)[],
-  kind: string,
-): void {
-  if (fields.some((field) => original[field] !== refreshed[field])) {
-    throw new Error(`${kind} refresh cannot substitute authority provenance.`);
-  }
-}
-
-export function refreshWorldApprovalFact(
-  authorization: AuthorizationBundleV1,
-  original: AdapterVerifiedApprovalFact,
-  evidence: VerifiedWorldApprovalEvidence,
-): AdapterVerifiedApprovalFact {
-  const refreshed = createWorldApprovalFact(authorization, evidence);
-  requireSameFields(
-    original,
-    refreshed,
-    approvalIdentityFields,
-    'World approval',
-  );
-  if (
-    refreshed.verifiedAt < original.verifiedAt ||
-    refreshed.expiresAt > original.expiresAt
-  ) {
-    throw new Error(
-      'World approval refresh cannot move verification backward or extend expiry.',
-    );
-  }
-  return refreshed;
-}
-
-export function refreshWorldRequestingAgentExecutionFact(
-  authorization: AuthorizationBundleV1,
-  original: RequestingAgentExecutionFact,
-  evidence: VerifiedWorldExecutorEvidence,
-): RequestingAgentExecutionFact {
-  const refreshed = createWorldRequestingAgentExecutionFact(
-    authorization,
-    evidence,
-  );
-  requireSameFields(
-    original,
-    refreshed,
-    executorIdentityFields,
-    'World executor',
-  );
-  if (
-    refreshed.verifiedAt < original.verifiedAt ||
-    refreshed.expiresAt > original.expiresAt
-  ) {
-    throw new Error(
-      'World executor refresh cannot move verification backward or extend expiry.',
-    );
-  }
-  return refreshed;
-}
-
-function requireAliasSet(
-  aliases: readonly VersionedScopedWorldPrincipal[],
-  admittedPrincipal: string,
-  kind: string,
-): readonly VersionedScopedWorldPrincipal[] {
-  const versions = new Set(
-    aliases.map(({ derivationVersion }) => derivationVersion),
-  );
-  const principals = new Set(aliases.map(({ principal }) => principal));
-  if (
-    aliases.length === 0 ||
-    versions.size !== aliases.length ||
-    principals.size !== aliases.length ||
-    aliases.some(
-      ({ derivationVersion, principal }) =>
-        !WORLD_PRINCIPAL_VERSION_PATTERN.test(derivationVersion) ||
-        !WORLD_PRINCIPAL_PATTERN.test(principal),
-    ) ||
-    !aliases.some(({ principal }) => principal === admittedPrincipal)
-  ) {
-    throw new Error(
-      `${kind} aliases must be unique and include the admitted principal.`,
-    );
-  }
-  return Object.freeze(aliases.map((alias) => Object.freeze({ ...alias })));
-}
-
-export function createWorldApprovalIdentityClaims(
-  approval: AdapterVerifiedApprovalFact,
-  input: Readonly<{
-    actionHumanPrincipals: readonly VersionedScopedWorldPrincipal[];
-    agentTenantPrincipals: readonly VersionedScopedWorldPrincipal[];
-  }>,
-): WorldApprovalIdentityClaims {
-  if (approval.adapterId !== WORLD_APPROVAL_ADAPTER_ID) {
-    throw new Error('World identity claims require a World approval fact.');
+    return null;
   }
 
   return Object.freeze({
-    actionDigest: approval.actionDigest,
-    actionHumanPrincipals: requireAliasSet(
-      input.actionHumanPrincipals,
-      approval.actionHumanPrincipal,
-      'Action-human',
-    ),
-    agentKitChallengeId: approval.agentKitChallengeId,
-    agentTenantPrincipals: requireAliasSet(
-      input.agentTenantPrincipals,
-      approval.agentTenantPrincipal,
-      'AgentBook',
-    ),
-    approvalId: approval.approvalId,
-    approvalSessionId: approval.approvalSessionId,
-    consumptionClaimId: approval.consumptionClaimId,
-    decisionId: approval.decisionId,
-    organizationId: approval.organizationId,
-    subjectId: approval.subjectId,
-    worldProofId: approval.worldProofId,
+    proof: proof as unknown as WorldIdKitResultV4,
+    response: response as unknown as ResponseItemV4,
+  });
+}
+
+function minimumExpiry(values: readonly string[]): string | null {
+  const instants = values.map((value) => Date.parse(value));
+  if (instants.some((instant) => !Number.isFinite(instant))) {
+    return null;
+  }
+  return new Date(Math.min(...instants)).toISOString();
+}
+
+function exactInputShape(
+  value: unknown,
+): value is VerifyAndProjectWorldAuthorityInput {
+  return (
+    isRecord(value) &&
+    hasExactKeys(
+      value,
+      value.now === undefined
+        ? ['approval', 'authorization', 'requester']
+        : ['approval', 'authorization', 'now', 'requester'],
+    ) &&
+    isRecord(value.approval) &&
+    hasExactKeys(value.approval, ['agentkitClaim', 'proof', 'request']) &&
+    isRecord(value.requester) &&
+    hasExactKeys(value.requester, ['agentId', 'agentkitClaim']) &&
+    isNonemptyString(value.requester.agentId) &&
+    (value.now === undefined || value.now instanceof Date)
+  );
+}
+
+function isValidAuthority(
+  value: unknown,
+): value is VerifiedWorldCompanyAuthority {
+  return (
+    isRecord(value) &&
+    isCanonicalAddress(value.agentAddress) &&
+    typeof value.agentTenantPrincipal === 'string' &&
+    WORLD_PRINCIPAL_PATTERN.test(value.agentTenantPrincipal) &&
+    typeof value.agentTenantPrincipalDerivationVersion === 'string' &&
+    /^v[1-9][0-9]{0,8}$/u.test(value.agentTenantPrincipalDerivationVersion) &&
+    isNonemptyString(value.audience) &&
+    typeof value.credentialDigest === 'string' &&
+    SHA256_PATTERN.test(value.credentialDigest) &&
+    isNonemptyString(value.credentialId) &&
+    isCanonicalInstant(value.expiresAt) &&
+    typeof value.grantDigest === 'string' &&
+    SHA256_PATTERN.test(value.grantDigest) &&
+    isNonemptyString(value.grantId) &&
+    isPositiveSafeInteger(value.grantVersion) &&
+    isCanonicalInstant(value.notBefore) &&
+    isNonemptyString(value.organizationId) &&
+    isNonemptyString(value.role) &&
+    isNonemptyString(value.scope) &&
+    typeof value.scopeActionDigest === 'string' &&
+    SHA256_PATTERN.test(value.scopeActionDigest) &&
+    isNonemptyString(value.subjectId)
+  );
+}
+
+function authorityMatches(
+  authority: VerifiedWorldCompanyAuthority,
+  requirement: WorldCompanyAuthorityRequirement,
+): boolean {
+  return (
+    sameAddress(authority.agentAddress, requirement.agentAddress) &&
+    authority.agentTenantPrincipal === requirement.agentTenantPrincipal &&
+    authority.agentTenantPrincipalDerivationVersion ===
+      requirement.agentTenantPrincipalDerivationVersion &&
+    authority.organizationId === requirement.organizationId &&
+    authority.subjectId === requirement.subjectId &&
+    authority.role === requirement.requiredRole &&
+    authority.scopeActionDigest === requirement.actionDigest &&
+    authority.grantId === requirement.grantId &&
+    (requirement.audience === null ||
+      authority.audience === requirement.audience) &&
+    (requirement.grantDigest === null ||
+      authority.grantDigest === requirement.grantDigest) &&
+    (requirement.grantVersion === null ||
+      authority.grantVersion === requirement.grantVersion) &&
+    (requirement.scope === null || authority.scope === requirement.scope)
+  );
+}
+
+async function resolveAuthority(
+  requirement: WorldCompanyAuthorityRequirement,
+  now: number,
+  resolve: WorldAuthorityProjectionDependencies['resolveCompanyAuthority'],
+): Promise<
+  | Readonly<{ authority: VerifiedWorldCompanyAuthority; ok: true }>
+  | Readonly<{ ok: false; reason: WorldAuthorityProjectionRefusal }>
+> {
+  let resolution: unknown;
+  try {
+    resolution = await resolve(requirement);
+  } catch {
+    return { ok: false, reason: 'AUTHORITY_UNAVAILABLE' };
+  }
+  if (
+    !isRecord(resolution) ||
+    resolution.status === 'unavailable' ||
+    (resolution.status !== 'valid' && resolution.status !== 'invalid')
+  ) {
+    return {
+      ok: false,
+      reason:
+        isRecord(resolution) && resolution.status === 'unavailable'
+          ? 'AUTHORITY_UNAVAILABLE'
+          : 'AUTHORITY_INVALID',
+    };
+  }
+  if (resolution.status === 'invalid') {
+    return { ok: false, reason: 'AUTHORITY_INVALID' };
+  }
+  if (!isValidAuthority(resolution.authority)) {
+    return { ok: false, reason: 'AUTHORITY_INVALID' };
+  }
+  if (!authorityMatches(resolution.authority, requirement)) {
+    return { ok: false, reason: 'AUTHORITY_MISMATCH' };
+  }
+  if (
+    now < Date.parse(resolution.authority.notBefore) ||
+    now >= Date.parse(resolution.authority.expiresAt)
+  ) {
+    return { ok: false, reason: 'AUTHORITY_STALE' };
+  }
+  return { authority: resolution.authority, ok: true };
+}
+
+async function resolveBacking(
+  claim: VerifiedAgentkitClaim,
+  organizationId: string,
+  now: number,
+  keyring: WorldPrincipalKeyring,
+  resolve: WorldAuthorityProjectionDependencies['resolveAgentBookBacking'],
+): Promise<
+  | Readonly<{ backing: VerifiedBacking; ok: true }>
+  | Readonly<{ ok: false; reason: WorldAuthorityProjectionRefusal }>
+> {
+  let resolution: unknown;
+  try {
+    resolution = await resolve(claim);
+  } catch {
+    return { ok: false, reason: 'AGENTBOOK_BACKING_UNAVAILABLE' };
+  }
+  if (!isRecord(resolution)) {
+    return { ok: false, reason: 'AGENTBOOK_BACKING_INVALID' };
+  }
+  if (resolution.status === 'unavailable') {
+    return { ok: false, reason: 'AGENTBOOK_BACKING_UNAVAILABLE' };
+  }
+  if (resolution.status === 'unregistered') {
+    return { ok: false, reason: 'AGENTBOOK_UNREGISTERED' };
+  }
+  if (
+    resolution.status !== 'backed' ||
+    !isCanonicalAddress(resolution.agentAddress) ||
+    !sameAddress(resolution.agentAddress, claim.agentAddress) ||
+    !isNonemptyString(resolution.backingRecordId) ||
+    !isCanonicalInstant(resolution.verifiedAt) ||
+    !isCanonicalInstant(resolution.expiresAt) ||
+    Date.parse(resolution.verifiedAt) > now ||
+    now >= Date.parse(resolution.expiresAt) ||
+    typeof resolution.humanId !== 'string' ||
+    parseNonzeroUint256(resolution.humanId) === null
+  ) {
+    return { ok: false, reason: 'AGENTBOOK_BACKING_INVALID' };
+  }
+
+  let aliases: readonly VersionedScopedWorldPrincipal[];
+  try {
+    aliases = deriveAgentTenantPrincipalAliases({
+      humanId: resolution.humanId,
+      keyring,
+      organizationId,
+    });
+  } catch {
+    return { ok: false, reason: 'AGENTBOOK_BACKING_INVALID' };
+  }
+  return {
+    backing: Object.freeze({
+      aliases,
+      recordId: resolution.backingRecordId,
+      resolution: resolution as Extract<
+        WorldAgentBookAuthorityResolution,
+        { status: 'backed' }
+      >,
+    }),
+    ok: true,
+  };
+}
+
+function exactClaim(
+  value: unknown,
+  actionDigest: string,
+  organizationId: string,
+  now: number,
+): VerifiedAgentkitClaim | WorldAuthorityProjectionRefusal {
+  const validation = validateVerifiedAgentkitClaim(value);
+  if (!validation.ok) {
+    return 'AGENTKIT_CLAIM_INVALID';
+  }
+  const claim = validation.claim;
+  if (
+    claim.actionDigest !== actionDigest ||
+    claim.organizationId !== organizationId
+  ) {
+    return 'AGENTKIT_CLAIM_MISMATCH';
+  }
+  if (now < Date.parse(claim.issuedAt) || now >= Date.parse(claim.expiresAt)) {
+    return 'AGENTKIT_CLAIM_STALE';
+  }
+  return claim;
+}
+
+function currentAlias(
+  aliases: readonly VersionedScopedWorldPrincipal[],
+): VersionedScopedWorldPrincipal | null {
+  return aliases[0] ?? null;
+}
+
+function includesAlias(
+  aliases: readonly VersionedScopedWorldPrincipal[],
+  principal: string,
+  derivationVersion: string,
+): boolean {
+  return aliases.some(
+    (alias) =>
+      alias.principal === principal &&
+      alias.derivationVersion === derivationVersion,
+  );
+}
+
+function approvalRoleRequired(
+  authorization: AuthorizationBundleV1,
+  binding: WorldHumanApprovalBinding,
+): boolean {
+  return authorization.decision.requiredAuthority.roles.some(
+    (requirement) => requirement.role === binding.requiredRole,
+  );
+}
+
+function worldCredentialExpiry(response: ResponseItemV4): string | null {
+  const milliseconds = response.expires_at_min * 1_000;
+  if (!Number.isSafeInteger(milliseconds)) {
+    return null;
+  }
+  try {
+    return new Date(milliseconds).toISOString();
+  } catch {
+    return null;
+  }
+}
+
+function createProjection(
+  approvalFact: AdapterVerifiedApprovalFact,
+  identityClaims: WorldApprovalIdentityClaims,
+  requesterFact: RequestingAgentExecutionFact,
+): VerifiedWorldAuthorityProjection {
+  return Object.freeze({
+    approvalFact,
+    identityClaims,
+    requesterFact,
+    [projectionBrand]: true as const,
+  });
+}
+
+export async function verifyAndProjectWorldAuthority(
+  input: VerifyAndProjectWorldAuthorityInput,
+  dependencies: WorldAuthorityProjectionDependencies,
+): Promise<WorldAuthorityProjectionResult> {
+  if (!exactInputShape(input)) {
+    return refusal('INPUT_INVALID');
+  }
+
+  let authorization: AuthorizationBundleV1;
+  try {
+    authorization = verifyAuthorizationBundle(input.authorization);
+  } catch {
+    return refusal('AUTHORIZATION_INVALID');
+  }
+  if (authorization.decision.route !== 'HUMAN_APPROVAL') {
+    return refusal('POLICY_ROUTE_MISMATCH');
+  }
+
+  const deploymentValidation = validateTrustedWorldDeploymentContext(
+    dependencies.worldDeployment,
+  );
+  if (!deploymentValidation.ok) {
+    return refusal('DEPLOYMENT_INVALID');
+  }
+  const deployment = deploymentValidation.context;
+
+  let keyring: WorldPrincipalKeyring;
+  try {
+    keyring = createWorldPrincipalKeyring(
+      dependencies.principalKeyring.current,
+      dependencies.principalKeyring.previous,
+    );
+  } catch {
+    return refusal('PRINCIPAL_KEYRING_INVALID');
+  }
+
+  const nowDate = input.now ?? new Date();
+  if (!Number.isFinite(nowDate.getTime())) {
+    return refusal('INPUT_INVALID');
+  }
+  const now = nowDate.getTime();
+  const verifiedAt = nowDate.toISOString();
+  const actionDigest = authorization.envelope.actionDigest;
+  const organizationId = authorization.actionCore.organizationId;
+
+  const requestValidation = validateWorldProofOfHumanRequest(
+    input.approval.request,
+    deployment,
+  );
+  if (!requestValidation.ok) {
+    return refusal('REQUEST_INVALID');
+  }
+  const request = requestValidation.request;
+  const { binding } = request;
+  if (
+    binding.actionDigest !== actionDigest ||
+    binding.organizationId !== organizationId ||
+    !approvalRoleRequired(authorization, binding)
+  ) {
+    return refusal('POLICY_ROUTE_MISMATCH');
+  }
+  if (binding.decision !== 'APPROVE') {
+    return refusal('NOT_AN_APPROVAL');
+  }
+  if (
+    now < Date.parse(binding.createdAt) ||
+    now >= Date.parse(binding.expiresAt) ||
+    now < request.config.rp_context.created_at * 1_000 ||
+    now >= request.config.rp_context.expires_at * 1_000
+  ) {
+    return refusal('VALIDITY_WINDOW_EMPTY');
+  }
+
+  const approvalClaim = exactClaim(
+    input.approval.agentkitClaim,
+    actionDigest,
+    organizationId,
+    now,
+  );
+  if (typeof approvalClaim === 'string') {
+    return refusal(approvalClaim);
+  }
+  if (!sameAddress(approvalClaim.agentAddress, binding.agentAddress)) {
+    return refusal('AGENTKIT_CLAIM_MISMATCH');
+  }
+
+  const requesterClaim = exactClaim(
+    input.requester.agentkitClaim,
+    actionDigest,
+    organizationId,
+    now,
+  );
+  if (typeof requesterClaim === 'string') {
+    return refusal(requesterClaim);
+  }
+
+  const approvalBackingResult = await resolveBacking(
+    approvalClaim,
+    organizationId,
+    now,
+    keyring,
+    dependencies.resolveAgentBookBacking,
+  );
+  if (!approvalBackingResult.ok) {
+    return refusal(approvalBackingResult.reason);
+  }
+  const approvalBacking = approvalBackingResult.backing;
+  if (
+    !includesAlias(
+      approvalBacking.aliases,
+      binding.agentTenantPrincipal,
+      binding.agentTenantPrincipalDerivationVersion,
+    )
+  ) {
+    return refusal('AGENTBOOK_BACKING_MISMATCH');
+  }
+
+  const requesterBackingResult = await resolveBacking(
+    requesterClaim,
+    organizationId,
+    now,
+    keyring,
+    dependencies.resolveAgentBookBacking,
+  );
+  if (!requesterBackingResult.ok) {
+    return refusal(requesterBackingResult.reason);
+  }
+  const requesterBacking = requesterBackingResult.backing;
+  const requesterPrincipal = currentAlias(requesterBacking.aliases);
+  if (requesterPrincipal === null) {
+    return refusal('AGENTBOOK_BACKING_INVALID');
+  }
+
+  const approvalAuthorityRequirement = Object.freeze({
+    actionDigest,
+    agentAddress: binding.agentAddress,
+    agentTenantPrincipal: binding.agentTenantPrincipal,
+    agentTenantPrincipalDerivationVersion:
+      binding.agentTenantPrincipalDerivationVersion,
+    at: verifiedAt,
+    audience: null,
+    grantDigest: null,
+    grantId: binding.roleGrantId,
+    grantVersion: null,
+    kind: 'APPROVAL' as const,
+    organizationId,
+    requiredRole: binding.requiredRole,
+    scope: null,
+    subjectId: binding.subjectId,
+  });
+  const approvalAuthorityResult = await resolveAuthority(
+    approvalAuthorityRequirement,
+    now,
+    dependencies.resolveCompanyAuthority,
+  );
+  if (!approvalAuthorityResult.ok) {
+    return refusal(approvalAuthorityResult.reason);
+  }
+  const approvalAuthority = approvalAuthorityResult.authority;
+
+  const requiredExecutor = authorization.decision.requiredExecutor;
+  const requesterAuthorityRequirement = Object.freeze({
+    actionDigest,
+    agentAddress: requesterClaim.agentAddress,
+    agentTenantPrincipal: requesterPrincipal.principal,
+    agentTenantPrincipalDerivationVersion: requesterPrincipal.derivationVersion,
+    at: verifiedAt,
+    audience: requiredExecutor.audience,
+    grantDigest: requiredExecutor.grant.digest,
+    grantId: requiredExecutor.grant.id,
+    grantVersion: requiredExecutor.grant.version,
+    kind: 'REQUESTER' as const,
+    organizationId,
+    requiredRole: requiredExecutor.requiredRole,
+    scope: requiredExecutor.requiredScope,
+    subjectId: input.requester.agentId,
+  });
+  const requesterAuthorityResult = await resolveAuthority(
+    requesterAuthorityRequirement,
+    now,
+    dependencies.resolveCompanyAuthority,
+  );
+  if (!requesterAuthorityResult.ok) {
+    return refusal(requesterAuthorityResult.reason);
+  }
+  const requesterAuthority = requesterAuthorityResult.authority;
+
+  const parsedProof = parseWorldProof(input.approval.proof, request);
+  if (parsedProof === null) {
+    return refusal('WORLD_PROOF_MISMATCH');
+  }
+  const proofExpiry = worldCredentialExpiry(parsedProof.response);
+  if (proofExpiry === null || now >= Date.parse(proofExpiry)) {
+    return refusal('WORLD_PROOF_STALE');
+  }
+
+  let proofVerification: unknown;
+  try {
+    proofVerification = await dependencies.verifyWorldProof(
+      parsedProof.proof,
+      deployment,
+    );
+  } catch {
+    return refusal('WORLD_PROOF_UNAVAILABLE');
+  }
+  if (
+    isRecord(proofVerification) &&
+    proofVerification.status === 'unavailable'
+  ) {
+    return refusal('WORLD_PROOF_UNAVAILABLE');
+  }
+  if (
+    !isRecord(proofVerification) ||
+    proofVerification.status !== 'verified' ||
+    Reflect.ownKeys(proofVerification).length !== 1
+  ) {
+    return refusal('WORLD_PROOF_INVALID');
+  }
+
+  let actionHumanAliases: readonly VersionedScopedWorldPrincipal[];
+  try {
+    actionHumanAliases = deriveActionHumanPrincipalAliases({
+      actionDigest,
+      keyring,
+      nullifier: parsedProof.response.nullifier,
+      organizationId,
+      worldActionId: binding.worldActionId,
+    });
+  } catch {
+    return refusal('WORLD_PROOF_INVALID');
+  }
+  const actionHumanPrincipal = currentAlias(actionHumanAliases);
+  if (actionHumanPrincipal === null) {
+    return refusal('WORLD_PROOF_INVALID');
+  }
+
+  const approvalExpiresAt = minimumExpiry([
+    authorization.actionCore.expiresAt,
+    binding.expiresAt,
+    new Date(request.config.rp_context.expires_at * 1_000).toISOString(),
+    approvalClaim.expiresAt,
+    approvalBacking.resolution.expiresAt,
+    approvalAuthority.expiresAt,
+    proofExpiry,
+  ]);
+  const requesterExpiresAt = minimumExpiry([
+    authorization.actionCore.expiresAt,
+    requesterClaim.expiresAt,
+    requesterBacking.resolution.expiresAt,
+    requesterAuthority.expiresAt,
+  ]);
+  if (
+    approvalExpiresAt === null ||
+    requesterExpiresAt === null ||
+    verifiedAt >= approvalExpiresAt ||
+    verifiedAt >= requesterExpiresAt
+  ) {
+    return refusal('VALIDITY_WINDOW_EMPTY');
+  }
+
+  const proofDigest = hashRecord(
+    'invoiceguard:world-idkit-proof:v1',
+    parsedProof.proof,
+  );
+  const worldProofId = `world-proof:${proofDigest}`;
+  const approvalEvidenceDigest = hashRecord(
+    'invoiceguard:world-approval-evidence:v1',
+    {
+      agentkitSignedProofDigest: approvalClaim.signedProofDigest,
+      companyCredentialDigest: approvalAuthority.credentialDigest,
+      proofDigest,
+    },
+  );
+  const approvalIdentity = {
+    actionDigest,
+    agentKitChallengeId: approvalClaim.challengeId,
+    approvalSessionId: binding.approvalSessionId,
+    roleCredentialId: approvalAuthority.credentialId,
+    subjectId: binding.subjectId,
+    worldProofId,
+  };
+  const approvalId = prefixedId(
+    'world-approval',
+    'invoiceguard:world-approval-id:v1',
+    approvalIdentity,
+  );
+  const decisionId = prefixedId(
+    'world-decision',
+    'invoiceguard:world-decision-id:v1',
+    approvalIdentity,
+  );
+  const consumptionClaimId = prefixedId(
+    'world-consumption',
+    'invoiceguard:world-consumption-claim:v1',
+    {
+      ...approvalIdentity,
+      actionHumanPrincipal: actionHumanPrincipal.principal,
+    },
+  );
+
+  const approvalFact = createAdapterVerifiedApprovalFact({
+    ...actionFactBinding(authorization),
+    actionHumanPrincipal: actionHumanPrincipal.principal,
+    adapterId: WORLD_APPROVAL_ADAPTER_ID,
+    agentBackingRecordId: approvalBacking.recordId,
+    agentBackingStatus: 'CURRENT',
+    agentKitChallengeId: approvalClaim.challengeId,
+    agentTenantPrincipal: binding.agentTenantPrincipal,
+    approvalId,
+    approvalSessionId: binding.approvalSessionId,
+    companyRoleStatus: 'CURRENT',
+    consumptionClaimId,
+    decision: 'APPROVE',
+    decisionId,
+    expiresAt: approvalExpiresAt,
+    humanDecisionStatus: 'VERIFIED',
+    kind: 'APPROVAL_FACT',
+    role: binding.requiredRole,
+    roleCredentialId: approvalAuthority.credentialId,
+    signedProofDigest: approvalEvidenceDigest,
+    subjectId: binding.subjectId,
+    verifiedAt,
+    worldProofId,
+  });
+
+  const requesterFactId = prefixedId(
+    'world-requester',
+    'invoiceguard:world-requester-fact:v1',
+    {
+      actionDigest,
+      agentId: input.requester.agentId,
+      agentKitChallengeId: requesterClaim.challengeId,
+      credentialDigest: requesterAuthority.credentialDigest,
+    },
+  );
+  const requesterFact = createRequestingAgentExecutionFact(authorization, {
+    actionHumanPrincipal: requesterPrincipal.principal,
+    adapterId: requiredExecutor.adapterId,
+    agentBackingRecordId: requesterBacking.recordId,
+    agentBookRegistry: requiredExecutor.agentBookRegistry,
+    agentBookStatus: 'CURRENT',
+    agentId: input.requester.agentId,
+    agentKitChallengeId: requesterClaim.challengeId,
+    agentTenantPrincipal: requesterPrincipal.principal,
+    audience: requiredExecutor.audience,
+    companyRoleStatus: 'CURRENT',
+    expiresAt: requesterExpiresAt,
+    factId: requesterFactId,
+    grantDigest: requiredExecutor.grant.digest,
+    grantId: requiredExecutor.grant.id,
+    grantStatus: 'CURRENT',
+    grantVersion: requiredExecutor.grant.version,
+    role: requiredExecutor.requiredRole,
+    roleCredentialId: requesterAuthority.credentialId,
+    scope: requiredExecutor.requiredScope,
+    signedProofDigest: requesterClaim.signedProofDigest,
+    subjectId: input.requester.agentId,
+    tenantId: organizationId,
+    verifiedAt,
+  });
+
+  const identityClaims = Object.freeze({
+    actionDigest,
+    actionHumanPrincipals: actionHumanAliases,
+    agentKitChallengeId: approvalClaim.challengeId,
+    agentTenantPrincipals: approvalBacking.aliases,
+    approvalId,
+    approvalSessionId: binding.approvalSessionId,
+    consumptionClaimId,
+    decisionId,
+    organizationId,
+    subjectId: binding.subjectId,
+    worldProofId,
+  });
+
+  return Object.freeze({
+    ok: true,
+    projection: createProjection(approvalFact, identityClaims, requesterFact),
   });
 }
