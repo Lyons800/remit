@@ -102,9 +102,17 @@ the documented `main` ruleset follows immediately afterward.
 - Reused one World action across all roles and decisions for a canonical payment
   while retaining slot-specific subject, role, grant, session, agent, decision,
   and expiry binding in the signal.
-- Emitted only the AP domain's canonical `AdapterVerifiedApprovalFact` and
-  `RequestingAgentExecutionFact`; no parallel durable World decision record was
-  introduced.
+- Bound every IDKit request to one validated trusted deployment context, so its
+  app, environment, and relying-party ID cannot be mixed by callers.
+- Added one opaque verifier/composition path that correlates actual AgentKit
+  authorization, AgentBook resolution, company roles, IDKit verification, and AP
+  authorization before projecting the domain's canonical
+  `AdapterVerifiedApprovalFact` and `RequestingAgentExecutionFact`.
+- Removed public structural fact constructors, derived complete rotation aliases
+  from the authoritative keyring, and capped validity at the earliest backing
+  authority expiry. No parallel durable World decision record was introduced.
+- Recorded the exact source revisions, declared licenses, undeclared AgentKit
+  license, and dependency rollback without weakening live NO-GO gates.
 - Kept physical persistence, live Developer Portal verification, registered
   identities, company credentials, and real-human quorum as explicit NO-GO
   gates.

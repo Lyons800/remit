@@ -42,6 +42,9 @@ C  -> AgentBook P3 + fresh action human H3 + role -> counted
 - Human approval: `@worldcoin/human-in-the-loop` and its React binding are not
   installed; exact versions remain gated on supply-chain admission and a live
   control-plane spike
+- License: the pinned AgentKit npm artifact and source revision declare none;
+  production use or redistribution remains blocked pending a compatible license
+  or explicit legal basis
 
 The World identity wallet is intentionally unfunded or minimally funded. It is
 not the Hedera service payer or settlement account.
@@ -125,7 +128,9 @@ invoice to the exception or blocked path.
    signed URI and sole resource, a fixed statement, and free mode.
 4. The agent wallet signs and returns the AgentKit header.
 5. Parse the header and run the released AgentKit validation and signature
-   verification.
+   verification. The resulting claim is opaque and valid only in the current
+   process after atomic challenge consumption; do not hydrate it from JSON or a
+   structurally similar object.
 6. Add InvoiceGuard's mandatory checks:
 
    ```text
@@ -169,18 +174,23 @@ operations, so the InvoiceGuard database owns atomic consumption.
    Do not accept an SDK or tool-call default that changes the action identifier.
 3. Bind the proof signal to the authenticated subject, approval session, role,
    decision, role grant, agent, and expiry.
-4. The offline adapter constructs and revalidates the IDKit v4 request contract.
-   A future live composition root must call `IDKit.request` or an admitted
-   first-party connector. The RP signing key and proof verification remain
-   server-side.
-5. Recompute the stored action digest, verify the World proof, recheck the
-   company role, and derive versioned, action-scoped HMAC aliases of the
-   returned nullifier.
-6. After those sponsor checks, emit the domain's canonical
-   `AdapterVerifiedApprovalFact`; AgentKit execution evidence emits the domain's
-   canonical `RequestingAgentExecutionFact`. The World adapter does not define a
-   parallel durable decision type.
-7. A future physical repository must reserve every current and still-admitted
+4. The offline adapter constructs and revalidates the IDKit v4 request only from
+   a trusted deployment context. The app, environment, and relying-party ID
+   cannot be supplied independently. A future live composition root must call
+   `IDKit.request` or an admitted first-party connector. The RP signing key and
+   proof verification remain server-side.
+5. One verifier/composition path recomputes the stored action digest and
+   correlates the trusted request, exact verified World response, opaque
+   approval and requester AgentKit claims, current AgentBook resolutions,
+   company-role grants, and the AP authorization bundle.
+6. That path derives every current and overlap-key alias from transient raw
+   identifiers and the authoritative keyring, and sets the fact expiry to the
+   earliest expiry across every backing authority. It rejects caller alias
+   arrays and exposes no structural status or fact constructors.
+7. Only after those checks does the opaque projection contain the domain's
+   canonical `AdapterVerifiedApprovalFact` and `RequestingAgentExecutionFact`.
+   The World adapter does not define a parallel durable decision type.
+8. A future physical repository must reserve every current and still-admitted
    previous HMAC alias while atomically consuming the agent challenge, approval
    session, World proof, and approval claim. That PostgreSQL transaction is not
    implemented by this offline integration.
@@ -208,9 +218,10 @@ the same person are linkable within AgentBook. InvoiceGuard does not expose that
 value or its company mapping in logs, UI, Hedera messages, or public evidence.
 Normal records store a versioned tenant or action HMAC; public displays use an
 action-scoped local label. During HMAC rotation, the adapter derives the current
-and still-admitted previous aliases. The future physical repository must reserve
-all aliases in one transaction so the same raw World identity cannot count once
-per key version.
+and still-admitted previous aliases from the authoritative keyring. It rejects
+caller-supplied alias lists, including truncated lists. The future physical
+repository must reserve all aliases in one transaction so the same raw World
+identity cannot count once per key version.
 
 ## Required tests
 
@@ -222,9 +233,9 @@ per key version.
   decision, and expiry;
 - every role and decision slot on one payment shares one World action while its
   signal remains slot-specific;
-- verified World evidence parses as the canonical AP approval and requesting
-  agent facts, and refresh cannot substitute action/proof identities or extend
-  validity;
+- only the correlated opaque projection yields canonical AP approval and
+  requesting-agent facts; fabricated, serialized, truncated, or substituted
+  evidence fails, and the admitted validity is the minimum authority expiry;
 - reused or cross-action World nullifiers fail;
 - a routine invoice inside a current standing mandate uses no per-invoice HITL;
 - a beneficiary, amount, asset, evidence, or cap change exits that mandate;
@@ -262,8 +273,11 @@ company-authorized agent acted inside a separately governed standing mandate.
 - [Human-in-the-Loop integration](https://docs.world.org/agents/human-in-the-loop/integrate)
 - [Human-in-the-Loop SDK reference](https://docs.world.org/agents/human-in-the-loop/sdk-reference)
 - [IDKit integration](https://docs.world.org/world-id/idkit/integrate)
+- [IDKit Core published source revision](https://github.com/worldcoin/idkit/commit/0af7afb9b347755eb26163355d044d8b46486ba3)
 - [Official AgentKit repository](https://github.com/worldcoin/agentkit)
 - [Official releases](https://github.com/worldcoin/agentkit/releases)
+- [AgentKit published source revision](https://github.com/worldcoin/agentkit/commit/f87b798cd6a75d941f922e5e030c42f8ee866be0)
+- [viem published source revision](https://github.com/wevm/viem/commit/211a1dd56cd0e3f6cf2ae6a38c5322d97f53a117)
 - [Released validator source](https://github.com/worldcoin/agentkit/blob/f87b798/core/src/validate.ts)
 - [AgentBook contract](https://github.com/worldcoin/agentkit/blob/3775f076cb15fe9783353413bd6860c94f8bdeeb/contracts/src/AgentBook.sol)
 - [Challenge implementation](https://github.com/worldcoin/agentkit/blob/3775f076cb15fe9783353413bd6860c94f8bdeeb/x402/src/server.ts)
