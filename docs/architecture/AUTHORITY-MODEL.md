@@ -112,20 +112,29 @@ signal, nullifier scope and expiry. The company credential adapter verifies the
 issuer, role, subject, revocation and time bounds. The AgentBook adapter
 resolves the current tenant-scoped backing principal.
 
-Only then may the control API construct and persist the canonical
-`AdapterVerifiedApprovalFact` containing the exact action digest, decision,
-role, company subject, tenant-scoped agent principal, action-scoped human
-principal, verification time, expiry, adapter, approval and decision IDs,
-approval-session ID, World-proof ID, AgentKit challenge ID, signed-proof digest,
-and the current status of all three authority facts. The domain never infers
-`CURRENT` or `VERIFIED`, and never accepts a browser claim, structural status
-tag or caller-computed quorum. It checks the fact's action, decision, role,
-time, status and independent distinctness again. A refresh may advance
-`verifiedAt` and current status, but cannot substitute any proof identity or
-extend the originally admitted expiry. Persistence must consume the decision,
-proof, challenge, approval-session, and company-subject, AgentBook-principal,
-and action-human-principal claims under uniqueness constraints in the same
-serializable authorization transaction. The offline World adapter now emits that
+Only one verifier/composition path may project the canonical
+`AdapterVerifiedApprovalFact`. It correlates the validated AP authorization
+bundle, exact trusted IDKit request and verified response, opaque approval and
+requester AgentKit claims, current AgentBook resolutions, and current company
+role authority. The request derives its app, environment, and relying-party ID
+from one trusted deployment context. AgentKit claims become opaque results only
+after signature verification and atomic challenge consumption; a serialized or
+structurally copied claim must be verified again.
+
+That path derives tenant and action principals plus every current and overlap
+alias directly from transient raw identifiers and the authoritative keyring. It
+rejects caller-supplied alias arrays and computes the admitted expiry as the
+minimum of every authorization, session, relying-party, AgentKit, AgentBook,
+role, and World-proof ceiling. Only then does it assign the fact's `CURRENT` and
+`VERIFIED` states. No exported structural constructor accepts those states, and
+a later projection repeats verification rather than refreshing retained
+evidence.
+
+The domain still checks the fact's action, decision, role, time, status and
+independent distinctness. Persistence must consume the decision, proof,
+challenge, approval-session, and company-subject, AgentBook-principal, and
+action-human-principal claims under uniqueness constraints in the same
+serializable authorization transaction. The offline World adapter projects that
 canonical domain fact and does not define a parallel durable human-decision
 record. The physical transaction and repository constraints remain a separate
 live admission gate.
@@ -151,9 +160,10 @@ and must match the frozen adapter, policy, signed-proof identity, fact identity,
 and original validity ceiling exactly. A refresh may be newer and shorter lived;
 it cannot extend the original authorization.
 
-The offline World adapter emits this evidence as the canonical
+The same opaque World authority projection yields the canonical
 `RequestingAgentExecutionFact`, deriving all policy-owned fields from the
-verified authorization bundle rather than caller input.
+verified authorization bundle rather than caller input. A public structural
+execution-fact constructor is not part of the adapter boundary.
 
 AgentKit proves that the wallet is registered to a World ID human. It does not
 prove that the backing human reviewed this payment at signing time; the
