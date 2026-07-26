@@ -1,13 +1,13 @@
-import { HederaEvidenceDetail } from '../../components/hedera-evidence';
-import { Badge } from '../../components/ui/badge';
+import { HederaEvidenceDetail } from '../../../components/hedera-evidence';
+import { Badge } from '../../../components/ui/badge';
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from '../../components/ui/card';
-import { auditEvents } from '../../lib/demo';
-import { loadHederaEvidence } from '../../lib/mirror-evidence.server';
+} from '../../../components/ui/card';
+import { auditEvents } from '../../../lib/demo';
+import { loadHederaEvidence } from '../../../lib/mirror-evidence.server';
 
 const kindBadge = {
   allow: ['Allowed', 'default'],

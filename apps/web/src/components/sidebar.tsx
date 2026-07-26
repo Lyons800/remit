@@ -20,7 +20,7 @@ import { cn } from '../lib/utils';
    cubic-bezier(0.4,0,0.2,1); icons stay fixed-left, labels reveal. */
 
 const items = [
-  { href: '/', icon: LayoutGrid, label: 'Overview' },
+  { href: '/dashboard', icon: LayoutGrid, label: 'Overview' },
   { href: '/invoices', icon: ReceiptText, label: 'Invoices' },
   {
     href: '/approvals/INV-2026-0912',
@@ -126,7 +126,7 @@ export function Sidebar() {
 
       <nav
         aria-label="Primary navigation"
-        className="fixed right-0 bottom-0 left-0 z-50 grid h-14 grid-cols-7 border-t border-border bg-background md:hidden"
+        className="fixed right-0 bottom-0 left-0 z-50 grid h-14 grid-cols-8 border-t border-border bg-background md:hidden"
       >
         {items.map((item) => {
           const active =

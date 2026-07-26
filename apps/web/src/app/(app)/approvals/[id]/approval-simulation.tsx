@@ -2,19 +2,19 @@
 
 import { useReducer } from 'react';
 
-import { Badge } from '../../../components/ui/badge';
-import { Button } from '../../../components/ui/button';
+import { Badge } from '../../../../components/ui/badge';
+import { Button } from '../../../../components/ui/button';
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from '../../../components/ui/card';
+} from '../../../../components/ui/card';
 import {
   approvers,
   createInitialTheatre,
   theatreReducer,
-} from '../../../lib/demo';
+} from '../../../../lib/demo';
 
 import type { ApprovalScenario } from './approval-scenarios';
 

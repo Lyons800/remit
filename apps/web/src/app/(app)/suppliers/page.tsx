@@ -1,10 +1,10 @@
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../../components/ui/badge';
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from '../../components/ui/card';
+} from '../../../components/ui/card';
 import {
   Table,
   TableBody,
@@ -12,8 +12,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '../../components/ui/table';
-import { suppliers } from '../../lib/demo';
+} from '../../../components/ui/table';
+import { suppliers } from '../../../lib/demo';
 
 const standingBadge = {
   flagged: ['Account change pending', 'destructive'],

@@ -1,14 +1,14 @@
 import Link from 'next/link';
 
-import { HederaEvidenceSummary } from '../components/hedera-evidence';
-import { Badge } from '../components/ui/badge';
-import { Button } from '../components/ui/button';
+import { HederaEvidenceSummary } from '../../../components/hedera-evidence';
+import { Badge } from '../../../components/ui/badge';
+import { Button } from '../../../components/ui/button';
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from '../components/ui/card';
+} from '../../../components/ui/card';
 import {
   Table,
   TableBody,
@@ -16,9 +16,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '../components/ui/table';
-import { auditEvents, dayInvoices, initialQueue } from '../lib/demo';
-import { loadHederaEvidence } from '../lib/mirror-evidence.server';
+} from '../../../components/ui/table';
+import { auditEvents, dayInvoices, initialQueue } from '../../../lib/demo';
+import { loadHederaEvidence } from '../../../lib/mirror-evidence.server';
 
 export const dynamic = 'force-dynamic';
 
