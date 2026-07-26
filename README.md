@@ -117,10 +117,14 @@ A beneficiary-changing invoice, end to end:
    **The agent pays the price; the facilitator absorbs the network fee** — the
    agent is a paying customer, not a gas payer. The answer is signed over
    _(digest, result, payment tx)_, so it cannot be lifted onto another invoice.
-6. **Pay.** The supplier payment executes on Hedera as a native HBAR transfer.
-7. **Publish.** The action digest is minted as an HTS token, read back from
-   Mirror Node, and burned at consumption — an audit marker anyone can verify
-   without asking us.
+6. **Keep the payment claim exact.** Act 1 executes a separate routine supplier
+   payment as a native HBAR transfer. The beneficiary-changing action proves
+   approval and paid verification, but the current demo does not claim its
+   supplier settlement is adapter-bound.
+7. **Publish a marker.** The approved action digest is minted as a no-value,
+   treasury-held HTS NFT, its configuration and metadata are read back from
+   Mirror Node, and it is burned as an explicit lifecycle operation. The marker
+   is not the invoice, a receivable, payment authority, or settlement.
 
 Routine invoices skip steps 3–5 entirely: the agent pays them directly.
 
@@ -131,11 +135,11 @@ Routine invoices skip steps 3–5 entirely: the agent pays them directly.
 
 Three native Hedera services, matching the track's own examples:
 
-| Service            | Where it is used                                                                                                                                                                               |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Token Service**  | audit marker — `TokenCreateTransaction` (non-fungible, finite supply 1, supply+admin keys) → `TokenMintTransaction` with the action digest as metadata → `TokenBurnTransaction` at consumption |
-| **Mirror Node**    | the digest is read back from Mirror Node to prove the ledger carries what we claim, and the burn is confirmed there before we state it                                                         |
-| **Cryptocurrency** | supplier payment (`TransferTransaction`) and x402 settlement of the verification fee                                                                                                           |
+| Service            | Where it is used                                                                                                                                                        |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Token Service**  | no-value operational marker — `TokenCreateTransaction` (NFT, finite supply 1, supply key only) → `TokenMintTransaction` with the action digest → `TokenBurnTransaction` |
+| **Mirror Node**    | the collection's key surface, digest metadata, mint and burn are independently read back before the demo states them                                                    |
+| **Cryptocurrency** | a routine supplier payment (`TransferTransaction`) and x402 settlement of the verification fee                                                                          |
 
 That is token **creation**, **configuration**, and **two lifecycle operations**.
 
@@ -149,7 +153,7 @@ not from our own call:
 | Agent pays for verification via x402 | [`0.0.9758618-1785026905-665197442`](https://hashscan.io/testnet/transaction/0.0.9758618-1785026905-665197442) |
 | Three-party economics                | agent `−1,000,000` tinybar · service `+1,000,000` · facilitator `−282,113` fee                                 |
 | Audit marker carries the digest      | Mirror read-back matches byte-for-byte                                                                         |
-| Marker burned at consumption         | `deleted=true`, `total_supply=0`, `max_supply=1`                                                               |
+| Marker lifecycle burn                | `deleted=true`, `total_supply=0`                                                                               |
 
 More in [`docs/evidence/`](docs/evidence/).
 
@@ -179,6 +183,9 @@ honest, or that a verification service is truthful.
   **not** prevent replay — replay is refused by the approval layer via
   `REPLAY_DETECTED` and `ACTION_DIGEST_MISMATCH`. See
   [`docs/evidence/README.md`](docs/evidence/README.md).
+- The marker is not the legal or fiscal invoice and does not assign a
+  receivable. Its metadata contains no invoice fields. See
+  [ADR 0010](docs/architecture/decisions/0010-operational-payable-marker.md).
 - Act 1's transfer is a direct HBAR payment;
   `packages/hedera-settlement-adapter` is not implemented.
 - The demo speaks x402 directly rather than through

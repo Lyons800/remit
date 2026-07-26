@@ -66,6 +66,14 @@ authority, payment, consumption, or replay protection. Its exact evidence and
 limitations are recorded in
 [`docs/evidence`](../evidence/hts-payable-live-2026-07-26.md).
 
+The committed demo now creates a finite-supply-one NFT collection with only a
+supply key, mints the canonical nonce-bound action digest as metadata, and
+requires Mirror Node to confirm the name, symbol, type, supply limits, treasury,
+absence of every management/compliance key, metadata, mint and burn. It calls
+the NFT a no-value operational payable marker, not an invoice, receivable, legal
+assignment or settlement. The rationale and production boundary are in
+[ADR 0010](../architecture/decisions/0010-operational-payable-marker.md).
+
 ## x402 purchase
 
 The verifier endpoint is:

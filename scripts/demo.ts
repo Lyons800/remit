@@ -75,6 +75,13 @@ import {
   routineAction,
   type DemoApprover,
 } from './lib/demo-fixture.js';
+import {
+  auditPayableMarkerSnapshot,
+  payableMarkerMetadata,
+  PAYABLE_MARKER_NAME,
+  PAYABLE_MARKER_SYMBOL,
+  type PayableMarkerAudit,
+} from './lib/hedera-payable-marker.js';
 
 /* ── presentation ────────────────────────────────────────────────────── */
 
@@ -521,42 +528,68 @@ async function act3(digest: string): Promise<void> {
   );
 }
 
-/* ── ACT 4 — the payable becomes a token, then stops existing ────────── */
+/* ── ACT 4 — an operational marker, not an invoice or receivable ─────── */
 
 interface Payable {
   readonly tokenId: string;
   readonly serial: number;
 }
 
-async function readMetadata(
+async function readMarker(
   tokenId: string,
   serial: number,
+  digest: string,
+  phase: 'BURNED' | 'MINTED',
   timeoutMs = 30_000,
-): Promise<string> {
-  const url = `https://testnet.mirrornode.hedera.com/api/v1/tokens/${tokenId}/nfts/${String(serial)}`;
+): Promise<PayableMarkerAudit> {
+  const base = 'https://testnet.mirrornode.hedera.com/api/v1';
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const response = await fetch(url);
-    if (response.ok) {
-      const nft = (await response.json()) as { metadata?: string };
-      if (nft.metadata !== undefined) {
-        return Buffer.from(nft.metadata, 'base64').toString('ascii');
+    const [tokenResponse, nftResponse] = await Promise.all([
+      fetch(`${base}/tokens/${tokenId}`),
+      fetch(`${base}/tokens/${tokenId}/nfts/${String(serial)}`),
+    ]);
+    if (tokenResponse.ok && nftResponse.ok) {
+      try {
+        return auditPayableMarkerSnapshot(
+          await tokenResponse.json(),
+          await nftResponse.json(),
+          {
+            actionDigest: digest,
+            phase,
+            serial,
+            supplyKey: operatorKey.publicKey.toStringRaw(),
+            tokenId,
+            treasuryAccountId: OPERATOR_ID,
+          },
+        );
+      } catch (error: unknown) {
+        if (
+          error instanceof Error &&
+          !error.message.includes('total_supply') &&
+          !error.message.includes('NFT deleted') &&
+          !error.message.includes('NFT account_id')
+        ) {
+          throw error;
+        }
       }
     }
     await new Promise((r) => setTimeout(r, 1500));
   }
-  throw new Error(`mirror node did not index ${tokenId}#${String(serial)}`);
+  throw new Error(
+    `Mirror Node did not confirm ${phase.toLowerCase()} marker ${tokenId}#${String(serial)}`,
+  );
 }
 
 async function act4(
   client: Client | null,
   digest: string,
 ): Promise<Payable | null> {
-  act(4, 'AN AUDIT MARKER ON THE LEDGER — minted, then burned');
+  act(4, 'THE APPROVED ACTION GETS A NO-VALUE LEDGER MARKER');
 
   step(`metadata       ${C.cyan(digest)}`);
   step(
-    `               ${C.dim('the action digest, published where anyone can read it')}`,
+    `               ${C.dim('a nonce-bound action digest; no invoice fields or legal right')}`,
   );
   step(
     `               ${C.yellow('this marker is evidence, not payment authority')}`,
@@ -573,14 +606,13 @@ async function act4(
 
   const created = await (
     await new TokenCreateTransaction()
-      .setTokenName('Remit Audit Markers - NO VALUE')
-      .setTokenSymbol('RMPAY')
+      .setTokenName(PAYABLE_MARKER_NAME)
+      .setTokenSymbol(PAYABLE_MARKER_SYMBOL)
       .setTokenType(TokenType.NonFungibleUnique)
       .setSupplyType(TokenSupplyType.Finite)
       .setMaxSupply(1)
       .setTreasuryAccountId(AccountId.fromString(OPERATOR_ID))
       .setSupplyKey(operatorKey.publicKey)
-      .setAdminKey(operatorKey.publicKey)
       .freezeWith(client)
       .sign(operatorKey)
   ).execute(client);
@@ -590,19 +622,19 @@ async function act4(
 
   const minted = await new TokenMintTransaction()
     .setTokenId(tokenId)
-    .addMetadata(Buffer.from(digest, 'ascii'))
+    .addMetadata(payableMarkerMetadata(digest))
     .execute(client);
   const serial = Number((await minted.getReceipt(client)).serials[0]);
   pass(`marker minted — serial ${String(serial)}`);
   link(hashscan(minted.transactionId.toString()));
   await beat();
 
-  const onLedger = await readMetadata(tokenId, serial);
-  if (onLedger !== digest) {
-    throw new Error('ledger metadata does not match the action digest');
-  }
+  await readMarker(tokenId, serial, digest, 'MINTED');
   pass(
     `mirror read-back ${C.bold('matches the digest')} — ${C.dim('verified from the ledger, not from us')}`,
+  );
+  pass(
+    `configuration sealed — ${C.dim('finite supply 1; supply key only; no admin, wipe, freeze, KYC, fee, metadata, or pause key')}`,
   );
   await beat();
 
@@ -611,51 +643,13 @@ async function act4(
     .setSerials([serial])
     .execute(client);
   await burned.getReceipt(client);
-  pass(`marker burned — ${C.bold('spent')}`);
+  pass(`marker burned — ${C.bold('lifecycle operation submitted')}`);
   link(hashscan(burned.transactionId.toString()));
 
   return { tokenId, serial };
 }
 
 /* ── ACT 5 — the refusals ────────────────────────────────────────────── */
-
-interface BurnFacts {
-  readonly deleted: boolean;
-  readonly totalSupply: string;
-  readonly maxSupply: string;
-}
-
-async function waitForBurn(
-  tokenId: string,
-  serial: number,
-  timeoutMs = 30_000,
-): Promise<BurnFacts> {
-  const deadline = Date.now() + timeoutMs;
-  let last: BurnFacts = { deleted: false, totalSupply: '?', maxSupply: '?' };
-  while (Date.now() < deadline) {
-    const [nft, token] = await Promise.all([
-      fetch(
-        `https://testnet.mirrornode.hedera.com/api/v1/tokens/${tokenId}/nfts/${String(serial)}`,
-      )
-        .then((r) => r.json() as Promise<{ deleted?: boolean }>)
-        .catch(() => ({ deleted: false })),
-      fetch(`https://testnet.mirrornode.hedera.com/api/v1/tokens/${tokenId}`)
-        .then(
-          (r) =>
-            r.json() as Promise<{ total_supply?: string; max_supply?: string }>,
-        )
-        .catch((): { total_supply?: string; max_supply?: string } => ({})),
-    ]);
-    last = {
-      deleted: nft.deleted === true,
-      totalSupply: token.total_supply ?? '?',
-      maxSupply: token.max_supply ?? '?',
-    };
-    if (last.deleted && last.totalSupply === '0') return last;
-    await new Promise((r) => setTimeout(r, 1500));
-  }
-  return last;
-}
 
 async function act5(
   digest: string,
@@ -702,13 +696,18 @@ async function act5(
   );
   console.log();
 
-  /* 3 — the audit marker is spent, and says so publicly */
+  /* 3 — the audit marker lifecycle is public */
   step(C.bold('3. The audit trail is public and cannot be quietly rewritten.'));
   if (!payable) {
     step(`   ${C.dim('offline — no marker was minted')}`);
     return;
   }
-  const facts = await waitForBurn(payable.tokenId, payable.serial);
+  const facts = await readMarker(
+    payable.tokenId,
+    payable.serial,
+    digest,
+    'BURNED',
+  );
   step(
     `   ledger says      ${C.dim(`${payable.tokenId}#${String(payable.serial)}`)}  deleted=${C.bold(String(facts.deleted))}`,
   );
@@ -720,7 +719,7 @@ async function act5(
   );
   console.log();
   step(
-    `  ${C.yellow('Being precise:')} ${C.dim('the burn does NOT prevent payment replay.')}`,
+    `  ${C.yellow('Being precise:')} ${C.dim('the burn is not settlement and does NOT prevent payment replay.')}`,
   );
   step(
     `  ${C.dim('Replay is refused by the approval layer above — REPLAY_DETECTED and')}`,
