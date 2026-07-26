@@ -113,7 +113,7 @@ export default function WelcomePage() {
           </Link>
           <a
             className="border border-border px-4 py-2 text-sm font-medium"
-            href="/landing/"
+            href="/landing"
           >
             The pitch
           </a>
