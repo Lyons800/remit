@@ -30,7 +30,7 @@
  *   pnpm demo -- --offline           narration practice, no network
  */
 
-import { createSign, generateKeyPairSync } from 'node:crypto';
+import { createSign, createVerify, generateKeyPairSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -85,6 +85,7 @@ import {
   PAYABLE_MARKER_SYMBOL,
   type PayableMarkerAudit,
 } from './lib/hedera-payable-marker.js';
+import { readX402MirrorSettlement } from './lib/hedera-x402-mirror.js';
 
 /* ── presentation ────────────────────────────────────────────────────── */
 
@@ -515,7 +516,7 @@ async function act3(digest: string): Promise<void> {
     throw new Error('payment payload failed verification');
   }
   step(
-    `facilitator verified the payer signature on-chain → ${C.dim(verification.payer ?? '')}`,
+    `facilitator verified the signature against the payer's Testnet account key → ${C.dim(verification.payer ?? '')}`,
   );
   await beat();
 
@@ -533,21 +534,48 @@ async function act3(digest: string): Promise<void> {
   link(hashscan(txId));
   await beat();
 
+  const mirror = await readX402MirrorSettlement({
+    amountTinybar: 1_000_000,
+    facilitatorAccountId: FACILITATOR_ID,
+    payerAccountId: OPERATOR_ID,
+    serviceAccountId: SUPPLIER_ID,
+    transactionId: txId,
+  });
+  pass(
+    `Mirror read-back matches payer, service, facilitator and amount at ${mirror.consensusTimestamp}`,
+  );
+  await beat();
+
   // The PAYMENT above is real. What follows is not: there is no beneficiary
   // verification service, so the demo stands one in, generating a keypair and
   // signing a fixed answer. It demonstrates the binding — the signature covers
   // the digest and the payment together — but it proves nothing about the
   // beneficiary. Saying otherwise would be the exact overclaim this project
   // spends its README disowning.
-  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+  });
   const answer = {
     actionDigest: digest,
     result: 'MATCH',
     paymentTransactionId: txId,
   };
+  const answerBytes = Buffer.from(JSON.stringify(answer));
   const signature = createSign('sha256')
-    .update(Buffer.from(JSON.stringify(answer)))
+    .update(answerBytes)
     .sign(privateKey, 'base64');
+  const signatureIsValid = createVerify('sha256')
+    .update(answerBytes)
+    .verify(publicKey, signature, 'base64');
+  const substitutedAnswer = Buffer.from(
+    JSON.stringify({ ...answer, actionDigest: 'f'.repeat(64) }),
+  );
+  const substitutedSignatureIsValid = createVerify('sha256')
+    .update(substitutedAnswer)
+    .verify(publicKey, signature, 'base64');
+  if (!signatureIsValid || substitutedSignatureIsValid) {
+    throw new Error('stand-in result signature did not bind the exact action');
+  }
   console.log();
   step(
     `stand-in service returns a result bound to ${C.bold('this digest and this payment')}` +
@@ -555,6 +583,7 @@ async function act3(digest: string): Promise<void> {
   );
   step(`  result       ${C.green('MATCH')} ${C.yellow('[SIMULATED]')}`);
   step(`  signature    ${C.dim(`${signature.slice(0, 40)}…`)}`);
+  pass('stand-in signature verifies; a substituted action digest is refused');
   step(
     `  ${C.dim('the binding is real — lift it onto another invoice and it stops verifying —')}`,
   );
