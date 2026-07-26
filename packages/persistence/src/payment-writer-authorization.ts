@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+
 import type {
   PaymentActionAggregate,
   PaymentDomainEffect,
@@ -117,7 +119,10 @@ export function createPaymentWriterAuthorizationBoundary(
 function collectAdapterBindings(
   value: unknown,
   path: string,
-  bindings: Map<string, string>,
+  bindings: Map<
+    string,
+    Readonly<{ adapterId: string; record: Readonly<Record<string, unknown>> }>
+  >,
 ): void {
   if (Array.isArray(value)) {
     value.forEach((item, index) =>
@@ -130,7 +135,10 @@ function collectAdapterBindings(
   }
   const record = value as Readonly<Record<string, unknown>>;
   if (typeof record['adapterId'] === 'string') {
-    bindings.set(`${path}.adapterId`, record['adapterId']);
+    bindings.set(
+      path,
+      Object.freeze({ adapterId: record['adapterId'], record }),
+    );
   }
   for (const [key, item] of Object.entries(record)) {
     collectAdapterBindings(item, `${path}.${key}`, bindings);
@@ -141,14 +149,23 @@ function changedFactAdapterIds(
   current: PaymentActionAggregate,
   target: PaymentActionAggregate,
 ): ReadonlySet<string> {
-  const before = new Map<string, string>();
-  const after = new Map<string, string>();
+  const before = new Map<
+    string,
+    Readonly<{ adapterId: string; record: Readonly<Record<string, unknown>> }>
+  >();
+  const after = new Map<
+    string,
+    Readonly<{ adapterId: string; record: Readonly<Record<string, unknown>> }>
+  >();
   collectAdapterBindings(current, '$', before);
   collectAdapterBindings(target, '$', after);
   return new Set(
     [...after.entries()]
-      .filter(([path, adapterId]) => before.get(path) !== adapterId)
-      .map(([, adapterId]) => adapterId),
+      .filter(
+        ([path, binding]) =>
+          !isDeepStrictEqual(before.get(path)?.record, binding.record),
+      )
+      .map(([, { adapterId }]) => adapterId),
   );
 }
 
@@ -158,9 +175,12 @@ function effectAdapterIds(
 ): ReadonlySet<string> {
   const adapters = new Set<string>();
   for (const effect of effects) {
-    const nested = new Map<string, string>();
+    const nested = new Map<
+      string,
+      Readonly<{ adapterId: string; record: Readonly<Record<string, unknown>> }>
+    >();
     collectAdapterBindings(effect, '$', nested);
-    for (const adapterId of nested.values()) {
+    for (const { adapterId } of nested.values()) {
       adapters.add(adapterId);
     }
     if (effect.type === 'VERIFICATION_QUOTE_REQUEST') {

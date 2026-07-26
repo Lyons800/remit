@@ -4,6 +4,7 @@ import {
   createMandateReservationLedger,
   deriveExpectedPaymentTransitionEffects,
   hydratePaymentActionAggregate,
+  transitionPaymentAction,
   type MandateReservationClaim,
   type MandateReservationLedger,
   type MandateReservationWriteEffect,
@@ -17,6 +18,7 @@ import { mapPostgresError, PersistenceError } from '../errors.js';
 import type {
   PaymentActionRepository,
   PaymentPersistenceResult,
+  PaymentTransitionCommand,
 } from '../payment-repository.js';
 import {
   assertAuthorizedPaymentWrite,
@@ -31,6 +33,7 @@ type StoredAggregateRow = Readonly<{
   aggregate_version: number;
   atomic_group_key: string;
   last_transition_effects: unknown;
+  last_transition_input: unknown;
 }>;
 
 type StoredLedgerRow = Readonly<{
@@ -97,6 +100,21 @@ function requireValidTarget(
     );
   }
   return hydrated.value;
+}
+
+function transitionBody(command: PaymentTransitionCommand) {
+  return Object.freeze({
+    aggregate: command.aggregate,
+    atomicGroupKey: command.atomicGroupKey,
+    effects: command.effects,
+  });
+}
+
+function transitionInput(command: PaymentTransitionCommand) {
+  return Object.freeze({
+    context: command.context,
+    event: command.event,
+  });
 }
 
 function mandateClaimForTransition(
@@ -168,7 +186,8 @@ async function insertPaymentAction(
       aggregate_version,
       atomic_group_key,
       aggregate,
-      last_transition_effects
+      last_transition_effects,
+      last_transition_input
     )
     VALUES (
       ${binding.organizationId},
@@ -181,7 +200,8 @@ async function insertPaymentAction(
       ${aggregate.metadata.version},
       ${atomicGroupKey(aggregate)},
       ${transaction.json(asJson(aggregate))},
-      ${transaction.json([])}
+      ${transaction.json([])},
+      ${transaction.json({})}
     )
     ON CONFLICT (organization_id, action_id) DO NOTHING
     RETURNING action_id
@@ -199,7 +219,8 @@ async function selectPaymentActionForUpdate(
       aggregate,
       aggregate_version,
       atomic_group_key,
-      last_transition_effects
+      last_transition_effects,
+      last_transition_input
     FROM payment_actions
     WHERE organization_id = ${organizationId}
       AND action_id = ${actionId}
@@ -970,11 +991,11 @@ async function insertSettlementResult(
 
 async function updatePaymentAction(
   transaction: TransactionSql,
-  target: PaymentActionAggregate,
-  effects: readonly PaymentDomainEffect[],
+  command: PaymentTransitionCommand,
   expectedVersion: number,
   atomicGroup: string,
 ): Promise<void> {
+  const target = command.aggregate;
   const binding = actionBinding(target);
   const rows = await transaction<readonly Readonly<{ action_id: string }>[]>`
     UPDATE payment_actions
@@ -983,7 +1004,10 @@ async function updatePaymentAction(
       aggregate_version = ${target.metadata.version},
       atomic_group_key = ${atomicGroup},
       aggregate = ${transaction.json(asJson(target))},
-      last_transition_effects = ${transaction.json(asJson(effects))},
+      last_transition_effects = ${transaction.json(asJson(command.effects))},
+      last_transition_input = ${transaction.json(
+        asJson(transitionInput(command)),
+      )},
       updated_at = transaction_timestamp()
     WHERE organization_id = ${binding.organizationId}
       AND action_id = ${binding.actionId}
@@ -1068,9 +1092,10 @@ export function createPostgresPaymentActionRepository(
     },
 
     async applyTransition(
-      transition: PaymentActionTransition,
+      command: PaymentTransitionCommand,
       authorization: PaymentWriterAuthorization,
     ): Promise<PaymentPersistenceResult> {
+      const transition = transitionBody(command);
       const target = requireValidTarget(transition);
       const binding = actionBinding(target);
       const expectedVersion = target.metadata.version - 1;
@@ -1104,6 +1129,10 @@ export function createPostgresPaymentActionRepository(
               isDeepStrictEqual(
                 stored.last_transition_effects,
                 transition.effects,
+              ) &&
+              isDeepStrictEqual(
+                stored.last_transition_input,
+                transitionInput(command),
               )
             ) {
               return 'ALREADY_APPLIED';
@@ -1132,6 +1161,20 @@ export function createPostgresPaymentActionRepository(
               throw new PersistenceError(
                 'INVALID_TRANSITION',
                 'target metadata does not follow the locked aggregate',
+              );
+            }
+            const recomputed = transitionPaymentAction(
+              current,
+              command.event,
+              command.context,
+            );
+            if (
+              !recomputed.ok ||
+              !isDeepStrictEqual(recomputed.value, transition)
+            ) {
+              throw new PersistenceError(
+                'INVALID_TRANSITION',
+                'complete target aggregate and effects are not the canonical reducer successor',
               );
             }
             await requireExactEffects(
@@ -1176,8 +1219,7 @@ export function createPostgresPaymentActionRepository(
             }
             await updatePaymentAction(
               transaction,
-              target,
-              transition.effects,
+              command,
               expectedVersion,
               transition.atomicGroupKey,
             );

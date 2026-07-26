@@ -10,6 +10,7 @@ CREATE TABLE payment_actions (
   atomic_group_key text NOT NULL,
   aggregate jsonb NOT NULL,
   last_transition_effects jsonb NOT NULL DEFAULT '[]'::jsonb,
+  last_transition_input jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
   updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
   CONSTRAINT payment_action_identity
@@ -23,9 +24,9 @@ CREATE TABLE payment_actions (
   CONSTRAINT payment_action_nonce
     UNIQUE (organization_id, nonce),
   CONSTRAINT payment_action_digest_format
-    CHECK (action_digest ~ '^[0-9a-f]{64}$'),
+    CHECK ((action_digest ~ '^[0-9a-f]{64}$') IS TRUE),
   CONSTRAINT payment_action_nonce_format
-    CHECK (nonce ~ '^[0-9a-f]{32}$'),
+    CHECK ((nonce ~ '^[0-9a-f]{32}$') IS TRUE),
   CONSTRAINT payment_action_state_valid
     CHECK (
       payment_state IN (
@@ -50,17 +51,70 @@ CREATE TABLE payment_actions (
         'EXPIRED',
         'SUPERSEDED',
         'CANCELLED'
-      )
+      ) IS TRUE
     ),
   CONSTRAINT payment_action_version_positive
-    CHECK (aggregate_version > 0),
+    CHECK ((aggregate_version > 0) IS TRUE),
   CONSTRAINT payment_action_aggregate_object
-    CHECK (jsonb_typeof(aggregate) = 'object'),
+    CHECK ((jsonb_typeof(aggregate) = 'object') IS TRUE),
   CONSTRAINT payment_action_effects_array
-    CHECK (jsonb_typeof(last_transition_effects) = 'array'),
+    CHECK ((jsonb_typeof(last_transition_effects) = 'array') IS TRUE),
+  CONSTRAINT payment_action_transition_input_object
+    CHECK ((jsonb_typeof(last_transition_input) = 'object') IS TRUE),
+  CONSTRAINT payment_action_transition_input_binding
+    CHECK (
+      (
+        (
+          aggregate_version = 1
+          AND last_transition_input = '{}'::jsonb
+        )
+        OR (
+          aggregate_version > 1
+          AND jsonb_typeof(last_transition_input #> '{context}') = 'object'
+          AND jsonb_typeof(
+            last_transition_input #> '{context,now}'
+          ) = 'string'
+          AND jsonb_typeof(last_transition_input #> '{event}') = 'object'
+          AND jsonb_typeof(
+            last_transition_input #> '{event,type}'
+          ) = 'string'
+          AND jsonb_typeof(
+            aggregate #> '{metadata,lastEventType}'
+          ) = 'string'
+          AND jsonb_typeof(
+            aggregate #> '{metadata,lastTransitionAt}'
+          ) = 'string'
+          AND last_transition_input #>> '{context,now}' =
+            aggregate #>> '{metadata,lastTransitionAt}'
+          AND last_transition_input #>> '{event,type}' =
+            aggregate #>> '{metadata,lastEventType}'
+        )
+      ) IS TRUE
+    ),
   CONSTRAINT payment_action_aggregate_binding
     CHECK (
-      organization_id::text =
+      (
+        jsonb_typeof(
+          aggregate #> '{authorization,actionCore,organizationId}'
+        ) = 'string'
+      AND jsonb_typeof(
+        aggregate #> '{authorization,actionCore,actionId}'
+      ) = 'string'
+      AND jsonb_typeof(
+        aggregate #> '{authorization,envelope,actionDigest}'
+      ) = 'string'
+      AND jsonb_typeof(
+        aggregate #> '{authorization,actionCore,sourceInvoice,obligationId}'
+      ) = 'string'
+      AND jsonb_typeof(
+        aggregate #> '{authorization,actionCore,sourceInvoice,invoiceRevisionId}'
+      ) = 'string'
+      AND jsonb_typeof(
+        aggregate #> '{authorization,actionCore,nonce}'
+      ) = 'string'
+      AND jsonb_typeof(aggregate #> '{state}') = 'string'
+      AND jsonb_typeof(aggregate #> '{metadata,version}') = 'number'
+      AND organization_id::text =
         aggregate #>> '{authorization,actionCore,organizationId}'
       AND action_id::text =
         aggregate #>> '{authorization,actionCore,actionId}'
@@ -74,11 +128,14 @@ CREATE TABLE payment_actions (
         aggregate #>> '{authorization,actionCore,nonce}'
       AND payment_state = aggregate #>> '{state}'
       AND aggregate #> '{metadata,version}' = to_jsonb(aggregate_version)
+      ) IS TRUE
     ),
   CONSTRAINT payment_action_atomic_group_binding
     CHECK (
-      atomic_group_key =
+      (
+        atomic_group_key =
         'payment:' || action_digest || ':v' || aggregate_version::text
+      ) IS TRUE
     )
 );
 
@@ -125,9 +182,9 @@ CREATE TABLE approval_facts (
   CONSTRAINT approval_action_human_principal_per_action
     UNIQUE (organization_id, action_digest, action_human_principal),
   CONSTRAINT approval_fact_record_digest_format
-    CHECK (record_digest ~ '^[0-9a-f]{64}$'),
+    CHECK ((record_digest ~ '^[0-9a-f]{64}$') IS TRUE),
   CONSTRAINT approval_fact_object
-    CHECK (jsonb_typeof(fact) = 'object'),
+    CHECK ((jsonb_typeof(fact) = 'object') IS TRUE),
   CONSTRAINT approval_fact_action
     FOREIGN KEY (organization_id, action_digest)
     REFERENCES payment_actions (organization_id, action_digest)
@@ -145,9 +202,9 @@ CREATE TABLE agentkit_challenge_consumptions (
   CONSTRAINT agentkit_challenge_identity
     PRIMARY KEY (organization_id, agentkit_challenge_id),
   CONSTRAINT agentkit_challenge_kind_valid
-    CHECK (fact_kind IN ('APPROVAL', 'REQUESTING_AGENT')),
+    CHECK ((fact_kind IN ('APPROVAL', 'REQUESTING_AGENT')) IS TRUE),
   CONSTRAINT agentkit_challenge_record_digest_format
-    CHECK (fact_record_digest ~ '^[0-9a-f]{64}$'),
+    CHECK ((fact_record_digest ~ '^[0-9a-f]{64}$') IS TRUE),
   CONSTRAINT agentkit_challenge_action
     FOREIGN KEY (organization_id, action_digest)
     REFERENCES payment_actions (organization_id, action_digest)
@@ -164,11 +221,11 @@ CREATE TABLE standing_mandate_versions (
   CONSTRAINT standing_mandate_version_identity
     PRIMARY KEY (organization_id, mandate_id, mandate_version),
   CONSTRAINT standing_mandate_version_positive
-    CHECK (mandate_version > 0),
+    CHECK ((mandate_version > 0) IS TRUE),
   CONSTRAINT standing_mandate_digest_format
-    CHECK (mandate_digest ~ '^[0-9a-f]{64}$'),
+    CHECK ((mandate_digest ~ '^[0-9a-f]{64}$') IS TRUE),
   CONSTRAINT standing_mandate_object
-    CHECK (jsonb_typeof(mandate) = 'object')
+    CHECK ((jsonb_typeof(mandate) = 'object') IS TRUE)
 );
 
 CREATE TABLE mandate_period_ledgers (
@@ -195,16 +252,18 @@ CREATE TABLE mandate_period_ledgers (
     ON DELETE RESTRICT,
   CONSTRAINT mandate_period_amounts_valid
     CHECK (
-      period_cap_atoms > 0
+      (
+        period_cap_atoms > 0
       AND reserved_atoms >= 0
       AND settled_atoms >= 0
       AND released_atoms >= 0
       AND reserved_atoms + settled_atoms <= period_cap_atoms
+      ) IS TRUE
     ),
   CONSTRAINT mandate_period_ledger_version_positive
-    CHECK (ledger_version > 0),
+    CHECK ((ledger_version > 0) IS TRUE),
   CONSTRAINT mandate_period_digest_format
-    CHECK (mandate_digest ~ '^[0-9a-f]{64}$')
+    CHECK ((mandate_digest ~ '^[0-9a-f]{64}$') IS TRUE)
 );
 
 CREATE TABLE mandate_reservations (
@@ -227,13 +286,17 @@ CREATE TABLE mandate_reservations (
       action_digest
     ),
   CONSTRAINT mandate_reservation_amount_positive
-    CHECK (amount_atoms > 0),
+    CHECK ((amount_atoms > 0) IS TRUE),
   CONSTRAINT mandate_reservation_status_valid
-    CHECK (reservation_status IN ('RESERVED', 'RELEASED', 'SETTLED')),
+    CHECK (
+      (reservation_status IN ('RESERVED', 'RELEASED', 'SETTLED')) IS TRUE
+    ),
   CONSTRAINT mandate_reservation_receipt_binding
     CHECK (
-      (reservation_status = 'SETTLED' AND receipt_id IS NOT NULL)
+      (
+        (reservation_status = 'SETTLED' AND receipt_id IS NOT NULL)
       OR (reservation_status <> 'SETTLED' AND receipt_id IS NULL)
+      ) IS TRUE
     ),
   CONSTRAINT mandate_reservation_ledger
     FOREIGN KEY (organization_id, mandate_id, mandate_version, period_key)
@@ -282,14 +345,26 @@ CREATE TABLE settlement_attempts (
     ),
   CONSTRAINT settlement_attempt_hashes_valid
     CHECK (
-      signed_bytes_hash ~ '^[0-9a-f]{64}$'
+      (
+        signed_bytes_hash ~ '^[0-9a-f]{64}$'
       AND effect_digest ~ '^[0-9a-f]{64}$'
+      ) IS TRUE
     ),
   CONSTRAINT settlement_attempt_object
-    CHECK (jsonb_typeof(attempt) = 'object'),
+    CHECK ((jsonb_typeof(attempt) = 'object') IS TRUE),
   CONSTRAINT settlement_attempt_json_binding
     CHECK (
-      organization_id::text = attempt #>> '{organizationId}'
+      (
+        jsonb_typeof(attempt #> '{organizationId}') = 'string'
+      AND jsonb_typeof(attempt #> '{attemptId}') = 'string'
+      AND jsonb_typeof(attempt #> '{actionDigest}') = 'string'
+      AND jsonb_typeof(attempt #> '{idempotencyKey}') = 'string'
+      AND jsonb_typeof(attempt #> '{transactionId}') = 'string'
+      AND jsonb_typeof(attempt #> '{signedBytesHash}') = 'string'
+      AND jsonb_typeof(attempt #> '{effectDigest}') = 'string'
+      AND jsonb_typeof(attempt #> '{networkId}') = 'string'
+      AND jsonb_typeof(attempt #> '{adapterId}') = 'string'
+      AND organization_id::text = attempt #>> '{organizationId}'
       AND attempt_id = attempt #>> '{attemptId}'
       AND action_digest = attempt #>> '{actionDigest}'
       AND idempotency_key = attempt #>> '{idempotencyKey}'
@@ -298,11 +373,14 @@ CREATE TABLE settlement_attempts (
       AND effect_digest = attempt #>> '{effectDigest}'
       AND network_id = attempt #>> '{networkId}'
       AND adapter_id = attempt #>> '{adapterId}'
+      ) IS TRUE
     ),
   CONSTRAINT settlement_attempt_atomic_group_binding
     CHECK (
-      atomic_group_key ~
+      (
+        atomic_group_key ~
         ('^payment:' || action_digest || ':v[1-9][0-9]*$')
+      ) IS TRUE
     ),
   CONSTRAINT settlement_attempt_payment
     FOREIGN KEY (organization_id, action_digest)
@@ -339,14 +417,27 @@ CREATE TABLE settlement_receipts (
     ),
   CONSTRAINT settlement_receipt_hashes_valid
     CHECK (
-      signed_bytes_hash ~ '^[0-9a-f]{64}$'
+      (
+        signed_bytes_hash ~ '^[0-9a-f]{64}$'
       AND effect_digest ~ '^[0-9a-f]{64}$'
+      ) IS TRUE
     ),
   CONSTRAINT settlement_receipt_object
-    CHECK (jsonb_typeof(receipt) = 'object'),
+    CHECK ((jsonb_typeof(receipt) = 'object') IS TRUE),
   CONSTRAINT settlement_receipt_json_binding
     CHECK (
-      organization_id::text = receipt #>> '{organizationId}'
+      (
+        jsonb_typeof(receipt #> '{organizationId}') = 'string'
+      AND jsonb_typeof(receipt #> '{receiptId}') = 'string'
+      AND jsonb_typeof(receipt #> '{attemptId}') = 'string'
+      AND jsonb_typeof(receipt #> '{actionDigest}') = 'string'
+      AND jsonb_typeof(receipt #> '{transactionId}') = 'string'
+      AND jsonb_typeof(receipt #> '{signedBytesHash}') = 'string'
+      AND jsonb_typeof(receipt #> '{effectDigest}') = 'string'
+      AND jsonb_typeof(receipt #> '{networkId}') = 'string'
+      AND jsonb_typeof(receipt #> '{adapterId}') = 'string'
+      AND jsonb_typeof(receipt #> '{attemptAdapterId}') = 'string'
+      AND organization_id::text = receipt #>> '{organizationId}'
       AND receipt_id = receipt #>> '{receiptId}'
       AND attempt_id = receipt #>> '{attemptId}'
       AND action_digest = receipt #>> '{actionDigest}'
@@ -356,11 +447,14 @@ CREATE TABLE settlement_receipts (
       AND network_id = receipt #>> '{networkId}'
       AND adapter_id = receipt #>> '{adapterId}'
       AND adapter_id = receipt #>> '{attemptAdapterId}'
+      ) IS TRUE
     ),
   CONSTRAINT settlement_receipt_atomic_group_binding
     CHECK (
-      atomic_group_key ~
+      (
+        atomic_group_key ~
         ('^payment:' || action_digest || ':v[1-9][0-9]*$')
+      ) IS TRUE
     ),
   CONSTRAINT settlement_receipt_attempt_binding
     FOREIGN KEY (
@@ -417,19 +511,32 @@ CREATE TABLE settlement_consumptions (
   CONSTRAINT settlement_consumption_claim_identity
     PRIMARY KEY (organization_id, claim_id),
   CONSTRAINT settlement_consumption_status_valid
-    CHECK (consumption_status = 'CONSUMED'),
+    CHECK ((consumption_status = 'CONSUMED') IS TRUE),
   CONSTRAINT settlement_consumption_expected_version_positive
-    CHECK (expected_aggregate_version > 0),
+    CHECK ((expected_aggregate_version > 0) IS TRUE),
   CONSTRAINT settlement_consumption_hashes_valid
     CHECK (
-      signed_bytes_hash ~ '^[0-9a-f]{64}$'
+      (
+        signed_bytes_hash ~ '^[0-9a-f]{64}$'
       AND effect_digest ~ '^[0-9a-f]{64}$'
+      ) IS TRUE
     ),
   CONSTRAINT settlement_consumption_object
-    CHECK (jsonb_typeof(claim) = 'object'),
+    CHECK ((jsonb_typeof(claim) = 'object') IS TRUE),
   CONSTRAINT settlement_consumption_json_binding
     CHECK (
-      organization_id::text = claim #>> '{organizationId}'
+      (
+        jsonb_typeof(claim #> '{organizationId}') = 'string'
+      AND jsonb_typeof(claim #> '{claimId}') = 'string'
+      AND jsonb_typeof(claim #> '{obligationId}') = 'string'
+      AND jsonb_typeof(claim #> '{actionDigest}') = 'string'
+      AND jsonb_typeof(claim #> '{attemptId}') = 'string'
+      AND jsonb_typeof(claim #> '{receiptId}') = 'string'
+      AND jsonb_typeof(claim #> '{adapterId}') = 'string'
+      AND jsonb_typeof(claim #> '{status}') = 'string'
+      AND jsonb_typeof(claim #> '{atomicGroupKey}') = 'string'
+      AND jsonb_typeof(claim #> '{expectedAggregateVersion}') = 'number'
+      AND organization_id::text = claim #>> '{organizationId}'
       AND claim_id = claim #>> '{claimId}'
       AND obligation_id::text = claim #>> '{obligationId}'
       AND action_digest = claim #>> '{actionDigest}'
@@ -440,6 +547,7 @@ CREATE TABLE settlement_consumptions (
       AND atomic_group_key = claim #>> '{atomicGroupKey}'
       AND claim #> '{expectedAggregateVersion}' =
         to_jsonb(expected_aggregate_version)
+      ) IS TRUE
     ),
   CONSTRAINT settlement_consumption_receipt_binding
     FOREIGN KEY (
@@ -524,7 +632,9 @@ CREATE TABLE outbox_events (
   CONSTRAINT outbox_event_identity
     PRIMARY KEY (organization_id, event_id),
   CONSTRAINT outbox_event_id_format
-    CHECK (event_id ~ '^invoiceguard:event:v1:[0-9a-f]{64}$'),
+    CHECK (
+      (event_id ~ '^invoiceguard:event:v1:[0-9a-f]{64}$') IS TRUE
+    ),
   CONSTRAINT outbox_effect_type_valid
     CHECK (
       effect_type IN (
@@ -532,7 +642,7 @@ CREATE TABLE outbox_events (
         'SETTLEMENT_SUBMISSION_REQUEST',
         'SETTLEMENT_RETRY_REQUEST',
         'EXECUTION_AUDIT_REQUEST'
-      )
+      ) IS TRUE
     ),
   CONSTRAINT outbox_effect_family_valid
     CHECK (
@@ -540,20 +650,33 @@ CREATE TABLE outbox_events (
         'VERIFICATION_QUOTE',
         'SETTLEMENT_SUBMISSION',
         'EXECUTION_AUDIT'
-      )
+      ) IS TRUE
     ),
   CONSTRAINT outbox_delivery_status_valid
-    CHECK (delivery_status IN ('PENDING', 'LEASED', 'DELIVERED')),
+    CHECK (
+      (delivery_status IN ('PENDING', 'LEASED', 'DELIVERED')) IS TRUE
+    ),
   CONSTRAINT outbox_attempts_nonnegative
-    CHECK (delivery_attempts >= 0),
+    CHECK ((delivery_attempts >= 0) IS TRUE),
   CONSTRAINT outbox_payloads_are_objects
     CHECK (
-      jsonb_typeof(immutable_binding) = 'object'
+      (
+        jsonb_typeof(immutable_binding) = 'object'
       AND jsonb_typeof(payload) = 'object'
+      ) IS TRUE
     ),
   CONSTRAINT outbox_payload_binding
     CHECK (
-      event_id = payload #>> '{eventId}'
+      (
+        jsonb_typeof(payload #> '{eventId}') = 'string'
+      AND jsonb_typeof(payload #> '{type}') = 'string'
+      AND jsonb_typeof(payload #> '{idempotencyKey}') = 'string'
+      AND jsonb_typeof(payload #> '{atomicGroupKey}') = 'string'
+      AND COALESCE(
+        jsonb_typeof(payload #> '{actionDigest}'),
+        jsonb_typeof(payload #> '{attempt,actionDigest}')
+      ) = 'string'
+      AND event_id = payload #>> '{eventId}'
       AND effect_type = payload #>> '{type}'
       AND idempotency_key = payload #>> '{idempotencyKey}'
       AND last_atomic_group_key = payload #>> '{atomicGroupKey}'
@@ -565,10 +688,11 @@ CREATE TABLE outbox_events (
         ('^payment:' || action_digest || ':v[1-9][0-9]*$')
       AND last_atomic_group_key ~
         ('^payment:' || action_digest || ':v[1-9][0-9]*$')
+      ) IS TRUE
     ),
   CONSTRAINT outbox_lease_state_valid
     CHECK (
-      (
+      ((
         delivery_status = 'LEASED'
         AND lease_token IS NOT NULL
         AND lease_owner IS NOT NULL
@@ -588,7 +712,7 @@ CREATE TABLE outbox_events (
         AND lease_owner IS NULL
         AND lease_expires_at IS NULL
         AND delivered_at IS NOT NULL
-      )
+      )) IS TRUE
     ),
   CONSTRAINT outbox_event_payment
     FOREIGN KEY (organization_id, action_digest)
