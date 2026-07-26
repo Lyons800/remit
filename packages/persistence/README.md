@@ -1,8 +1,8 @@
 # Payment persistence
 
 This package implements the PostgreSQL security boundary tracked by issue
-[#20](https://github.com/Lyons800/invoiceguard/issues/20). It persists hydrated
-payment aggregates, organization-scoped replay identities, mandate reservations,
+[#20](https://github.com/Lyons800/remit/issues/20). It persists hydrated payment
+aggregates, organization-scoped replay identities, mandate reservations,
 settlement attempts and results, and recoverable outbox work.
 
 ## Boundary
