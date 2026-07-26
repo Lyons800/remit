@@ -148,12 +148,13 @@ That is token **creation**, **configuration**, and **two lifecycle operations**.
 Executed against real networks and verified by reading it back from Mirror Node,
 not from our own call:
 
-| Claim                                | Evidence                                                                                                       |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| Agent pays for verification via x402 | [`0.0.9758618-1785026905-665197442`](https://hashscan.io/testnet/transaction/0.0.9758618-1785026905-665197442) |
-| Three-party economics                | agent `−1,000,000` tinybar · service `+1,000,000` · facilitator `−282,113` fee                                 |
-| Audit marker carries the digest      | Mirror read-back matches byte-for-byte                                                                         |
-| Marker lifecycle burn                | `deleted=true`, `total_supply=0`                                                                               |
+| Claim                                | Evidence                                                                                                           |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Agent pays for verification via x402 | [`0.0.9758618-1785026905-665197442`](https://hashscan.io/testnet/transaction/0.0.9758618-1785026905-665197442)     |
+| Three-party economics                | agent `−1,000,000` tinybar · service `+1,000,000` · facilitator `−282,113` fee                                     |
+| Sealed marker collection             | [`0.0.9762937`](https://testnet.mirrornode.hedera.com/api/v1/tokens/0.0.9762937): finite supply 1; supply key only |
+| Marker carries the exact digest      | [Mirror NFT record](https://testnet.mirrornode.hedera.com/api/v1/tokens/0.0.9762937/nfts/1) matches byte-for-byte  |
+| Marker lifecycle burn                | `deleted=true`, `total_supply=0`, `max_supply=1`                                                                   |
 
 More in [`docs/evidence/`](docs/evidence/).
 
