@@ -1,0 +1,9 @@
+# Local build and cache artefacts. Vercel builds from source; uploading these
+# both wastes the upload and trips the 100 MB per-file limit — the turbopack
+# dev cache and turbo's tarballs each exceed it.
+.turbo
+**/.next
+**/dist
+node_modules
+.env.local
+.env.*.local
