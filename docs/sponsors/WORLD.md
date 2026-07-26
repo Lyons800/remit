@@ -130,7 +130,8 @@ invoice to the exception or blocked path.
 5. Parse the header and run the released AgentKit validation and signature
    verification. The resulting claim is opaque and valid only in the current
    process after atomic challenge consumption; do not hydrate it from JSON or a
-   structurally similar object.
+   structurally similar object. This is an in-process sequencing guard, not
+   durable authentication or protection from an untrusted composition root.
 6. Add InvoiceGuard's mandatory checks:
 
    ```text
@@ -175,25 +176,36 @@ operations, so the InvoiceGuard database owns atomic consumption.
 3. Bind the proof signal to the authenticated subject, approval session, role,
    decision, role grant, agent, and expiry.
 4. The offline adapter constructs and revalidates the IDKit v4 request only from
-   a trusted deployment context. The app, environment, and relying-party ID
-   cannot be supplied independently. A future live composition root must call
-   `IDKit.request` or an admitted first-party connector. The RP signing key and
-   proof verification remain server-side.
+   a process-branded, frozen deployment context. Its digest identity binds the
+   app, environment, relying-party ID and mode into the request and later
+   admission evidence. A future live composition root must call `IDKit.request`
+   or an admitted first-party connector. The RP signing key and proof
+   verification remain server-side.
 5. One verifier/composition path recomputes the stored action digest and
    correlates the trusted request, exact verified World response, opaque
    approval and requester AgentKit claims, current AgentBook resolutions,
    company-role grants, and the AP authorization bundle.
-6. That path derives every current and overlap-key alias from transient raw
+6. Each successful AgentBook result must carry the observed chain/network,
+   registry ID/contract, adapter ID/version, backing-record source, record ID
+   and validity window. Every field is compared to the frozen composition policy
+   before a fact receives `CURRENT`.
+7. The path derives every current and overlap-key alias from transient raw
    identifiers and the authoritative keyring, and sets the fact expiry to the
-   earliest expiry across every backing authority. It rejects caller alias
-   arrays and exposes no structural status or fact constructors.
-7. Only after those checks does the opaque projection contain the domain's
-   canonical `AdapterVerifiedApprovalFact` and `RequestingAgentExecutionFact`.
-   The World adapter does not define a parallel durable decision type.
-8. A future physical repository must reserve every current and still-admitted
-   previous HMAC alias while atomically consuming the agent challenge, approval
-   session, World proof, and approval claim. That PostgreSQL transaction is not
-   implemented by this offline integration.
+   earliest expiry across every backing authority. Caller alias arrays are
+   rejected.
+8. The public domain factories then construct `AdapterVerifiedApprovalFact` and
+   `RequestingAgentExecutionFact`, but those factories and their `recordDigest`
+   checks are structural, not authentication.
+9. The path binds both facts, all AgentBook evidence, deployment/policy
+   identities and every approval/requester identity claim into one
+   `WorldAuthorityAdmissionBundle`. It passes that whole bundle to the
+   configured process-branded admission-writer capability and returns only its
+   matching receipt.
+10. A future physical repository must authenticate that writer, reserve every
+    current and still-admitted previous HMAC alias, consume the agent challenge,
+    approval session and World proof, and persist the full bundle, facts and
+    receipt in one serializable transaction. That PostgreSQL transaction is not
+    implemented by this offline integration.
 
 The current World interfaces do not establish that the IDKit user is the same
 person as the AgentBook human backing the agent. InvoiceGuard requires both
@@ -233,9 +245,13 @@ identity cannot count once per key version.
   decision, and expiry;
 - every role and decision slot on one payment shares one World action while its
   signal remains slot-specific;
-- only the correlated opaque projection yields canonical AP approval and
-  requesting-agent facts; fabricated, serialized, truncated, or substituted
-  evidence fails, and the admitted validity is the minimum authority expiry;
+- only the correlated path can submit a complete admission bundle; fabricated,
+  serialized, truncated, omitted, or substituted evidence fails, and the
+  admitted validity is the minimum authority expiry;
+- AgentBook chain, network, registry/contract, adapter version and record-source
+  substitutions fail before `CURRENT`;
+- a whole deployment/RP substitution fails against the frozen composition
+  policy, and a serialized deployment or bundle cannot reuse its process brand;
 - reused or cross-action World nullifiers fail;
 - a routine invoice inside a current standing mandate uses no per-invoice HITL;
 - a beneficiary, amount, asset, evidence, or cap change exits that mandate;

@@ -104,15 +104,24 @@ the documented `main` ruleset follows immediately afterward.
   and expiry binding in the signal.
 - Bound every IDKit request to one validated trusted deployment context, so its
   app, environment, and relying-party ID cannot be mixed by callers.
-- Added one opaque verifier/composition path that correlates actual AgentKit
-  authorization, AgentBook resolution, company roles, IDKit verification, and AP
-  authorization before projecting the domain's canonical
-  `AdapterVerifiedApprovalFact` and `RequestingAgentExecutionFact`.
-- Removed public structural fact constructors, derived complete rotation aliases
-  from the authoritative keyring, and capped validity at the earliest backing
-  authority expiry. No parallel durable World decision record was introduced.
+- Added one verifier/composition path that correlates actual AgentKit
+  authorization, exact AgentBook provenance, company roles, IDKit verification,
+  and AP authorization before constructing the domain facts.
+- Kept the domain fact factories correctly classified as public structural
+  validators: `recordDigest` detects mutation but is not authentication or
+  writer provenance.
+- Derived complete approval and requester rotation aliases, bound them and both
+  facts into one `WorldAuthorityAdmissionBundle`, and made a process-branded
+  admission-writer capability mandatory. The World API returns only the
+  bundle-bound writer receipt, not loose facts.
+- Process-branded and digest-identified the frozen deployment/composition
+  boundary, and capped validity at the earliest backing authority expiry. No
+  parallel durable World decision record was introduced.
 - Recorded the exact source revisions, declared licenses, undeclared AgentKit
   license, and dependency rollback without weakening live NO-GO gates.
 - Kept physical persistence, live Developer Portal verification, registered
   identities, company credentials, and real-human quorum as explicit NO-GO
   gates.
+- Recorded the exact post-rebase persistence requirement: authenticate the
+  writer and persist the full bundle, facts, consumption and every overlap
+  identity claim in one serializable transaction before any fact enters quorum.
