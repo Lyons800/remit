@@ -8,7 +8,7 @@ import {
   type AdapterVerifiedEvidenceResult,
   type AdapterVerifiedVerificationPayment,
   type VerificationQuoteRequestEffect,
-} from '@invoiceguard/domain';
+} from '@remit/domain';
 import {
   canonicalizeJson,
   hashCanonicalInvoice,
@@ -16,12 +16,12 @@ import {
   verifySupplierMasterSnapshot,
   type AuthorizationBundleV1,
   type CanonicalJsonValue,
-} from '@invoiceguard/protocol/hashing';
+} from '@remit/protocol/hashing';
 import type {
   BeneficiaryV1,
   CanonicalInvoiceV1,
   SupplierMasterSnapshotV1,
-} from '@invoiceguard/protocol';
+} from '@remit/protocol';
 import type { PaymentRequirements } from '@x402/core/types';
 
 import {

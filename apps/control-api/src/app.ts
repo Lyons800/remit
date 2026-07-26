@@ -2,7 +2,7 @@ import {
   createLivenessReport,
   createReadinessReport,
   type ServiceRuntime,
-} from '@invoiceguard/runtime-config';
+} from '@remit/runtime-config';
 import { Hono } from 'hono';
 
 export function createControlApi(

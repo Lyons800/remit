@@ -74,7 +74,7 @@ substitute for the explicit threat-model tests.
 
 ## Current state
 
-- `https://github.com/Lyons800/invoiceguard` is the canonical remote.
+- `https://github.com/Lyons800/remit` is the canonical remote.
 - `main` contains only the provenance root; delivery proceeds through pull
   requests.
 - Pull request 1 carries the bounded repository foundation.

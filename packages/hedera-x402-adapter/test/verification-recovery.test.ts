@@ -4,13 +4,13 @@ import { createRequire } from 'node:module';
 import {
   createPaymentActionAggregate,
   transitionPaymentAction,
-} from '@invoiceguard/domain';
-import type { CanonicalInvoiceV1 } from '@invoiceguard/protocol';
+} from '@remit/domain';
+import type { CanonicalInvoiceV1 } from '@remit/protocol';
 import {
   createAuthorizationBundle,
   createSupplierMasterSnapshot,
   hashCanonicalInvoice,
-} from '@invoiceguard/protocol/hashing';
+} from '@remit/protocol/hashing';
 import { describe, expect, it } from 'vitest';
 
 import {

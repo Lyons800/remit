@@ -25,7 +25,7 @@ import {
   type PaymentActionEvent,
   type PaymentAuthorizationContext,
   type FrozenSettlementAttempt,
-} from '@invoiceguard/domain';
+} from '@remit/domain';
 import {
   createAuthorizationBundle,
   createStandingMandate,
@@ -59,7 +59,7 @@ const databaseUrl = assertDisposableDatabaseUrl(
   process.env['PERSISTENCE_TEST_DATABASE_URL'],
   process.env['PERSISTENCE_TEST_DISPOSABLE_CONFIRM'],
 ).toString();
-const testSchema = `invoiceguard_test_${process.pid}_${randomUUID().replaceAll(
+const testSchema = `remit_test_${process.pid}_${randomUUID().replaceAll(
   '-',
   '',
 )}`;
@@ -276,7 +276,7 @@ function requestingAgent(
     agentId: 'payment-agent-1',
     agentKitChallengeId: `agentkit-challenge:${frozenAuthorization.actionCore.actionId}${identitySuffix}`,
     agentTenantPrincipal: 'agent-tenant-1',
-    audience: 'invoiceguard:settlement',
+    audience: 'remit:settlement',
     companyRoleStatus: 'CURRENT',
     expiresAt: '2026-07-25T10:59:00.000Z',
     factId: `requesting-agent-proof:${frozenAuthorization.actionCore.actionId}${identitySuffix}`,
@@ -374,7 +374,7 @@ function frozenAttempt(
     createdAt,
     expiresAt: '2026-07-25T11:00:00.000Z',
     signedTransactionBytes: encodeCanonicalSignedTransactionBytes(
-      Buffer.from('invoiceguard-frozen-settlement-transaction-1'),
+      Buffer.from('remit-frozen-settlement-transaction-1'),
     ),
     transactionId: 'hedera-frozen-transaction-1',
   });

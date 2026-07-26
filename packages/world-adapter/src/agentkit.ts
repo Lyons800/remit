@@ -14,8 +14,8 @@ import {
 import { getAddress, isAddress } from 'viem';
 
 import {
-  INVOICEGUARD_AGENTKIT_STATEMENT,
-  INVOICEGUARD_AGENTKIT_VERSION,
+  REMIT_AGENTKIT_STATEMENT,
+  REMIT_AGENTKIT_VERSION,
   WORLD_AGENT_SIGNATURE_CHAIN_ID,
   WORLD_AGENT_SIGNATURE_TYPE,
 } from './constants.js';
@@ -39,7 +39,7 @@ export type AgentkitApprovalChallenge = Readonly<{
   issuedAt: string;
   nonce: string;
   organizationId: string;
-  statement: typeof INVOICEGUARD_AGENTKIT_STATEMENT;
+  statement: typeof REMIT_AGENTKIT_STATEMENT;
 }>;
 
 export type AgentkitApprovalChallengeValidationResult =
@@ -393,8 +393,8 @@ export function createAgentkitApprovalChallenge({
     info: {
       domain: publicOrigin.hostname,
       uri: approvalUri,
-      statement: INVOICEGUARD_AGENTKIT_STATEMENT,
-      version: INVOICEGUARD_AGENTKIT_VERSION,
+      statement: REMIT_AGENTKIT_STATEMENT,
+      version: REMIT_AGENTKIT_VERSION,
       nonce,
       issuedAt: issuedAt.toISOString(),
       expirationTime: expiresAt.toISOString(),
@@ -425,7 +425,7 @@ export function createAgentkitApprovalChallenge({
     issuedAt: issuedAt.toISOString(),
     nonce,
     organizationId,
-    statement: INVOICEGUARD_AGENTKIT_STATEMENT,
+    statement: REMIT_AGENTKIT_STATEMENT,
   });
 }
 
@@ -642,7 +642,7 @@ export async function authorizeAgentkitRequest(
     return refusal('DOMAIN_MISMATCH');
   }
 
-  if (payload.version !== INVOICEGUARD_AGENTKIT_VERSION) {
+  if (payload.version !== REMIT_AGENTKIT_VERSION) {
     return refusal('VERSION_MISMATCH');
   }
 

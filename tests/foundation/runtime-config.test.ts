@@ -5,8 +5,8 @@ import { parseServiceRuntime } from '../../packages/runtime-config/src/index.js'
 const validOptions = {
   defaultPort: 4100,
   env: {
-    INVOICEGUARD_BUILD_SHA: 'local',
-    INVOICEGUARD_DEMO_MODE: 'inactive',
+    REMIT_BUILD_SHA: 'local',
+    REMIT_DEMO_MODE: 'inactive',
     CONTROL_API_PORT: '4100',
   },
   liveReady: false,
@@ -31,7 +31,7 @@ describe('parseServiceRuntime', () => {
     const runtime = parseServiceRuntime({
       ...validOptions,
       env: {
-        INVOICEGUARD_DEMO_MODE: 'fake',
+        REMIT_DEMO_MODE: 'fake',
       },
     });
 
@@ -50,10 +50,10 @@ describe('parseServiceRuntime', () => {
           ...validOptions,
           env: {
             ...validOptions.env,
-            INVOICEGUARD_DEMO_MODE: mode,
+            REMIT_DEMO_MODE: mode,
           },
         }),
-      ).toThrow('INVOICEGUARD_DEMO_MODE');
+      ).toThrow('REMIT_DEMO_MODE');
     },
   );
 
@@ -77,8 +77,8 @@ describe('parseServiceRuntime', () => {
       parseServiceRuntime({
         ...validOptions,
         env: {
-          INVOICEGUARD_BUILD_SHA: 'a'.repeat(40),
-          INVOICEGUARD_DEMO_MODE: 'live',
+          REMIT_BUILD_SHA: 'a'.repeat(40),
+          REMIT_DEMO_MODE: 'live',
           CONTROL_API_PORT: '4100',
         },
       }),
@@ -90,20 +90,20 @@ describe('parseServiceRuntime', () => {
       parseServiceRuntime({
         ...validOptions,
         env: {
-          INVOICEGUARD_BUILD_SHA: 'local',
-          INVOICEGUARD_DEMO_MODE: 'live',
+          REMIT_BUILD_SHA: 'local',
+          REMIT_DEMO_MODE: 'live',
           CONTROL_API_PORT: '4100',
         },
         liveReady: true,
       }),
-    ).toThrow('INVOICEGUARD_BUILD_SHA');
+    ).toThrow('REMIT_BUILD_SHA');
 
     expect(() =>
       parseServiceRuntime({
         ...validOptions,
         env: {
-          INVOICEGUARD_BUILD_SHA: 'a'.repeat(40),
-          INVOICEGUARD_DEMO_MODE: 'live',
+          REMIT_BUILD_SHA: 'a'.repeat(40),
+          REMIT_DEMO_MODE: 'live',
         },
         liveReady: true,
       }),
@@ -114,8 +114,8 @@ describe('parseServiceRuntime', () => {
     const runtime = parseServiceRuntime({
       ...validOptions,
       env: {
-        INVOICEGUARD_BUILD_SHA: 'a'.repeat(40),
-        INVOICEGUARD_DEMO_MODE: 'live',
+        REMIT_BUILD_SHA: 'a'.repeat(40),
+        REMIT_DEMO_MODE: 'live',
         CONTROL_API_PORT: '4100',
       },
       liveReady: true,

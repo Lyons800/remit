@@ -1,5 +1,5 @@
 export const DISPOSABLE_DATABASE_CONFIRMATION =
-  'invoiceguard-persistence-disposable-v1';
+  'remit-persistence-disposable-v1';
 
 export type LiveDatabaseIdentity = Readonly<{
   database_name: string;
@@ -8,9 +8,9 @@ export type LiveDatabaseIdentity = Readonly<{
 }>;
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
-const TEST_DATABASE = 'invoiceguard_test';
-const TEST_USER = 'invoiceguard_test';
-const TEST_SCHEMA_PATTERN = /^invoiceguard_test_[0-9]+_[0-9a-f]{32}$/u;
+const TEST_DATABASE = 'remit_test';
+const TEST_USER = 'remit_test';
+const TEST_SCHEMA_PATTERN = /^remit_test_[0-9]+_[0-9a-f]{32}$/u;
 
 function isLocalContainerAddress(value: string): boolean {
   const [address] = value.split('/');
@@ -47,7 +47,7 @@ export function assertDisposableDatabaseUrl(
     decodeURIComponent(parsed.pathname.slice(1)) !== TEST_DATABASE
   ) {
     throw new Error(
-      'persistence tests require the loopback invoiceguard_test database and user',
+      'persistence tests require the loopback remit_test database and user',
     );
   }
   return parsed;

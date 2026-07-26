@@ -43,7 +43,7 @@ Rejected on 2026-07-25:
 - its broker encryption key is not attestation-bound, so a malicious Router can
   substitute a key; and
 - the released TypeScript SDK verifies a signer but does not establish the exact
-  request/output binding InvoiceGuard claims.
+  request/output binding Remit claims.
 
 The project selects World and Hedera only. No 0G adapter package, SDK,
 credential, or deployment exists. Reconsideration requires every gate in

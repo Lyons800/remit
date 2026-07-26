@@ -1,5 +1,5 @@
 import { serve } from '@hono/node-server';
-import { parseServiceRuntime } from '@invoiceguard/runtime-config';
+import { parseServiceRuntime } from '@remit/runtime-config';
 
 import { createPaymentAgentApp } from './app.js';
 

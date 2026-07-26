@@ -2,13 +2,13 @@ import {
   createAuthorizationBundle,
   createStandingMandate,
   hashPaymentActionCore,
-} from '@invoiceguard/protocol/hashing';
+} from '@remit/protocol/hashing';
 import {
   paymentActionCoreV1Schema,
   type PaymentActionCoreV1,
   type PaymentPolicyEvaluationRequestV1,
   type PaymentPolicyInputV1,
-} from '@invoiceguard/protocol';
+} from '@remit/protocol';
 
 export const NOW = '2026-07-25T10:00:00.000Z';
 export const ACTION_EXPIRES_AT = '2026-07-25T11:00:00.000Z';

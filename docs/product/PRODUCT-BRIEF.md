@@ -2,9 +2,9 @@
 
 ## Product
 
-InvoiceGuard is an agentic accounts-payable operations system with an
-exact-action control plane. It gives finance teams one place to receive, check,
-approve, pay, and reconcile supplier invoices.
+Remit is an agentic accounts-payable operations system with an exact-action
+control plane. It gives finance teams one place to receive, check, approve, pay,
+and reconcile supplier invoices.
 
 Agents do the repetitive work. Deterministic policy decides what is eligible for
 a standing mandate. People review only the material exceptions.
@@ -66,7 +66,7 @@ a financial effect.
 
 ## Three separate records
 
-InvoiceGuard does not turn an uploaded document directly into a payment:
+Remit does not turn an uploaded document directly into a payment:
 
 1. **Source observation:** immutable document bytes or object reference, source
    metadata, content hash, and extraction provenance.
@@ -112,7 +112,7 @@ The memorable demo case is one invoice inside a normal batch:
 > purchase order, tax identifier, and invoice number match. The beneficiary does
 > not match the approved supplier record, and no governed vendor change exists.
 
-InvoiceGuard does not try to determine whether a call, message, or document is
+Remit does not try to determine whether a call, message, or document is
 synthetic. None is an authority source. It freezes the proposed payment as one
 exception, purchases the configured supplier-evidence check, and asks the
 required company roles to review only the consequential difference.
@@ -151,22 +151,22 @@ human-backed-agent accountability. Human-in-the-Loop establishes fresh unique
 human participation where the policy requires it. The company remains the source
 of role and mandate authority.
 
-Hedera turns InvoiceGuard from an approval dashboard into an economically
-complete agent flow. The x402 service purchase and supplier settlement are
-separate transactions joined by the action digest and durable evidence.
+Hedera turns Remit from an approval dashboard into an economically complete
+agent flow. The x402 service purchase and supplier settlement are separate
+transactions joined by the action digest and durable evidence.
 
 0G was evaluated as an optional private verifier and rejected on 2026-07-25. It
 is not selected, installed, or shown in the demo.
 
 ## Product claim
 
-> InvoiceGuard lets company-authorized, human-backed agents process routine
-> supplier invoices within narrow standing mandates and routes material
-> exceptions to fresh, exact, distinct-human approval before one-use execution.
+> Remit lets company-authorized, human-backed agents process routine supplier
+> invoices within narrow standing mandates and routes material exceptions to
+> fresh, exact, distinct-human approval before one-use execution.
 
 ## Non-claims
 
-InvoiceGuard does not prove:
+Remit does not prove:
 
 - the truth, legality, or tax compliance of an invoice;
 - legal ownership of a beneficiary account;

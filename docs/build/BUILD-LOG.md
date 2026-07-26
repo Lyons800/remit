@@ -24,8 +24,8 @@ remains the source of truth for exact changes.
 - Initialized an empty Classic-track repository during the event.
 - Created a provenance-only root commit on `main`.
 - Opened `chore/foundation` for all subsequent work.
-- Froze the InvoiceGuard product claim, non-claims, authority model, threat
-  model, sponsor contracts, and delivery gates.
+- Froze the Remit product claim, non-claims, authority model, threat model,
+  sponsor contracts, and delivery gates.
 - Bootstrapped a strict pnpm monorepo with seven deployables, seven internal
   packages, CI workflows, and explicit inactive-adapter shells.
 - Isolated untrusted invoice extraction in its own no-credential process
@@ -75,8 +75,8 @@ and PR wait for successful authentication and owner/org confirmation.
 ### Outcome
 
 - Reauthenticated the GitHub CLI as `Lyons800`.
-- Created `Lyons800/invoiceguard` privately, pushed the provenance-only `main`
-  and `chore/foundation`, and opened pull request 1.
+- Created `Lyons800/remit` privately, pushed the provenance-only `main` and
+  `chore/foundation`, and opened pull request 1.
 - Configured rebase-only merges, automatic branch cleanup, issues, delivery
   labels, and repository topics.
 - Kept public visibility as an explicit source-disclosure decision.

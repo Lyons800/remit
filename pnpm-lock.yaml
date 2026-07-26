@@ -76,13 +76,10 @@ importers:
       '@hiero-ledger/sdk':
         specifier: 2.85.0
         version: 2.85.0(bn.js@5.2.3)(react-native@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.8)(supports-color@8.1.1))(supports-color@8.1.1)
-      '@invoiceguard/domain':
+      '@remit/domain':
         specifier: workspace:*
         version: link:packages/domain
-      '@invoiceguard/persistence':
-        specifier: workspace:*
-        version: link:packages/persistence
-      '@invoiceguard/protocol':
+      '@remit/protocol':
         specifier: workspace:*
         version: link:packages/protocol
       '@types/node':
@@ -103,9 +100,6 @@ importers:
       fast-check:
         specifier: 4.9.0
         version: 4.9.0
-      postgres:
-        specifier: 'catalog:'
-        version: 3.4.9
       prettier:
         specifier: 'catalog:'
         version: 3.9.6
@@ -130,7 +124,7 @@ importers:
       '@hono/node-server':
         specifier: 'catalog:'
         version: 2.0.11(hono@4.12.32)
-      '@invoiceguard/runtime-config':
+      '@remit/runtime-config':
         specifier: workspace:*
         version: link:../../packages/runtime-config
       hono:
@@ -152,12 +146,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@invoiceguard/persistence':
-        specifier: workspace:*
-        version: link:../../packages/persistence
-      '@invoiceguard/world-adapter':
-        specifier: workspace:*
-        version: link:../../packages/world-adapter
       '@tailwindcss/postcss':
         specifier: ^4.3.3
         version: 4.3.3
@@ -173,9 +161,6 @@ importers:
       next:
         specifier: 16.2.11
         version: 16.2.11(@babel/core@7.29.7(supports-color@8.1.1))(@types/node@24.13.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      postgres:
-        specifier: 'catalog:'
-        version: 3.4.9
       react:
         specifier: 'catalog:'
         version: 19.2.8
@@ -204,7 +189,7 @@ importers:
 
   packages/domain:
     dependencies:
-      '@invoiceguard/protocol':
+      '@remit/protocol':
         specifier: workspace:*
         version: link:../protocol
     devDependencies:
@@ -223,10 +208,10 @@ importers:
       '@hiero-ledger/sdk':
         specifier: 2.85.0
         version: 2.85.0(bn.js@5.2.3)(react-native@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.8)(supports-color@8.1.1))(supports-color@8.1.1)
-      '@invoiceguard/domain':
+      '@remit/domain':
         specifier: workspace:*
         version: link:../domain
-      '@invoiceguard/protocol':
+      '@remit/protocol':
         specifier: workspace:*
         version: link:../protocol
       '@x402/core':
@@ -242,7 +227,7 @@ importers:
 
   packages/persistence:
     dependencies:
-      '@invoiceguard/domain':
+      '@remit/domain':
         specifier: workspace:*
         version: link:../domain
       postgres:
@@ -275,10 +260,10 @@ importers:
 
   packages/world-adapter:
     dependencies:
-      '@invoiceguard/domain':
+      '@remit/domain':
         specifier: workspace:*
         version: link:../domain
-      '@invoiceguard/protocol':
+      '@remit/protocol':
         specifier: workspace:*
         version: link:../protocol
       '@worldcoin/agentkit':
@@ -300,7 +285,7 @@ importers:
       '@hono/node-server':
         specifier: 'catalog:'
         version: 2.0.11(hono@4.12.32)
-      '@invoiceguard/runtime-config':
+      '@remit/runtime-config':
         specifier: workspace:*
         version: link:../../packages/runtime-config
       hono:
@@ -322,7 +307,7 @@ importers:
       '@hono/node-server':
         specifier: 'catalog:'
         version: 2.0.11(hono@4.12.32)
-      '@invoiceguard/runtime-config':
+      '@remit/runtime-config':
         specifier: workspace:*
         version: link:../../packages/runtime-config
       hono:
@@ -344,7 +329,7 @@ importers:
       '@hono/node-server':
         specifier: 'catalog:'
         version: 2.0.11(hono@4.12.32)
-      '@invoiceguard/runtime-config':
+      '@remit/runtime-config':
         specifier: workspace:*
         version: link:../../packages/runtime-config
       hono:
@@ -366,7 +351,7 @@ importers:
       '@hono/node-server':
         specifier: 'catalog:'
         version: 2.0.11(hono@4.12.32)
-      '@invoiceguard/runtime-config':
+      '@remit/runtime-config':
         specifier: workspace:*
         version: link:../../packages/runtime-config
       hono:
@@ -388,7 +373,7 @@ importers:
       '@hono/node-server':
         specifier: 'catalog:'
         version: 2.0.11(hono@4.12.32)
-      '@invoiceguard/runtime-config':
+      '@remit/runtime-config':
         specifier: workspace:*
         version: link:../../packages/runtime-config
       hono:

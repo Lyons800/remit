@@ -4,13 +4,13 @@ import {
   actionFactBinding,
   createAdapterVerifiedApprovalFact,
   createRequestingAgentExecutionFact,
-} from '@invoiceguard/domain';
+} from '@remit/domain';
 import type { IDKitResult, ResponseItemV4 } from '@worldcoin/idkit-core';
 import {
   canonicalizeJson,
   verifyAuthorizationBundle,
   type AuthorizationBundleV1,
-} from '@invoiceguard/protocol/hashing';
+} from '@remit/protocol/hashing';
 import { getAddress, isAddress } from 'viem';
 
 import {

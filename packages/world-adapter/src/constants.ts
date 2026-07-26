@@ -11,9 +11,9 @@ export const WORLD_AGENTBOOK_REGISTRY_ID =
 export const WORLD_AGENT_SIGNATURE_CHAIN_ID = 'eip155:296' as const;
 export const WORLD_AGENT_SIGNATURE_TYPE = 'eip191' as const;
 
-export const INVOICEGUARD_AGENTKIT_STATEMENT =
-  'InvoiceGuard approval for immutable payment action' as const;
-export const INVOICEGUARD_AGENTKIT_VERSION = '1' as const;
+export const REMIT_AGENTKIT_STATEMENT =
+  'Remit approval for immutable payment action' as const;
+export const REMIT_AGENTKIT_VERSION = '1' as const;
 
 export const WORLD_AUTHORITY_PACKAGE_VERSIONS = Object.freeze({
   agentkit: '0.2.0',

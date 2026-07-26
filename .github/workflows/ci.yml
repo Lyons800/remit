@@ -23,18 +23,18 @@ jobs:
       postgres:
         image: postgres:17-alpine@sha256:3430fe182f5065a6ea505c3d432d2c7fff18fbab954df8f277c1dbf4c70124af
         env:
-          POSTGRES_DB: invoiceguard_test
-          POSTGRES_PASSWORD: invoiceguard_test
-          POSTGRES_USER: invoiceguard_test
+          POSTGRES_DB: remit_test
+          POSTGRES_PASSWORD: remit_test
+          POSTGRES_USER: remit_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U invoiceguard_test -d invoiceguard_test"
+          --health-cmd "pg_isready -U remit_test -d remit_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
 
     env:
-      PERSISTENCE_TEST_DISPOSABLE_CONFIRM: invoiceguard-persistence-disposable-v1
-      PERSISTENCE_TEST_DATABASE_URL: postgresql://invoiceguard_test:invoiceguard_test@127.0.0.1:5432/invoiceguard_test
+      PERSISTENCE_TEST_DISPOSABLE_CONFIRM: remit-persistence-disposable-v1
+      PERSISTENCE_TEST_DATABASE_URL: postgresql://remit_test:remit_test@127.0.0.1:5432/remit_test
 
     steps:
       - name: Check out repository
@@ -59,7 +59,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build persistence dependencies
-        run: pnpm --filter @invoiceguard/persistence... build
+        run: pnpm --filter @remit/persistence... build
 
       - name: Run PostgreSQL contract tests
         run: pnpm test:persistence

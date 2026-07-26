@@ -11,7 +11,7 @@ import {
   type PaymentActionAggregate,
   type PaymentActionTransition,
   type PaymentDomainEffect,
-} from '@invoiceguard/domain';
+} from '@remit/domain';
 import type postgres from 'postgres';
 
 import { mapPostgresError, PersistenceError } from '../errors.js';

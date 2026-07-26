@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type {
   PaymentActionAggregate,
   PaymentDomainEffect,
-} from '@invoiceguard/domain';
+} from '@remit/domain';
 
 import { PersistenceError } from './errors.js';
 

@@ -1,5 +1,5 @@
 {
-  "name": "@invoiceguard/world-adapter",
+  "name": "@remit/world-adapter",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -19,8 +19,8 @@
     "typescript": "catalog:"
   },
   "dependencies": {
-    "@invoiceguard/domain": "workspace:*",
-    "@invoiceguard/protocol": "workspace:*",
+    "@remit/domain": "workspace:*",
+    "@remit/protocol": "workspace:*",
     "@worldcoin/agentkit": "0.2.0",
     "@worldcoin/idkit-core": "4.2.2",
     "viem": "2.55.8"

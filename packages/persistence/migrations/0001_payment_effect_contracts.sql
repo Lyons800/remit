@@ -633,7 +633,7 @@ CREATE TABLE outbox_events (
     PRIMARY KEY (organization_id, event_id),
   CONSTRAINT outbox_event_id_format
     CHECK (
-      (event_id ~ '^invoiceguard:event:v1:[0-9a-f]{64}$') IS TRUE
+      (event_id ~ '^remit:event:v1:[0-9a-f]{64}$') IS TRUE
     ),
   CONSTRAINT outbox_effect_type_valid
     CHECK (

@@ -7,8 +7,7 @@ import {
   assertLiveDisposableDatabase,
 } from './disposable-database.js';
 
-const localUrl =
-  'postgresql://invoiceguard_test:test@127.0.0.1:55432/invoiceguard_test';
+const localUrl = 'postgresql://remit_test:test@127.0.0.1:55432/remit_test';
 
 describe('disposable PostgreSQL test guards', () => {
   it('requires an explicit confirmation and exact loopback database identity', () => {
@@ -23,7 +22,7 @@ describe('disposable PostgreSQL test guards', () => {
     ).toThrow('loopback');
     expect(() =>
       assertDisposableDatabaseUrl(
-        localUrl.replace('/invoiceguard_test', '/invoiceguard'),
+        localUrl.replace('/remit_test', '/remit'),
         DISPOSABLE_DATABASE_CONFIRMATION,
       ),
     ).toThrow('loopback');
@@ -36,16 +35,16 @@ describe('disposable PostgreSQL test guards', () => {
   it('checks the live server identity independently of the URL', () => {
     expect(() =>
       assertLiveDisposableDatabase({
-        database_name: 'invoiceguard_test',
+        database_name: 'remit_test',
         server_address: '203.0.113.8',
-        user_name: 'invoiceguard_test',
+        user_name: 'remit_test',
       }),
     ).toThrow('connected PostgreSQL identity');
     expect(() =>
       assertLiveDisposableDatabase({
-        database_name: 'invoiceguard_test',
+        database_name: 'remit_test',
         server_address: '127.0.0.1',
-        user_name: 'invoiceguard_test',
+        user_name: 'remit_test',
       }),
     ).not.toThrow();
   });
@@ -56,7 +55,7 @@ describe('disposable PostgreSQL test guards', () => {
     );
     expect(() =>
       assertDisposableSchemaName(
-        'invoiceguard_test_123_0123456789abcdef0123456789abcdef',
+        'remit_test_123_0123456789abcdef0123456789abcdef',
       ),
     ).not.toThrow();
   });
