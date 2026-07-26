@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
+import { Badge } from '../../../components/ui/badge';
+import { Button } from '../../../components/ui/button';
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from '../../components/ui/card';
+} from '../../../components/ui/card';
 import {
   Table,
   TableBody,
@@ -17,14 +17,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '../../components/ui/table';
+} from '../../../components/ui/table';
 import {
   APPROVER_ROLES,
   distinctApprovingHumans,
   findHumanCollisions,
   type Person,
   type PersonRole,
-} from '../../lib/people';
+} from '../../../lib/people';
 
 const REQUIRED_DISTINCT_HUMANS = 2;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;

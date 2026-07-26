@@ -1,11 +1,11 @@
-import { Badge } from '../../components/ui/badge';
+import { Badge } from '../../../components/ui/badge';
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from '../../components/ui/card';
-import { POLICY_VERSION, policyRules } from '../../lib/demo';
+} from '../../../components/ui/card';
+import { POLICY_VERSION, policyRules } from '../../../lib/demo';
 
 export default function PoliciesPage() {
   return (
