@@ -29,7 +29,7 @@ export default function RootLayout({
     <html className={`${hedvig.variable} ${mono.variable}`} lang="en">
       <body style={{ fontFamily: 'var(--font-sans), sans-serif' }}>
         <Sidebar />
-        <main className="min-h-screen md:ml-[70px]">
+        <main className="min-h-screen pb-16 md:ml-[70px] md:pb-0">
           <div className="mx-auto max-w-[1200px] px-4 py-6 md:px-8">
             <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 border border-border px-3 py-2">
               <p className="microlabel text-foreground">

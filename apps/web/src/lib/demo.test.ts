@@ -16,7 +16,10 @@ describe('approval simulation', () => {
     expect(afterMiguel.counted).toEqual(['A1', 'B1']);
     expect(afterMiguel.phase).toBe('QUORUM_REACHED');
 
-    const tampered = theatreReducer(afterMiguel, { type: 'tamper' });
+    const tampered = theatreReducer(afterMiguel, {
+      digest: TAMPERED_DIGEST,
+      type: 'tamper',
+    });
 
     expect(tampered.counted).toEqual([]);
     expect(tampered.digest).toBe(TAMPERED_DIGEST);
