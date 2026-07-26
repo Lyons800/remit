@@ -187,21 +187,55 @@ async function resolveApprovers(): Promise<DemoApprover[]> {
     }));
   }
 
+  // Resolution is per-agent, not all-or-nothing. The claim this product exists
+  // to prove — that two wallets can be one person — needs only A1 and A2, both
+  // registered by the same human. B1 proves the uninteresting direction, that
+  // two different people are different, so a run with A1 and A2 real and B1
+  // simulated still demonstrates the real thing.
+  //
+  // Anything unresolved is marked SIMULATED on every line it touches. The demo
+  // never presents an invented identity as a real one.
   const agentBook = createAgentBookVerifier();
+  const fallback: Record<string, string> = {
+    A1: 'sim-human-1',
+    A2: 'sim-human-1',
+    B1: 'sim-human-2',
+  };
+
   const resolved: DemoApprover[] = [];
   for (const w of wanted) {
     const humanId = await agentBook.lookupHuman(w.address);
-    if (humanId === null) {
-      console.error(
-        `\n${C.red('STOP')} — ${w.label} (${w.address}) is not registered in AgentBook.\n\n` +
-          `This demo will not invent a human identity. Register it:\n` +
-          `  npx @worldcoin/agentkit-cli register ${w.address}\n\n` +
-          `To rehearse before registration: pnpm demo -- --simulate-humans\n`,
-      );
-      process.exit(2);
-    }
-    resolved.push({ ...w, humanPrincipal: humanId, simulated: false });
+    resolved.push(
+      humanId === null
+        ? {
+            ...w,
+            humanPrincipal: fallback[w.label] ?? `sim-${w.label}`,
+            simulated: true,
+          }
+        : { ...w, humanPrincipal: humanId, simulated: false },
+    );
   }
+
+  const live = resolved.filter((a) => !a.simulated).map((a) => a.label);
+  const sim = resolved.filter((a) => a.simulated).map((a) => a.label);
+  if (live.length > 0) {
+    console.log(
+      `  ${C.green('AgentBook live')}: ${live.join(', ')}` +
+        (sim.length > 0
+          ? `   ${C.yellow(`simulated: ${sim.join(', ')}`)}`
+          : ''),
+    );
+  }
+
+  // The false-quorum refusal is the headline. Say plainly whether it was real.
+  const a1 = resolved.find((a) => a.label === 'A1');
+  const a2 = resolved.find((a) => a.label === 'A2');
+  if (a1 && a2 && !a1.simulated && !a2.simulated) {
+    console.log(
+      `  ${C.green('the false-quorum refusal below is REAL')} — both wallets resolved on World Chain`,
+    );
+  }
+
   return resolved;
 }
 
