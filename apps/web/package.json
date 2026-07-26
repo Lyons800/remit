@@ -22,6 +22,7 @@
     "next": "16.2.11",
     "pg": "8.22.0",
     "postgres": "catalog:",
+    "qrcode": "1.5.4",
     "react": "catalog:",
     "react-dom": "catalog:",
     "tailwind-merge": "^3.6.0",
@@ -30,6 +31,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/pg": "8.20.0",
+    "@types/qrcode": "1.5.5",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "typescript": "catalog:"

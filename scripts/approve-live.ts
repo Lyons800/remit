@@ -138,8 +138,7 @@ async function main(): Promise<void> {
   console.log('\nsession created:');
   const record = session as Record<string, unknown>;
   for (const [k, v] of Object.entries(record)) {
-    const shown =
-      typeof v === 'string' ? v : JSON.stringify(v)?.slice(0, 120);
+    const shown = typeof v === 'string' ? v : JSON.stringify(v)?.slice(0, 120);
     console.log(`  ${k}: ${shown}`);
   }
 }

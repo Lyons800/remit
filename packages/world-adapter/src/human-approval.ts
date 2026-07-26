@@ -7,6 +7,7 @@ import {
   type ProofOfHumanPreset,
   type RpContext,
 } from '@worldcoin/idkit-core';
+import { signRequest } from '@worldcoin/idkit-core/signing';
 import { getAddress, isAddress } from 'viem';
 
 import type {
@@ -748,4 +749,30 @@ export function createWorldProofOfHumanRequest({
   }
 
   return validated.request;
+}
+
+/**
+ * Sign a relying-party request context.
+ *
+ * Re-exported through the adapter so applications never import the World SDK
+ * directly — the repository forbids that, and the boundary is what keeps the
+ * signing key on one side of it.
+ *
+ * The signature is produced locally from the RP key; there is no call to
+ * World. That matters operationally: opening an approval cannot fail because
+ * their relay is unavailable, which it demonstrably sometimes is.
+ */
+export function signApprovalRequest(input: {
+  readonly action: string;
+  readonly signingKeyHex: string;
+}): {
+  readonly sig: string;
+  readonly nonce: string;
+  readonly createdAt: number;
+  readonly expiresAt: number;
+} {
+  return signRequest({
+    action: input.action,
+    signingKeyHex: input.signingKeyHex,
+  });
 }
