@@ -276,7 +276,7 @@ function requestingAgent(
     agentId: 'payment-agent-1',
     agentKitChallengeId: `agentkit-challenge:${frozenAuthorization.actionCore.actionId}${identitySuffix}`,
     agentTenantPrincipal: 'agent-tenant-1',
-    audience: 'remit:settlement',
+    audience: 'invoiceguard:settlement',
     companyRoleStatus: 'CURRENT',
     expiresAt: '2026-07-25T10:59:00.000Z',
     factId: `requesting-agent-proof:${frozenAuthorization.actionCore.actionId}${identitySuffix}`,
@@ -374,7 +374,7 @@ function frozenAttempt(
     createdAt,
     expiresAt: '2026-07-25T11:00:00.000Z',
     signedTransactionBytes: encodeCanonicalSignedTransactionBytes(
-      Buffer.from('remit-frozen-settlement-transaction-1'),
+      Buffer.from('invoiceguard-frozen-settlement-transaction-1'),
     ),
     transactionId: 'hedera-frozen-transaction-1',
   });
