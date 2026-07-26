@@ -58,9 +58,16 @@ export function readAuthEnvironment(
       'BETTER_AUTH_URL',
       new Set(['http:', 'https:']),
     ),
+    // Auth sets `search_path` as a startup parameter, which Neon's pooled
+    // endpoint rejects outright ("unsupported startup parameter in options").
+    // The unpooled endpoint accepts it, so prefer that and fall back only
+    // where no unpooled URL is configured (local Postgres has no pooler).
     databaseUrl: requireUrl(
       source,
-      'DATABASE_URL',
+      source['DATABASE_URL_UNPOOLED'] === undefined ||
+        source['DATABASE_URL_UNPOOLED'] === ''
+        ? 'DATABASE_URL'
+        : 'DATABASE_URL_UNPOOLED',
       new Set(['postgres:', 'postgresql:']),
     ),
     googleClientId: requireValue(source, 'GOOGLE_CLIENT_ID'),
