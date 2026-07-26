@@ -1,4 +1,5 @@
 export * from './agentbook.js';
+export * from './ens.js';
 export * from './agentkit.js';
 export {
   createWorldAuthorityAdmissionWriter,
