@@ -1,6 +1,7 @@
 # Hedera integration contract
 
-Status: AP-bound offline contract implemented; live spikes still pending.
+Status: AP-bound offline contract implemented; x402 protocol spike live;
+AP-bound live execution and supplier settlement pending.
 
 Checked: 2026-07-26.
 
@@ -47,6 +48,23 @@ converts the AP effect's CAIP-2 identifier `hedera:296` to the x402 SDK
 identifier `hedera:testnet`, validates only canonical Hedera entity IDs at the
 wire boundary, and emits raw lowercase 64-hex SHA-256 digests. Prefixed digest
 strings are rejected.
+
+## Live spike status
+
+A real Hedera Testnet x402 transaction reached consensus on 2026-07-26. Mirror
+Node proves that the agent account paid `0.01 HBAR` to the verification-service
+account and that a distinct facilitator paid the network fee. The run did not
+execute this repository's admitted AP adapter: its runner and signed artifacts
+are absent, its digest and signature formats differ, and its transaction has no
+request-digest memo. It is classified as a live protocol spike in
+[`docs/evidence`](../evidence/x402-live-2026-07-26.md), not G4 completion.
+
+A separate HTS NFT create/mint/burn spike also has public Mirror evidence. The
+NFT remained in treasury and had no monetary value. It is not coupled to the AP
+authorization or settlement state machine, so InvoiceGuard does not use it as
+authority, payment, consumption, or replay protection. Its exact evidence and
+limitations are recorded in
+[`docs/evidence`](../evidence/hts-payable-live-2026-07-26.md).
 
 ## x402 purchase
 

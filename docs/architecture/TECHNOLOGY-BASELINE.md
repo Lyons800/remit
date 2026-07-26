@@ -37,20 +37,20 @@ current LTS line according to the
 
 ## Web3 and sponsor baseline
 
-| Package                       | Verified current version | Status                   | Boundary                                    |
-| ----------------------------- | -----------------------: | ------------------------ | ------------------------------------------- |
-| `@worldcoin/agentkit`         |                    0.2.0 | installed, offline only  | `packages/world-adapter` only               |
-| `@worldcoin/idkit-core`       |                    4.2.2 | installed, offline only  | `packages/world-adapter` only               |
-| `@x402/core`                  |                   2.19.0 | installed; live pending  | x402 protocol boundary                      |
-| `@x402/hedera`                |                   2.19.0 | installed; live pending  | x402 buyer/facilitator runtime only         |
-| `@x402/hono`                  |                   2.19.0 | pending x402 spike       | Verifier service boundary                   |
-| `@hiero-ledger/sdk`           |                   2.85.0 | installed; live pending  | x402 runtime, matching `@x402/hedera`       |
-| `@hashgraph/hedera-agent-kit` |                    4.0.0 | pending settlement spike | settlement planner runtime only             |
-| `@hiero-ledger/sdk`           |                   2.81.0 | pending settlement spike | settlement runtime, pinned Agent Kit peer   |
-| Viem                          |                   2.55.8 | installed, offline only  | World adapter EVM and RPC primitives        |
-| Wagmi                         |                    3.7.4 | candidate                | Browser wallet integration only if required |
-| JOSE                          |                    6.2.4 | candidate                | Company-role and verifier signed envelopes  |
-| 0G SDK                        |             not admitted | rejected                 | No package, SDK, credential, or deployment  |
+| Package                       | Verified current version | Status                         | Boundary                                    |
+| ----------------------------- | -----------------------: | ------------------------------ | ------------------------------------------- |
+| `@worldcoin/agentkit`         |                    0.2.0 | installed, offline only        | `packages/world-adapter` only               |
+| `@worldcoin/idkit-core`       |                    4.2.2 | installed, offline only        | `packages/world-adapter` only               |
+| `@x402/core`                  |                   2.19.0 | installed; protocol spike live | x402 protocol boundary                      |
+| `@x402/hedera`                |                   2.19.0 | installed; protocol spike live | x402 buyer/facilitator runtime only         |
+| `@x402/hono`                  |                   2.19.0 | pending x402 spike             | Verifier service boundary                   |
+| `@hiero-ledger/sdk`           |                   2.85.0 | installed; protocol spike live | x402 runtime, matching `@x402/hedera`       |
+| `@hashgraph/hedera-agent-kit` |                    4.0.0 | pending settlement spike       | settlement planner runtime only             |
+| `@hiero-ledger/sdk`           |                   2.81.0 | pending settlement spike       | settlement runtime, pinned Agent Kit peer   |
+| Viem                          |                   2.55.8 | installed, offline only        | World adapter EVM and RPC primitives        |
+| Wagmi                         |                    3.7.4 | candidate                      | Browser wallet integration only if required |
+| JOSE                          |                    6.2.4 | candidate                      | Company-role and verifier signed envelopes  |
+| 0G SDK                        |             not admitted | rejected                       | No package, SDK, credential, or deployment  |
 
 Sponsor packages are not imported by the domain, protocol, persistence, or UI
 packages. The x402 and settlement SDK graphs live in separate processes and
@@ -131,9 +131,11 @@ The isolated Hedera x402 graph adds three narrowly reviewed admissions:
 - No release-age exception, exotic source, broad build permission, credential,
   or runtime environment variable was added.
 
-These admissions establish only an offline dependency and serialization
-baseline. They do not establish payer-signature behavior, Testnet consensus, or
-any live sponsor evidence.
+These admissions establish the dependency and serialization baseline. A separate
+x402 protocol spike now establishes one Testnet consensus transfer, but not
+execution through the admitted AP adapter or its signature, memo,
+canonical-digest, and recovery contracts. The distinction is recorded in the
+evidence register.
 
 TypeScript 7.0.2 was also rejected after peer validation:
 `typescript-eslint@8.65.0` supports TypeScript below 6.1. The foundation pins

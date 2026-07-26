@@ -1,5 +1,19 @@
 # Build log
 
+## 2026-07-26 - Live Hedera evidence classified
+
+- Independently verified the x402 Testnet transfer through Mirror Node: the
+  agent paid `0.01 HBAR` to the service and a distinct facilitator paid fees.
+- Independently verified the HTS marker collection, mint, historical metadata,
+  burn, supply, treasury, and key configuration.
+- Classified both runs as live protocol spikes because neither named runner is
+  committed and both use contracts that differ from the canonical AP adapter.
+- Removed the HTS marker package from the payment authority path. Its burn is a
+  ledger lifecycle fact, not supplier settlement or replay prevention.
+- Added a public evidence register so the UI and submission can distinguish
+  network facts, offline contracts, synthetic scenarios, and remaining live
+  gates.
+
 This is a concise, append-only record of material build decisions. Git history
 remains the source of truth for exact changes.
 
