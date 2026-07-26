@@ -7,6 +7,7 @@ import {
   createWorldProofOfHumanRequest,
   deriveAgentTenantPrincipal,
   validateTrustedWorldDeploymentContext,
+  validateWorldProofOfHumanRequest,
 } from '../src/index.js';
 
 const ACTION_DIGEST = 'a'.repeat(64);
@@ -102,19 +103,36 @@ describe('World action-time approval binding', () => {
   });
 
   it('allows staging only when the deployment is explicitly a test', () => {
-    expect(
-      createTrustedWorldDeploymentContext({
-        appId: 'app_staging_invoiceguard',
-        environment: 'staging',
-        mode: 'test',
-        rpId: 'rp_invoiceguard',
-      }),
-    ).toEqual({
+    const deployment = createTrustedWorldDeploymentContext({
       appId: 'app_staging_invoiceguard',
       environment: 'staging',
       mode: 'test',
       rpId: 'rp_invoiceguard',
     });
+
+    expect(deployment).toMatchObject({
+      appId: 'app_staging_invoiceguard',
+      deploymentId: expect.stringMatching(/^world-deployment:[0-9a-f]{64}$/u),
+      environment: 'staging',
+      mode: 'test',
+      rpId: 'rp_invoiceguard',
+    });
+  });
+
+  it('rejects serialized deployment boundaries and binds their identity into requests', () => {
+    const request = createRequest();
+    const serializedDeployment = structuredClone(LIVE_DEPLOYMENT);
+
+    expect(request.deploymentId).toBe(LIVE_DEPLOYMENT.deploymentId);
+    expect(validateTrustedWorldDeploymentContext(serializedDeployment)).toEqual(
+      { ok: false },
+    );
+    expect(
+      validateWorldProofOfHumanRequest(
+        { ...request, deploymentId: `world-deployment:${'0'.repeat(64)}` },
+        LIVE_DEPLOYMENT,
+      ),
+    ).toEqual({ ok: false, reason: 'DEPLOYMENT_MISMATCH' });
   });
 
   it('keeps one World action across slots while scoping each signal', () => {

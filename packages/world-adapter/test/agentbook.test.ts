@@ -9,7 +9,12 @@ import {
   deriveActionHumanPrincipalAliases,
   deriveAgentTenantPrincipal,
   deriveAgentTenantPrincipalAliases,
+  WORLD_AGENTBOOK_ADAPTER_ID,
+  WORLD_AGENTBOOK_ADAPTER_VERSION,
+  WORLD_AGENTBOOK_ADDRESS,
+  WORLD_AGENTBOOK_BACKING_RECORD_SOURCE,
   WORLD_AGENTBOOK_NUMERIC_CHAIN_ID,
+  WORLD_AGENTBOOK_REGISTRY_ID,
 } from '../src/index.js';
 
 const AGENT_ADDRESS = '0x8fd379246834eac74B8419FfdA202CF8051F7A03';
@@ -23,6 +28,18 @@ const ORGANIZATION_ID = 'synthetic-acme';
 const RAW_HUMAN_ID = '0x1234abcd';
 const RAW_NULLIFIER = '0xabcdef1234';
 const WORLD_ACTION_ID = 'invoiceguard-approval-v1-synthetic';
+
+function expectedObservation(chainId: number | null = 480) {
+  return {
+    agentBookAdapterId: WORLD_AGENTBOOK_ADAPTER_ID,
+    agentBookAdapterVersion: WORLD_AGENTBOOK_ADAPTER_VERSION,
+    backingRecordSource: WORLD_AGENTBOOK_BACKING_RECORD_SOURCE,
+    observedNetworkId: chainId === null ? null : `eip155:${chainId}`,
+    observedNumericChainId: chainId,
+    registryAddress: WORLD_AGENTBOOK_ADDRESS,
+    registryId: WORLD_AGENTBOOK_REGISTRY_ID,
+  };
+}
 
 function resolverWith(
   overrides: Partial<{
@@ -54,7 +71,11 @@ describe('AgentBook principal resolution', () => {
     const result = await resolver.resolve(AGENT_ADDRESS.toLowerCase());
 
     expect(result).toEqual({
+      ...expectedObservation(),
       agentAddress: AGENT_ADDRESS,
+      backingRecordId: expect.stringMatching(
+        /^world-agentbook-record:[0-9a-f]{64}$/u,
+      ),
       status: 'backed',
       tenantPrincipal: expect.stringMatching(
         /^hmac-sha256:[A-Za-z0-9_-]{43}$/u,
@@ -119,6 +140,7 @@ describe('AgentBook principal resolution', () => {
     });
 
     await expect(resolver.resolve(AGENT_ADDRESS)).resolves.toEqual({
+      ...expectedObservation(),
       agentAddress: AGENT_ADDRESS,
       status: 'unregistered',
     });
@@ -134,6 +156,7 @@ describe('AgentBook principal resolution', () => {
       });
 
       await expect(resolver.resolve(AGENT_ADDRESS)).resolves.toEqual({
+        ...expectedObservation(typeof chainId === 'number' ? chainId : null),
         agentAddress: AGENT_ADDRESS,
         reason: 'WRONG_CHAIN',
         status: 'unavailable',
@@ -150,6 +173,7 @@ describe('AgentBook principal resolution', () => {
     });
 
     await expect(resolver.resolve(AGENT_ADDRESS)).resolves.toEqual({
+      ...expectedObservation(),
       agentAddress: AGENT_ADDRESS,
       reason: 'LOOKUP_INDETERMINATE',
       status: 'unavailable',
@@ -172,11 +196,13 @@ describe('AgentBook principal resolution', () => {
     }).resolver;
 
     await expect(healthy.resolve(AGENT_ADDRESS)).resolves.toEqual({
+      ...expectedObservation(),
       agentAddress: AGENT_ADDRESS,
       reason: 'LOOKUP_INDETERMINATE',
       status: 'unavailable',
     });
     await expect(unavailable.resolve(AGENT_ADDRESS)).resolves.toEqual({
+      ...expectedObservation(null),
       agentAddress: AGENT_ADDRESS,
       reason: 'RPC_UNAVAILABLE',
       status: 'unavailable',
@@ -192,6 +218,7 @@ describe('AgentBook principal resolution', () => {
     });
 
     await expect(resolver.resolve(AGENT_ADDRESS)).resolves.toEqual({
+      ...expectedObservation(),
       agentAddress: AGENT_ADDRESS,
       status: 'unregistered',
     });
