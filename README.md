@@ -129,12 +129,13 @@ Routine invoices skip steps 3–5 entirely: the agent pays them directly.
 **JS/TS SDK only. No Solidity. No smart contracts deployed.**
 `git ls-files '*.sol'` returns nothing.
 
-Two native Hedera services:
+Three native Hedera services, matching the track's own examples:
 
 | Service            | Where it is used                                                                                                                                                                               |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Cryptocurrency** | supplier payment (`TransferTransaction`), and x402 settlement of the verification fee                                                                                                          |
 | **Token Service**  | audit marker — `TokenCreateTransaction` (non-fungible, finite supply 1, supply+admin keys) → `TokenMintTransaction` with the action digest as metadata → `TokenBurnTransaction` at consumption |
+| **Mirror Node**    | the digest is read back from Mirror Node to prove the ledger carries what we claim, and the burn is confirmed there before we state it                                                         |
+| **Cryptocurrency** | supplier payment (`TransferTransaction`) and x402 settlement of the verification fee                                                                                                           |
 
 That is token **creation**, **configuration**, and **two lifecycle operations**.
 
