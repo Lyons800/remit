@@ -1,7 +1,10 @@
 import { isDeepStrictEqual } from 'node:util';
 
 import {
+  createMandateReservationLedger,
+  deriveExpectedPaymentTransitionEffects,
   hydratePaymentActionAggregate,
+  type MandateReservationClaim,
   type MandateReservationLedger,
   type MandateReservationWriteEffect,
   type PaymentActionAggregate,
@@ -15,6 +18,11 @@ import type {
   PaymentActionRepository,
   PaymentPersistenceResult,
 } from '../payment-repository.js';
+import {
+  assertAuthorizedPaymentWrite,
+  type PaymentWriterAuthorization,
+  type PaymentWriterRepositoryTrust,
+} from '../payment-writer-authorization.js';
 
 type TransactionSql = postgres.TransactionSql;
 
@@ -22,6 +30,7 @@ type StoredAggregateRow = Readonly<{
   aggregate: unknown;
   aggregate_version: number;
   atomic_group_key: string;
+  last_transition_effects: unknown;
 }>;
 
 type StoredLedgerRow = Readonly<{
@@ -90,59 +99,54 @@ function requireValidTarget(
   return hydrated.value;
 }
 
-function expectedEffectTypes(
+function mandateClaimForTransition(
   current: PaymentActionAggregate,
   target: PaymentActionAggregate,
-): PaymentDomainEffect['type'][] {
+): MandateReservationClaim | null {
   const eventType = target.metadata.lastEventType;
-  const hasMandateReservation = current.authorizationBasis?.kind === 'MANDATE';
-  if (eventType === 'QUOTE_VERIFICATION') {
-    return ['VERIFICATION_QUOTE_REQUEST'];
-  }
   if (eventType === 'AUTHORIZE_MANDATE') {
-    return ['MANDATE_RESERVATION_WRITE'];
+    const basis = target.authorizationBasis;
+    return basis?.kind === 'MANDATE' ? basis.reservationClaim : null;
   }
   if (
     (eventType === 'REJECT_AUTHORIZATION' ||
       eventType === 'EXPIRE' ||
       eventType === 'SUPERSEDE' ||
-      eventType === 'CANCEL') &&
-    hasMandateReservation
+      eventType === 'CANCEL' ||
+      eventType === 'SETTLE_CONSENSUS' ||
+      eventType === 'RECOVER_SETTLEMENT') &&
+    current.authorizationBasis?.kind === 'MANDATE'
   ) {
-    return ['MANDATE_RESERVATION_WRITE'];
+    return current.authorizationBasis.reservationClaim;
   }
-  if (eventType === 'QUEUE_SETTLEMENT') {
-    return ['SETTLEMENT_SUBMISSION_REQUEST'];
-  }
-  if (eventType === 'SETTLE_CONSENSUS' || eventType === 'RECOVER_SETTLEMENT') {
-    return hasMandateReservation
-      ? [
-          'EXECUTION_AUDIT_REQUEST',
-          'MANDATE_RESERVATION_WRITE',
-          'SETTLEMENT_CONSUMPTION_WRITE',
-        ]
-      : ['EXECUTION_AUDIT_REQUEST', 'SETTLEMENT_CONSUMPTION_WRITE'];
-  }
-  if (eventType === 'RETRY_SAME_TRANSACTION') {
-    return ['SETTLEMENT_RETRY_REQUEST'];
-  }
-  if (eventType === 'RETRY_EXECUTION_AUDIT') {
-    return ['EXECUTION_AUDIT_REQUEST'];
-  }
-  return [];
+  return null;
 }
 
-function requireExactEffects(
+async function requireExactEffects(
+  transaction: TransactionSql,
   current: PaymentActionAggregate,
   target: PaymentActionAggregate,
   effects: readonly PaymentDomainEffect[],
-): void {
-  const expected = expectedEffectTypes(current, target).sort();
-  const actual = effects.map(({ type }) => type).sort();
-  if (!isDeepStrictEqual(actual, expected)) {
+): Promise<void> {
+  const organizationId = target.authorization.actionCore.organizationId;
+  const mandateClaim = mandateClaimForTransition(current, target);
+  const ledger =
+    mandateClaim === null
+      ? null
+      : await lockCurrentMandateLedger(
+          transaction,
+          organizationId,
+          mandateClaim,
+        );
+  const expected = deriveExpectedPaymentTransitionEffects(
+    current,
+    target,
+    ledger,
+  );
+  if (!expected.ok || !isDeepStrictEqual(effects, expected.value)) {
     throw new PersistenceError(
       'INVALID_TRANSITION',
-      'transition effects do not match the persisted state change',
+      'complete transition effect bodies do not match the locked state change',
     );
   }
 }
@@ -163,7 +167,8 @@ async function insertPaymentAction(
       payment_state,
       aggregate_version,
       atomic_group_key,
-      aggregate
+      aggregate,
+      last_transition_effects
     )
     VALUES (
       ${binding.organizationId},
@@ -175,7 +180,8 @@ async function insertPaymentAction(
       ${aggregate.state},
       ${aggregate.metadata.version},
       ${atomicGroupKey(aggregate)},
-      ${transaction.json(asJson(aggregate))}
+      ${transaction.json(asJson(aggregate))},
+      ${transaction.json([])}
     )
     ON CONFLICT (organization_id, action_id) DO NOTHING
     RETURNING action_id
@@ -189,7 +195,11 @@ async function selectPaymentActionForUpdate(
   actionId: string,
 ): Promise<StoredAggregateRow | null> {
   const rows = await transaction<readonly StoredAggregateRow[]>`
-    SELECT aggregate, aggregate_version, atomic_group_key
+    SELECT
+      aggregate,
+      aggregate_version,
+      atomic_group_key,
+      last_transition_effects
     FROM payment_actions
     WHERE organization_id = ${organizationId}
       AND action_id = ${actionId}
@@ -396,12 +406,11 @@ function ledgerCoreMatches(
 async function selectLedger(
   transaction: TransactionSql,
   organizationId: string,
-  effect: MandateReservationWriteEffect,
+  claim: MandateReservationClaim,
 ): Promise<{
   ledger: StoredLedgerRow;
   reservations: readonly StoredReservationRow[];
 }> {
-  const claim = effect.claim;
   const ledgers = await transaction<readonly StoredLedgerRow[]>`
     SELECT
       ledger_version,
@@ -437,6 +446,59 @@ async function selectLedger(
     ORDER BY action_digest
   `;
   return { ledger, reservations };
+}
+
+async function lockCurrentMandateLedger(
+  transaction: TransactionSql,
+  organizationId: string,
+  claim: MandateReservationClaim,
+): Promise<MandateReservationLedger> {
+  const rows = await transaction<readonly StoredLedgerRow[]>`
+    SELECT
+      ledger_version,
+      mandate_digest,
+      period_cap_atoms::text,
+      released_atoms::text,
+      reserved_atoms::text,
+      settled_atoms::text
+    FROM mandate_period_ledgers
+    WHERE organization_id = ${organizationId}
+      AND mandate_id = ${claim.mandateId}
+      AND mandate_version = ${claim.mandateVersion}
+      AND period_key = ${claim.periodKey}
+    FOR UPDATE
+  `;
+  const stored = rows[0];
+  if (stored === undefined) {
+    const empty = createMandateReservationLedger(claim);
+    if (!empty.ok) {
+      throw new PersistenceError(
+        'MANDATE_LEDGER_CONFLICT',
+        'mandate claim cannot initialize a period ledger',
+      );
+    }
+    return empty.value;
+  }
+  const reservations = await transaction<readonly StoredReservationRow[]>`
+    SELECT
+      action_digest,
+      amount_atoms::text,
+      reservation_status
+    FROM mandate_reservations
+    WHERE organization_id = ${organizationId}
+      AND mandate_id = ${claim.mandateId}
+      AND mandate_version = ${claim.mandateVersion}
+      AND period_key = ${claim.periodKey}
+    ORDER BY action_digest
+  `;
+  return Object.freeze({
+    entries: Object.freeze(ledgerEntries(reservations)),
+    mandateDigest: stored.mandate_digest,
+    mandateId: claim.mandateId,
+    mandateVersion: claim.mandateVersion,
+    periodCapAtoms: stored.period_cap_atoms,
+    periodKey: claim.periodKey,
+  });
 }
 
 async function applyMandateReservation(
@@ -492,7 +554,7 @@ async function applyMandateReservation(
     `;
   }
 
-  const before = await selectLedger(transaction, organizationId, effect);
+  const before = await selectLedger(transaction, organizationId, claim);
   const expectedTotals = totals(effect.expectedLedger);
   if (
     before.ledger.mandate_digest !== claim.mandateDigest ||
@@ -625,7 +687,7 @@ async function applyMandateReservation(
     );
   }
 
-  const after = await selectLedger(transaction, organizationId, effect);
+  const after = await selectLedger(transaction, organizationId, claim);
   const nextTotals = totals(effect.nextLedger);
   if (
     after.ledger.released_atoms !== nextTotals.released ||
@@ -874,6 +936,12 @@ async function insertSettlementResult(
       action_digest,
       attempt_id,
       receipt_id,
+      transaction_id,
+      network_id,
+      signed_bytes_hash,
+      effect_digest,
+      attempt_adapter_id,
+      claim_adapter_id,
       consumption_status,
       expected_aggregate_version,
       atomic_group_key,
@@ -886,6 +954,12 @@ async function insertSettlementResult(
       ${claim.actionDigest},
       ${claim.attemptId},
       ${claim.receiptId},
+      ${receipt.transactionId},
+      ${receipt.networkId},
+      ${receipt.signedBytesHash},
+      ${receipt.effectDigest},
+      ${receipt.attemptAdapterId},
+      ${claim.adapterId},
       ${claim.status},
       ${claim.expectedAggregateVersion},
       ${atomicGroup},
@@ -897,6 +971,7 @@ async function insertSettlementResult(
 async function updatePaymentAction(
   transaction: TransactionSql,
   target: PaymentActionAggregate,
+  effects: readonly PaymentDomainEffect[],
   expectedVersion: number,
   atomicGroup: string,
 ): Promise<void> {
@@ -908,6 +983,7 @@ async function updatePaymentAction(
       aggregate_version = ${target.metadata.version},
       atomic_group_key = ${atomicGroup},
       aggregate = ${transaction.json(asJson(target))},
+      last_transition_effects = ${transaction.json(asJson(effects))},
       updated_at = transaction_timestamp()
     WHERE organization_id = ${binding.organizationId}
       AND action_id = ${binding.actionId}
@@ -924,6 +1000,7 @@ async function updatePaymentAction(
 
 export function createPostgresPaymentActionRepository(
   sql: postgres.Sql,
+  writerTrust: PaymentWriterRepositoryTrust,
 ): PaymentActionRepository {
   return Object.freeze({
     async create(
@@ -992,6 +1069,7 @@ export function createPostgresPaymentActionRepository(
 
     async applyTransition(
       transition: PaymentActionTransition,
+      authorization: PaymentWriterAuthorization,
     ): Promise<PaymentPersistenceResult> {
       const target = requireValidTarget(transition);
       const binding = actionBinding(target);
@@ -1012,12 +1090,33 @@ export function createPostgresPaymentActionRepository(
               );
             }
             const current = hydrateStoredAggregate(stored.aggregate);
+            assertAuthorizedPaymentWrite(
+              writerTrust,
+              authorization,
+              current,
+              target,
+              transition.effects,
+            );
+            if (
+              stored.aggregate_version === target.metadata.version &&
+              stored.atomic_group_key === transition.atomicGroupKey &&
+              isDeepStrictEqual(current, target) &&
+              isDeepStrictEqual(
+                stored.last_transition_effects,
+                transition.effects,
+              )
+            ) {
+              return 'ALREADY_APPLIED';
+            }
             if (
               stored.aggregate_version === target.metadata.version &&
               stored.atomic_group_key === transition.atomicGroupKey &&
               isDeepStrictEqual(current, target)
             ) {
-              return 'ALREADY_APPLIED';
+              throw new PersistenceError(
+                'INVALID_TRANSITION',
+                'idempotent replay effects differ from the durable transition',
+              );
             }
             if (stored.aggregate_version !== expectedVersion) {
               throw new PersistenceError(
@@ -1035,7 +1134,12 @@ export function createPostgresPaymentActionRepository(
                 'target metadata does not follow the locked aggregate',
               );
             }
-            requireExactEffects(current, target, transition.effects);
+            await requireExactEffects(
+              transaction,
+              current,
+              target,
+              transition.effects,
+            );
 
             await insertApprovalFacts(
               transaction,
@@ -1073,6 +1177,7 @@ export function createPostgresPaymentActionRepository(
             await updatePaymentAction(
               transaction,
               target,
+              transition.effects,
               expectedVersion,
               transition.atomicGroupKey,
             );

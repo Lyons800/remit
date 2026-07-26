@@ -9,12 +9,15 @@ CREATE TABLE payment_actions (
   aggregate_version integer NOT NULL,
   atomic_group_key text NOT NULL,
   aggregate jsonb NOT NULL,
+  last_transition_effects jsonb NOT NULL DEFAULT '[]'::jsonb,
   created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
   updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
   CONSTRAINT payment_action_identity
     PRIMARY KEY (organization_id, action_id),
   CONSTRAINT payment_action_digest
     UNIQUE (organization_id, action_digest),
+  CONSTRAINT payment_action_obligation_binding
+    UNIQUE (organization_id, action_digest, obligation_id),
   CONSTRAINT one_action_per_invoice_revision
     UNIQUE (organization_id, invoice_revision_id),
   CONSTRAINT payment_action_nonce
@@ -53,6 +56,8 @@ CREATE TABLE payment_actions (
     CHECK (aggregate_version > 0),
   CONSTRAINT payment_action_aggregate_object
     CHECK (jsonb_typeof(aggregate) = 'object'),
+  CONSTRAINT payment_action_effects_array
+    CHECK (jsonb_typeof(last_transition_effects) = 'array'),
   CONSTRAINT payment_action_aggregate_binding
     CHECK (
       organization_id::text =
@@ -68,8 +73,7 @@ CREATE TABLE payment_actions (
       AND nonce =
         aggregate #>> '{authorization,actionCore,nonce}'
       AND payment_state = aggregate #>> '{state}'
-      AND aggregate_version =
-        (aggregate #>> '{metadata,version}')::integer
+      AND aggregate #> '{metadata,version}' = to_jsonb(aggregate_version)
     ),
   CONSTRAINT payment_action_atomic_group_binding
     CHECK (
@@ -265,6 +269,17 @@ CREATE TABLE settlement_attempts (
     UNIQUE (organization_id, idempotency_key),
   CONSTRAINT settlement_attempt_per_action
     UNIQUE (organization_id, action_digest),
+  CONSTRAINT settlement_attempt_binding
+    UNIQUE (
+      organization_id,
+      attempt_id,
+      action_digest,
+      transaction_id,
+      network_id,
+      signed_bytes_hash,
+      effect_digest,
+      adapter_id
+    ),
   CONSTRAINT settlement_attempt_hashes_valid
     CHECK (
       signed_bytes_hash ~ '^[0-9a-f]{64}$'
@@ -272,6 +287,23 @@ CREATE TABLE settlement_attempts (
     ),
   CONSTRAINT settlement_attempt_object
     CHECK (jsonb_typeof(attempt) = 'object'),
+  CONSTRAINT settlement_attempt_json_binding
+    CHECK (
+      organization_id::text = attempt #>> '{organizationId}'
+      AND attempt_id = attempt #>> '{attemptId}'
+      AND action_digest = attempt #>> '{actionDigest}'
+      AND idempotency_key = attempt #>> '{idempotencyKey}'
+      AND transaction_id = attempt #>> '{transactionId}'
+      AND signed_bytes_hash = attempt #>> '{signedBytesHash}'
+      AND effect_digest = attempt #>> '{effectDigest}'
+      AND network_id = attempt #>> '{networkId}'
+      AND adapter_id = attempt #>> '{adapterId}'
+    ),
+  CONSTRAINT settlement_attempt_atomic_group_binding
+    CHECK (
+      atomic_group_key ~
+        ('^payment:' || action_digest || ':v[1-9][0-9]*$')
+    ),
   CONSTRAINT settlement_attempt_payment
     FOREIGN KEY (organization_id, action_digest)
     REFERENCES payment_actions (organization_id, action_digest)
@@ -293,6 +325,18 @@ CREATE TABLE settlement_receipts (
   created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
   CONSTRAINT settlement_receipt_identity
     PRIMARY KEY (organization_id, receipt_id),
+  CONSTRAINT settlement_receipt_binding
+    UNIQUE (
+      organization_id,
+      receipt_id,
+      attempt_id,
+      action_digest,
+      transaction_id,
+      network_id,
+      signed_bytes_hash,
+      effect_digest,
+      adapter_id
+    ),
   CONSTRAINT settlement_receipt_hashes_valid
     CHECK (
       signed_bytes_hash ~ '^[0-9a-f]{64}$'
@@ -300,15 +344,57 @@ CREATE TABLE settlement_receipts (
     ),
   CONSTRAINT settlement_receipt_object
     CHECK (jsonb_typeof(receipt) = 'object'),
-  CONSTRAINT settlement_receipt_attempt
-    FOREIGN KEY (organization_id, attempt_id)
-    REFERENCES settlement_attempts (organization_id, attempt_id)
+  CONSTRAINT settlement_receipt_json_binding
+    CHECK (
+      organization_id::text = receipt #>> '{organizationId}'
+      AND receipt_id = receipt #>> '{receiptId}'
+      AND attempt_id = receipt #>> '{attemptId}'
+      AND action_digest = receipt #>> '{actionDigest}'
+      AND transaction_id = receipt #>> '{transactionId}'
+      AND signed_bytes_hash = receipt #>> '{signedBytesHash}'
+      AND effect_digest = receipt #>> '{effectDigest}'
+      AND network_id = receipt #>> '{networkId}'
+      AND adapter_id = receipt #>> '{adapterId}'
+      AND adapter_id = receipt #>> '{attemptAdapterId}'
+    ),
+  CONSTRAINT settlement_receipt_atomic_group_binding
+    CHECK (
+      atomic_group_key ~
+        ('^payment:' || action_digest || ':v[1-9][0-9]*$')
+    ),
+  CONSTRAINT settlement_receipt_attempt_binding
+    FOREIGN KEY (
+      organization_id,
+      attempt_id,
+      action_digest,
+      transaction_id,
+      network_id,
+      signed_bytes_hash,
+      effect_digest,
+      adapter_id
+    )
+    REFERENCES settlement_attempts (
+      organization_id,
+      attempt_id,
+      action_digest,
+      transaction_id,
+      network_id,
+      signed_bytes_hash,
+      effect_digest,
+      adapter_id
+    )
     ON DELETE RESTRICT,
   CONSTRAINT settlement_receipt_payment
     FOREIGN KEY (organization_id, action_digest)
     REFERENCES payment_actions (organization_id, action_digest)
     ON DELETE RESTRICT
 );
+
+ALTER TABLE mandate_reservations
+  ADD CONSTRAINT mandate_reservation_receipt
+  FOREIGN KEY (organization_id, receipt_id)
+  REFERENCES settlement_receipts (organization_id, receipt_id)
+  ON DELETE RESTRICT;
 
 CREATE TABLE settlement_consumptions (
   organization_id uuid NOT NULL,
@@ -317,6 +403,12 @@ CREATE TABLE settlement_consumptions (
   action_digest text NOT NULL,
   attempt_id text NOT NULL,
   receipt_id text NOT NULL,
+  transaction_id text NOT NULL,
+  network_id text NOT NULL,
+  signed_bytes_hash text NOT NULL,
+  effect_digest text NOT NULL,
+  attempt_adapter_id text NOT NULL,
+  claim_adapter_id text NOT NULL,
   consumption_status text NOT NULL,
   expected_aggregate_version integer NOT NULL,
   atomic_group_key text NOT NULL,
@@ -328,19 +420,80 @@ CREATE TABLE settlement_consumptions (
     CHECK (consumption_status = 'CONSUMED'),
   CONSTRAINT settlement_consumption_expected_version_positive
     CHECK (expected_aggregate_version > 0),
+  CONSTRAINT settlement_consumption_hashes_valid
+    CHECK (
+      signed_bytes_hash ~ '^[0-9a-f]{64}$'
+      AND effect_digest ~ '^[0-9a-f]{64}$'
+    ),
   CONSTRAINT settlement_consumption_object
     CHECK (jsonb_typeof(claim) = 'object'),
-  CONSTRAINT settlement_consumption_receipt
-    FOREIGN KEY (organization_id, receipt_id)
-    REFERENCES settlement_receipts (organization_id, receipt_id)
+  CONSTRAINT settlement_consumption_json_binding
+    CHECK (
+      organization_id::text = claim #>> '{organizationId}'
+      AND claim_id = claim #>> '{claimId}'
+      AND obligation_id::text = claim #>> '{obligationId}'
+      AND action_digest = claim #>> '{actionDigest}'
+      AND attempt_id = claim #>> '{attemptId}'
+      AND receipt_id = claim #>> '{receiptId}'
+      AND claim_adapter_id = claim #>> '{adapterId}'
+      AND consumption_status = claim #>> '{status}'
+      AND atomic_group_key = claim #>> '{atomicGroupKey}'
+      AND claim #> '{expectedAggregateVersion}' =
+        to_jsonb(expected_aggregate_version)
+    ),
+  CONSTRAINT settlement_consumption_receipt_binding
+    FOREIGN KEY (
+      organization_id,
+      receipt_id,
+      attempt_id,
+      action_digest,
+      transaction_id,
+      network_id,
+      signed_bytes_hash,
+      effect_digest,
+      attempt_adapter_id
+    )
+    REFERENCES settlement_receipts (
+      organization_id,
+      receipt_id,
+      attempt_id,
+      action_digest,
+      transaction_id,
+      network_id,
+      signed_bytes_hash,
+      effect_digest,
+      adapter_id
+    )
     ON DELETE RESTRICT,
-  CONSTRAINT settlement_consumption_attempt
-    FOREIGN KEY (organization_id, attempt_id)
-    REFERENCES settlement_attempts (organization_id, attempt_id)
+  CONSTRAINT settlement_consumption_attempt_binding
+    FOREIGN KEY (
+      organization_id,
+      attempt_id,
+      action_digest,
+      transaction_id,
+      network_id,
+      signed_bytes_hash,
+      effect_digest,
+      attempt_adapter_id
+    )
+    REFERENCES settlement_attempts (
+      organization_id,
+      attempt_id,
+      action_digest,
+      transaction_id,
+      network_id,
+      signed_bytes_hash,
+      effect_digest,
+      adapter_id
+    )
     ON DELETE RESTRICT,
-  CONSTRAINT settlement_consumption_payment
-    FOREIGN KEY (organization_id, action_digest)
-    REFERENCES payment_actions (organization_id, action_digest)
+  CONSTRAINT settlement_consumption_payment_binding
+    FOREIGN KEY (organization_id, action_digest, obligation_id)
+    REFERENCES payment_actions (
+      organization_id,
+      action_digest,
+      obligation_id
+    )
     ON DELETE RESTRICT
 );
 
@@ -370,6 +523,8 @@ CREATE TABLE outbox_events (
   updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
   CONSTRAINT outbox_event_identity
     PRIMARY KEY (organization_id, event_id),
+  CONSTRAINT outbox_event_id_format
+    CHECK (event_id ~ '^invoiceguard:event:v1:[0-9a-f]{64}$'),
   CONSTRAINT outbox_effect_type_valid
     CHECK (
       effect_type IN (
@@ -395,6 +550,21 @@ CREATE TABLE outbox_events (
     CHECK (
       jsonb_typeof(immutable_binding) = 'object'
       AND jsonb_typeof(payload) = 'object'
+    ),
+  CONSTRAINT outbox_payload_binding
+    CHECK (
+      event_id = payload #>> '{eventId}'
+      AND effect_type = payload #>> '{type}'
+      AND idempotency_key = payload #>> '{idempotencyKey}'
+      AND last_atomic_group_key = payload #>> '{atomicGroupKey}'
+      AND action_digest = COALESCE(
+        payload #>> '{actionDigest}',
+        payload #>> '{attempt,actionDigest}'
+      )
+      AND first_atomic_group_key ~
+        ('^payment:' || action_digest || ':v[1-9][0-9]*$')
+      AND last_atomic_group_key ~
+        ('^payment:' || action_digest || ':v[1-9][0-9]*$')
     ),
   CONSTRAINT outbox_lease_state_valid
     CHECK (
