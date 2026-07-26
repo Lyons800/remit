@@ -173,12 +173,6 @@ importers:
         specifier: 'catalog:'
         version: 6.0.3
 
-  packages/hedera-payable-token:
-    devDependencies:
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
-
   packages/hedera-settlement-adapter:
     devDependencies:
       typescript:
@@ -3693,7 +3687,7 @@ snapshots:
   '@react-native/community-cli-plugin@0.86.0(supports-color@8.1.1)':
     dependencies:
       '@react-native/dev-middleware': 0.86.0(supports-color@8.1.1)
-      debug: 4.4.1(supports-color@8.1.1)
+      debug: 4.4.3(supports-color@8.1.1)
       invariant: 2.2.4
       metro: 0.84.4(supports-color@8.1.1)
       metro-config: 0.84.4(supports-color@8.1.1)
@@ -3709,7 +3703,7 @@ snapshots:
   '@react-native/debugger-shell@0.86.0(supports-color@8.1.1)':
     dependencies:
       cross-spawn: 7.0.6
-      debug: 4.4.1(supports-color@8.1.1)
+      debug: 4.4.3(supports-color@8.1.1)
       fb-dotslash: 0.5.8
     transitivePeerDependencies:
       - supports-color
@@ -3722,7 +3716,7 @@ snapshots:
       chrome-launcher: 0.15.2(supports-color@8.1.1)
       chromium-edge-launcher: 0.3.0(supports-color@8.1.1)
       connect: 3.7.0(supports-color@8.1.1)
-      debug: 4.4.1(supports-color@8.1.1)
+      debug: 4.4.3(supports-color@8.1.1)
       invariant: 2.2.4
       nullthrows: 1.1.1
       open: 7.4.2
@@ -4643,7 +4637,7 @@ snapshots:
   https-proxy-agent@7.0.6(supports-color@8.1.1):
     dependencies:
       agent-base: 7.1.4
-      debug: 4.4.1(supports-color@8.1.1)
+      debug: 4.4.3(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -4936,7 +4930,7 @@ snapshots:
 
   metro-file-map@0.84.4(supports-color@8.1.1):
     dependencies:
-      debug: 4.4.1(supports-color@8.1.1)
+      debug: 4.4.3(supports-color@8.1.1)
       fb-watchman: 2.0.2
       flow-enums-runtime: 0.0.6
       graceful-fs: 4.2.11
@@ -5030,7 +5024,7 @@ snapshots:
       accepts: 2.0.0
       ci-info: 2.0.0
       connect: 3.7.0(supports-color@8.1.1)
-      debug: 4.4.1(supports-color@8.1.1)
+      debug: 4.4.3(supports-color@8.1.1)
       error-stack-parser: 2.1.4
       flow-enums-runtime: 0.0.6
       graceful-fs: 4.2.11
