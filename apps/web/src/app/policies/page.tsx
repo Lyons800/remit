@@ -1,5 +1,10 @@
 import { Badge } from '../../components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '../../components/ui/card';
 import { POLICY_VERSION, policyRules } from '../../lib/demo';
 
 export default function PoliciesPage() {
@@ -10,9 +15,9 @@ export default function PoliciesPage() {
         <Badge variant="outline">version {POLICY_VERSION}</Badge>
       </div>
       <p className="max-w-2xl text-sm text-muted-foreground">
-        The routing rules, versioned. The policy version is part of every
-        payment identifier, so a decision can never be re-judged under
-        different rules after the fact.
+        Illustrative versioned routing rules. The committed protocol binds a
+        policy decision into the canonical action digest; this page does not
+        execute that protocol.
       </p>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -24,7 +29,9 @@ export default function PoliciesPage() {
             <CardContent className="flex flex-col gap-2">
               <Badge
                 variant={
-                  rule.outcome.startsWith('Paid') ? 'default' : 'destructive'
+                  rule.outcome.startsWith('Eligible')
+                    ? 'default'
+                    : 'destructive'
                 }
               >
                 {rule.outcome}
@@ -41,17 +48,18 @@ export default function PoliciesPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm text-muted-foreground">
           <p>
-            Two approvers who are <b className="text-foreground">provably
-            distinct people</b> — established through World, not by counting
-            logins or wallets.
+            The product rule requires two independently admitted backing classes
+            and action-time human decisions. The current World integration is an
+            offline contract, not live authority.
           </p>
           <p>
-            Each approval binds to the exact payment identifier. Change one
-            character of the request and every approval is void.
+            Each approval is designed to bind the canonical bare 64-hex action
+            digest. Changing one request field creates a different action.
           </p>
           <p>
-            Company roles come from the company’s own credential issuer —
-            World proves personhood, never job title.
+            Company roles come from the company&apos;s credential issuer. World
+            human backing would remain an independent fact, never a job title or
+            treasury grant.
           </p>
         </CardContent>
       </Card>

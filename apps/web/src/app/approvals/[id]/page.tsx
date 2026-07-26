@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useReducer } from 'react';
+import { useReducer } from 'react';
 
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -10,11 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from '../../../components/ui/card';
-import {
-  approvers,
-  initialTheatre,
-  theatreReducer,
-} from '../../../lib/demo';
+import { approvers, initialTheatre, theatreReducer } from '../../../lib/demo';
 
 const facts: readonly (readonly [string, string, boolean?])[] = [
   ['Supplier', 'Padel Surfaces Lda (SUP-4471)'],
@@ -26,22 +22,13 @@ const facts: readonly (readonly [string, string, boolean?])[] = [
 ];
 
 const phaseLabel = {
-  CONSUMED: ['Settled & consumed', 'default'],
-  QUORUM_PENDING: ['Held for approval', 'destructive'],
-  SETTLING: ['Settling on Hedera', 'warning'],
-  VERIFYING: ['Paying verification', 'warning'],
-  VOIDED: ['Approvals void', 'destructive'],
+  QUORUM_PENDING: ['Simulation · review pending', 'destructive'],
+  QUORUM_REACHED: ['Simulation · quorum reached', 'default'],
+  VOIDED: ['Simulation · digest changed', 'destructive'],
 } as const;
 
 export default function ApprovalPage() {
   const [state, dispatch] = useReducer(theatreReducer, initialTheatre);
-
-  // Auto-advance the pipeline beats so the demo narrates itself.
-  useEffect(() => {
-    if (state.phase !== 'VERIFYING' && state.phase !== 'SETTLING') return;
-    const timer = setTimeout(() => dispatch({ type: 'advance' }), 1600);
-    return () => clearTimeout(timer);
-  }, [state.phase]);
 
   const [statusText, statusVariant] = phaseLabel[state.phase];
 
@@ -49,7 +36,7 @@ export default function ApprovalPage() {
     <div className="flex max-w-3xl flex-col gap-6">
       <div>
         <p className="text-xs text-muted-foreground">
-          Approvals / INV-2026-0912
+          Synthetic approval simulation / INV-2026-0912
         </p>
         <div className="mt-1 flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -59,9 +46,17 @@ export default function ApprovalPage() {
         </div>
       </div>
 
+      <div className="border border-border bg-muted/30 px-4 py-3 text-sm">
+        <b>Scenario only.</b>{' '}
+        <span className="text-muted-foreground">
+          These controls run a local reducer. They do not call World, purchase
+          verification, submit to Hedera, or move value.
+        </span>
+      </div>
+
       <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-        <b>Why this was held:</b> the bank account on this invoice differs from
-        the account this supplier has been paid to 14 times before.
+        <b>Why this scenario was held:</b> the proposed account differs from the
+        supplier baseline used by 14 illustrative history records.
       </div>
 
       <Card>
@@ -100,7 +95,7 @@ export default function ApprovalPage() {
       <Card>
         <CardHeader>
           <CardTitle>
-            Approvals — {state.counted.length}/2 distinct humans
+            Simulated approvals — {state.counted.length}/2 backing classes
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
@@ -114,32 +109,40 @@ export default function ApprovalPage() {
                 }
                 variant={approver.id === 'A2' ? 'outline' : 'secondary'}
               >
-                Approve as {approver.label} ({approver.id})
+                Simulate {approver.label} ({approver.id})
               </Button>
             ))}
           </div>
+          <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+            {approvers.map((approver) => (
+              <p className="border border-border p-2" key={approver.id}>
+                <b className="text-foreground">{approver.id}</b> ·{' '}
+                {approver.detail}
+              </p>
+            ))}
+          </div>
           <p className="text-xs text-muted-foreground">
-            A1 and A2 are two different agents backed by the same person. B1 is
-            backed by a genuinely different person — verified through World,
-            not by counting logins.
+            A1 and A2 deliberately share one synthetic backing class. This
+            demonstrates the intended refusal rule; live World authority remains
+            an offline integration contract.
           </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Attacks — try to break it</CardTitle>
+          <CardTitle>Control simulation</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          <Button onClick={() => dispatch({ type: 'tamper' })} variant="destructive">
-            Tamper with the IBAN
-          </Button>
           <Button
-            disabled={state.phase !== 'CONSUMED'}
-            onClick={() => dispatch({ type: 'replay' })}
+            disabled={state.phase === 'VOIDED'}
+            onClick={() => dispatch({ type: 'tamper' })}
             variant="destructive"
           >
-            Replay the settlement
+            Change one IBAN character
+          </Button>
+          <Button onClick={() => dispatch({ type: 'reset' })} variant="outline">
+            Reset scenario
           </Button>
         </CardContent>
       </Card>

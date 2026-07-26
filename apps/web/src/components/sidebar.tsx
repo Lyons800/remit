@@ -29,7 +29,7 @@ const items = [
   },
   { href: '/suppliers', icon: Building2, label: 'Suppliers' },
   { href: '/payments', icon: ArrowLeftRight, label: 'Payments' },
-  { href: '/audit', icon: ScrollText, label: 'Audit log' },
+  { href: '/audit', icon: ScrollText, label: 'Evidence' },
   { href: '/policies', icon: SlidersHorizontal, label: 'Policies' },
 ] as const;
 
@@ -115,7 +115,7 @@ export function Sidebar() {
             Padel Peru, Lda
           </span>
           <span className="microlabel block whitespace-nowrap">
-            hedera testnet
+            synthetic scenario
           </span>
         </span>
       </div>
