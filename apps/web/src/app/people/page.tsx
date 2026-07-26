@@ -29,11 +29,16 @@ import {
 const REQUIRED_DISTINCT_HUMANS = 2;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
+interface Identity {
+  readonly humanId: string | null;
+  readonly ensName: string | null;
+}
 type HumanMap = ReadonlyMap<string, string | null>;
+type IdentityMap = ReadonlyMap<string, Identity>;
 
 export default function PeoplePage() {
   const [people, setPeople] = useState<readonly Person[]>([]);
-  const [humans, setHumans] = useState<HumanMap>(new Map());
+  const [identities, setIdentities] = useState<IdentityMap>(new Map());
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -47,7 +52,7 @@ export default function PeoplePage() {
     if (roster.length === 0) return;
     setIsChecking(true);
     try {
-      const response = await fetch('/api/agentbook', {
+      const response = await fetch('/api/identity', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -57,11 +62,18 @@ export default function PeoplePage() {
       if (!response.ok) return;
       const data = (await response.json()) as {
         checkedAt: string;
-        resolutions: { address: string; humanId: string | null }[];
+        resolutions: {
+          address: string;
+          humanId: string | null;
+          ensName: string | null;
+        }[];
       };
-      setHumans(
+      setIdentities(
         new Map(
-          data.resolutions.map((r) => [r.address.toLowerCase(), r.humanId]),
+          data.resolutions.map((r) => [
+            r.address.toLowerCase(),
+            { humanId: r.humanId, ensName: r.ensName },
+          ]),
         ),
       );
       setCheckedAt(data.checkedAt);
@@ -106,6 +118,17 @@ export default function PeoplePage() {
     void loadRoster();
   }, [loadRoster]);
 
+  // Only the human backing decides quorum. The ENS name is presentation.
+  const humans: HumanMap = useMemo(
+    () =>
+      new Map(
+        [...identities].map(([address, identity]) => [
+          address,
+          identity.humanId,
+        ]),
+      ),
+    [identities],
+  );
   const collisions = useMemo(
     () => findHumanCollisions(people, humans),
     [people, humans],
@@ -124,8 +147,9 @@ export default function PeoplePage() {
       setError('Give the person a name.');
       return;
     }
-    if (!ADDRESS.test(address.trim())) {
-      setError('Agent wallet must be a 0x-prefixed 20-byte address.');
+    const typed = address.trim();
+    if (!ADDRESS.test(typed) && !typed.includes('.')) {
+      setError('Enter a 0x address or an ENS name such as maria.eth.');
       return;
     }
     setError(null);
@@ -167,10 +191,11 @@ export default function PeoplePage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">People</h1>
         <p className="text-sm text-muted-foreground">
-          Two separate facts decide whether someone can approve a payment. World
-          AgentBook says a unique human stands behind an agent wallet — we can
-          only read that, never grant it. This organisation grants the role.
-          Neither is authority on its own.
+          Three separate facts, and only one of them is ours to grant. ENS says
+          what an agent is called. World AgentKit says which unique human stands
+          behind it — we can only read that, never grant it. This organisation
+          grants the role. A name is not a human and a human is not a role, and
+          only the human backing decides quorum.
         </p>
       </div>
 
@@ -234,14 +259,18 @@ export default function PeoplePage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Person</TableHead>
-                <TableHead>Agent wallet</TableHead>
+                <TableHead>Agent wallet (ENS)</TableHead>
                 <TableHead>Human backing</TableHead>
                 <TableHead>Company role</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {people.map((person) => {
-                const humanId = humans.get(person.agentAddress.toLowerCase());
+                const identity = identities.get(
+                  person.agentAddress.toLowerCase(),
+                );
+                const humanId = identity?.humanId;
+                const ensName = identity?.ensName ?? null;
                 const clash = collisions.get(person.id);
                 return (
                   <TableRow key={person.id}>
@@ -255,8 +284,17 @@ export default function PeoplePage() {
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="tabular text-xs">
-                      {person.agentAddress}
+                    <TableCell className="text-xs">
+                      {ensName === null ? (
+                        <span className="tabular">{person.agentAddress}</span>
+                      ) : (
+                        <>
+                          <span className="font-medium">{ensName}</span>
+                          <span className="tabular block text-[10px] text-muted-foreground">
+                            {person.agentAddress}
+                          </span>
+                        </>
+                      )}
                     </TableCell>
                     <TableCell>
                       {humanId === undefined ? (
@@ -322,11 +360,11 @@ export default function PeoplePage() {
               />
             </label>
             <label className="flex flex-[2] flex-col gap-1 text-xs">
-              Agent wallet
+              Agent wallet or ENS name
               <input
                 className="tabular border border-border bg-background px-2 py-1.5 text-sm"
                 onChange={(event) => setAddress(event.target.value)}
-                placeholder="0x…"
+                placeholder="maria.eth or 0x…"
                 value={address}
               />
             </label>
