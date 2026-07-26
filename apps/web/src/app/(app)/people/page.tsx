@@ -30,8 +30,8 @@ const REQUIRED_DISTINCT_HUMANS = 2;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
 interface Identity {
-  readonly humanId: string | null;
   readonly ensName: string | null;
+  readonly humanClass: string | null;
 }
 type HumanMap = ReadonlyMap<string, string | null>;
 type IdentityMap = ReadonlyMap<string, Identity>;
@@ -66,15 +66,15 @@ export default function PeoplePage() {
         checkedAt: string;
         resolutions: {
           address: string;
-          humanId: string | null;
           ensName: string | null;
+          humanClass: string | null;
         }[];
       };
       setIdentities(
         new Map(
           data.resolutions.map((r) => [
             r.address.toLowerCase(),
-            { humanId: r.humanId, ensName: r.ensName },
+            { humanClass: r.humanClass, ensName: r.ensName },
           ]),
         ),
       );
@@ -130,7 +130,7 @@ export default function PeoplePage() {
       new Map(
         [...identities].map(([address, identity]) => [
           address,
-          identity.humanId,
+          identity.humanClass,
         ]),
       ),
     [identities],
@@ -291,7 +291,7 @@ export default function PeoplePage() {
                 const identity = identities.get(
                   person.agentAddress.toLowerCase(),
                 );
-                const humanId = identity?.humanId;
+                const humanClass = identity?.humanClass;
                 const ensName = identity?.ensName ?? null;
                 const clash = collisions.get(person.id);
                 return (
@@ -319,17 +319,12 @@ export default function PeoplePage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {humanId === undefined ? (
+                      {humanClass === undefined ? (
                         <Badge variant="outline">Checking…</Badge>
-                      ) : humanId === null ? (
-                        <Badge variant="warning">Not registered</Badge>
+                      ) : humanClass === null ? (
+                        <Badge variant="warning">No live backing</Badge>
                       ) : (
-                        <div>
-                          <Badge variant="default">Registered</Badge>
-                          <span className="tabular mt-1 block text-[10px] text-muted-foreground">
-                            {humanId.slice(0, 18)}…
-                          </span>
-                        </div>
+                        <Badge variant="default">Backed by World</Badge>
                       )}
                     </TableCell>
                     <TableCell>

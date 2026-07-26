@@ -2,6 +2,12 @@ import {
   lookupAgentHumanBackings,
   resolveAgentNames,
 } from '@remit/world-adapter';
+import { listWorkspacePeople } from '@remit/persistence';
+
+import { headers } from 'next/headers';
+
+import { redactHumanBackings } from '../../../lib/identity-redaction';
+import { db, resolveOrganizationId } from '../../../lib/workspace.server';
 
 /**
  * Resolve the identity facts about a set of agent wallets.
@@ -9,13 +15,14 @@ import {
  * Two facts, from two different chains, deliberately never merged into one
  * notion of "identity":
  *
- *   humanId  which anonymous human backs this agent   — World AgentBook
+ *   backing  whether World AgentBook backs this agent — World AgentBook
  *   ensName  what this agent is called                — ENS, Ethereum mainnet
  *
  * A name proves nothing about personhood: anyone can register one, and one
- * person can register a hundred. Only the humanId decides quorum. The name is
- * presentation and discovery, and treating it as more than that would be the
- * same mistake as counting accounts instead of people.
+ * person can register a hundred. Only same-human equality decides quorum. The
+ * raw AgentBook identifier is reduced to a response-local class before leaving
+ * the server. The name is presentation and discovery, and treating it as more
+ * than that would be the same mistake as counting accounts instead of people.
  *
  * Neither is persisted. A stored agent-to-human mapping would let anyone who
  * reached our database manufacture a quorum, so both are read live on every
@@ -29,8 +36,8 @@ const MAX_ADDRESSES = 25;
 
 export interface IdentityResolution {
   readonly address: string;
-  readonly humanId: string | null;
   readonly ensName: string | null;
+  readonly humanClass: string | null;
 }
 
 export interface IdentityResponse {
@@ -58,6 +65,31 @@ export async function POST(request: Request): Promise<Response> {
   const wanted = addresses.filter(
     (value): value is string => typeof value === 'string',
   );
+  const normalizedWanted = wanted.map((address) => address.toLowerCase());
+
+  let allowedAddresses: ReadonlySet<string>;
+  try {
+    const { organizationId } = await resolveOrganizationId(await headers());
+    const people = await listWorkspacePeople(db(), organizationId);
+    allowedAddresses = new Set(
+      people.map((person) => person.agentAddress.toLowerCase()),
+    );
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : 'roster unavailable' },
+      { status: 503 },
+    );
+  }
+
+  if (
+    normalizedWanted.some((address) => !allowedAddresses.has(address)) ||
+    new Set(normalizedWanted).size !== normalizedWanted.length
+  ) {
+    return Response.json(
+      { error: 'identity lookups are limited to the selected company roster' },
+      { status: 403 },
+    );
+  }
 
   // Independent lookups against different chains — one being slow or down must
   // never hide the other.
@@ -69,13 +101,14 @@ export async function POST(request: Request): Promise<Response> {
   const nameByAddress = new Map(
     names.map((entry) => [entry.address.toLowerCase(), entry.name]),
   );
+  const redactedBackings = redactHumanBackings(backings);
 
   const response: IdentityResponse = {
     checkedAt: new Date().toISOString(),
     registry: 'world-agentbook:eip155:480',
-    resolutions: backings.map((backing) => ({
+    resolutions: redactedBackings.map((backing) => ({
       address: backing.address,
-      humanId: backing.humanId,
+      humanClass: backing.humanClass,
       ensName: nameByAddress.get(backing.address.toLowerCase()) ?? null,
     })),
   };
