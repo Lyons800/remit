@@ -26,10 +26,10 @@ import {
   type ConsensusVerificationPayment,
   type Ed25519SignatureProvider,
   type FacilitatorPaymentAttestationBodyV2,
-  type SupplierEvidenceBindingContextV2,
   type SupplierEvidenceQuoteV2,
   type TrustedEd25519Key,
   type VerificationEffectIdentitySource,
+  type VerificationPaymentRecoveryContextV2,
   type VerificationPaymentStore,
 } from '../src/index.js';
 import {
@@ -184,7 +184,8 @@ function recoveryFixture() {
       quoteTtlSeconds: 120,
     },
   );
-  const context: SupplierEvidenceBindingContextV2 = {
+  const facilitator = signerFixture('facilitator-key-1');
+  const context: VerificationPaymentRecoveryContextV2 = {
     authorization,
     effect,
     invoice,
@@ -193,6 +194,7 @@ function recoveryFixture() {
     signedDeploymentPolicy,
     supplierSnapshot: snapshot,
     trustedDeploymentAuthority: deploymentAuthority.trusted,
+    trustedFacilitator: facilitator.trusted,
   };
   const identitySource: VerificationEffectIdentitySource = {
     resolve: (candidate) => ({
@@ -204,6 +206,7 @@ function recoveryFixture() {
   return {
     context,
     deploymentAuthority,
+    facilitator,
     identitySource,
   };
 }
@@ -211,7 +214,7 @@ function recoveryFixture() {
 function withQuote(
   test: ReturnType<typeof recoveryFixture>,
   quote: SupplierEvidenceQuoteV2,
-): SupplierEvidenceBindingContextV2 {
+): VerificationPaymentRecoveryContextV2 {
   return { ...test.context, quote };
 }
 
@@ -224,7 +227,7 @@ function recoveryInput() {
 }
 
 async function preparedTransactionBytes(
-  context: SupplierEvidenceBindingContextV2,
+  context: VerificationPaymentRecoveryContextV2,
   overrides: Readonly<{
     amountTinybars?: string;
     feePayerAccountId?: string;
@@ -280,6 +283,82 @@ async function firstClaim(test: ReturnType<typeof recoveryFixture>) {
   }
   return decision.claim;
 }
+
+async function consensusAttempt(
+  test: ReturnType<typeof recoveryFixture>,
+): Promise<ConsensusVerificationPayment> {
+  const claim = await firstClaim(test);
+  const prepared = await inspectPreparedVerificationTransaction(
+    test.context,
+    claim,
+    await preparedTransactionBytes(test.context),
+  );
+  const body: FacilitatorPaymentAttestationBodyV2 = {
+    actionDigest: prepared.actionDigest,
+    amountTinybars: prepared.amountTinybars,
+    asset: '0.0.0',
+    challengeId: test.context.quote.challengeId,
+    paidAt: '2026-07-25T10:05:30.000Z',
+    payerAccountId: prepared.payerAccountId,
+    paymentAttemptId: prepared.paymentAttemptId,
+    paymentTransactionId: prepared.transactionId,
+    quoteDigest: prepared.quoteDigest,
+    quoteId: prepared.quoteId,
+    receiptStatus: 'SUCCESS',
+    receiverAccountId: prepared.receiverAccountId,
+    requestDigest: prepared.requestDigest,
+    resourceUrl: test.context.quote.resourceUrl,
+    schemaVersion: 'facilitator-payment-attestation.v2',
+    serviceId: test.context.quote.serviceId,
+    x402Network: 'hedera:testnet',
+  };
+  return {
+    ...prepared,
+    attestation: signFacilitatorPaymentAttestationV2(
+      body,
+      test.facilitator.signer,
+    ),
+    state: 'CONSENSUS',
+  };
+}
+
+function withResignedConsensusBody(
+  test: ReturnType<typeof recoveryFixture>,
+  consensus: ConsensusVerificationPayment,
+  overrides: Partial<FacilitatorPaymentAttestationBodyV2>,
+): ConsensusVerificationPayment {
+  return {
+    ...consensus,
+    attestation: signFacilitatorPaymentAttestationV2(
+      {
+        ...consensus.attestation.body,
+        ...overrides,
+      },
+      test.facilitator.signer,
+    ),
+  };
+}
+
+const SIGNED_CONSENSUS_MUTATIONS: readonly (readonly [
+  string,
+  Partial<FacilitatorPaymentAttestationBodyV2>,
+])[] = [
+  ['action', { actionDigest: 'f'.repeat(64) }],
+  ['amount', { amountTinybars: '1001' }],
+  ['challenge', { challengeId: 'challenge_wrong_1234' }],
+  ['facilitator fee payer', { paymentTransactionId: '0.0.3001@1.000000001' }],
+  ['paidAt before quote', { paidAt: '2026-07-25T10:04:59.999Z' }],
+  ['paidAt at quote expiry', { paidAt: '2026-07-25T10:07:00.000Z' }],
+  ['payer', { payerAccountId: '0.0.5001' }],
+  ['payment attempt', { paymentAttemptId: 'verification-attempt-substitute' }],
+  ['payment transaction', { paymentTransactionId: '0.0.3000@1.000000001' }],
+  ['quote digest', { quoteDigest: 'e'.repeat(64) }],
+  ['quote ID', { quoteId: 'quote-substitute' }],
+  ['receiver', { receiverAccountId: '0.0.4001' }],
+  ['request digest', { requestDigest: 'd'.repeat(64) }],
+  ['resource', { resourceUrl: '/v2/supplier-evidence-checks/substitute' }],
+  ['service', { serviceId: 'supplier-evidence-substitute' }],
+];
 
 describe('verification payment recovery seam', () => {
   it('requires trusted prerequisite identity and returns one claim', async () => {
@@ -398,40 +477,7 @@ describe('verification payment recovery seam', () => {
 
   it('loads durable consensus before applying expired live windows', async () => {
     const test = recoveryFixture();
-    const claim = await firstClaim(test);
-    const prepared = await inspectPreparedVerificationTransaction(
-      test.context,
-      claim,
-      await preparedTransactionBytes(test.context),
-    );
-    const facilitator = signerFixture('facilitator-key-1');
-    const body: FacilitatorPaymentAttestationBodyV2 = {
-      actionDigest: prepared.actionDigest,
-      amountTinybars: prepared.amountTinybars,
-      asset: '0.0.0',
-      challengeId: test.context.quote.challengeId,
-      paidAt: '2026-07-25T10:05:30.000Z',
-      payerAccountId: prepared.payerAccountId,
-      paymentAttemptId: prepared.paymentAttemptId,
-      paymentTransactionId: prepared.transactionId,
-      quoteDigest: prepared.quoteDigest,
-      quoteId: prepared.quoteId,
-      receiptStatus: 'SUCCESS',
-      receiverAccountId: prepared.receiverAccountId,
-      requestDigest: prepared.requestDigest,
-      resourceUrl: test.context.quote.resourceUrl,
-      schemaVersion: 'facilitator-payment-attestation.v2',
-      serviceId: test.context.quote.serviceId,
-      x402Network: 'hedera:testnet',
-    };
-    const consensus: ConsensusVerificationPayment = {
-      ...prepared,
-      attestation: signFacilitatorPaymentAttestationV2(
-        body,
-        facilitator.signer,
-      ),
-      state: 'CONSENSUS',
-    };
+    const consensus = await consensusAttempt(test);
     const decision = await decideVerificationPaymentRecovery(
       test.context,
       test.identitySource,
@@ -443,11 +489,159 @@ describe('verification payment recovery seam', () => {
       },
     );
 
-    expect(decision).toEqual({
-      attempt: consensus,
-      kind: 'RETURN_CONSENSUS',
-    });
+    expect(decision.kind).toBe('RETURN_CONSENSUS');
+    if (decision.kind !== 'RETURN_CONSENSUS') {
+      throw new Error('invalid fixture');
+    }
+    expect(decision.attempt).toMatchObject(consensus);
+    expect(decision.attempt).not.toBe(consensus);
+    expect(Object.isFrozen(decision.attempt)).toBe(true);
+    expect(Object.isFrozen(decision.attempt.attestation.body)).toBe(true);
   });
+
+  it('rejects a stored consensus envelope with a substituted signature or trust anchor', async () => {
+    const test = recoveryFixture();
+    const consensus = await consensusAttempt(test);
+    const signature = consensus.attestation.signature;
+    const mutatedSignature = `${signature.startsWith('A') ? 'B' : 'A'}${signature.slice(1)}`;
+    const wrongFacilitator = signerFixture('facilitator-key-1');
+
+    await expect(
+      decideVerificationPaymentRecovery(
+        test.context,
+        test.identitySource,
+        {
+          ...consensus,
+          attestation: {
+            ...consensus.attestation,
+            signature: mutatedSignature,
+          },
+        },
+        recoveryInput(),
+      ),
+    ).rejects.toThrow(/not trusted/u);
+    await expect(
+      decideVerificationPaymentRecovery(
+        {
+          ...test.context,
+          trustedFacilitator: wrongFacilitator.trusted,
+        },
+        test.identitySource,
+        consensus,
+        recoveryInput(),
+      ),
+    ).rejects.toThrow(/not trusted/u);
+  });
+
+  it.each([
+    ['receipt status', { receiptStatus: 'FAILED' }],
+    ['network', { x402Network: 'hedera:mainnet' }],
+    ['asset', { asset: '0.0.1' }],
+  ] as const)(
+    'rejects a strict stored consensus body with substituted %s',
+    async (_label, invalidFields) => {
+      const test = recoveryFixture();
+      const consensus = await consensusAttempt(test);
+      const body = {
+        ...consensus.attestation.body,
+        ...invalidFields,
+      } as unknown as FacilitatorPaymentAttestationBodyV2;
+
+      await expect(
+        decideVerificationPaymentRecovery(
+          test.context,
+          test.identitySource,
+          {
+            ...consensus,
+            attestation: {
+              ...consensus.attestation,
+              body,
+            },
+          },
+          recoveryInput(),
+        ),
+      ).rejects.toThrow(/invalid/u);
+    },
+  );
+
+  it('rejects unexpected fields in the stored consensus envelope and body', async () => {
+    const test = recoveryFixture();
+    const consensus = await consensusAttempt(test);
+
+    await expect(
+      decideVerificationPaymentRecovery(
+        test.context,
+        test.identitySource,
+        {
+          ...consensus,
+          attestation: {
+            ...consensus.attestation,
+            unexpected: true,
+          } as typeof consensus.attestation,
+        },
+        recoveryInput(),
+      ),
+    ).rejects.toThrow(/unexpected or missing fields/u);
+    await expect(
+      decideVerificationPaymentRecovery(
+        test.context,
+        test.identitySource,
+        {
+          ...consensus,
+          attestation: {
+            ...consensus.attestation,
+            body: {
+              ...consensus.attestation.body,
+              unexpected: true,
+            } as FacilitatorPaymentAttestationBodyV2,
+          },
+        },
+        recoveryInput(),
+      ),
+    ).rejects.toThrow(/unexpected or missing fields/u);
+  });
+
+  it.each(SIGNED_CONSENSUS_MUTATIONS)(
+    'rejects a validly signed stored consensus with substituted %s binding',
+    async (_label, overrides) => {
+      const test = recoveryFixture();
+      const consensus = await consensusAttempt(test);
+
+      await expect(
+        decideVerificationPaymentRecovery(
+          test.context,
+          test.identitySource,
+          withResignedConsensusBody(test, consensus, overrides),
+          recoveryInput(),
+        ),
+      ).rejects.toThrow();
+    },
+  );
+
+  it.each([
+    ['amount', { amountTinybars: '1001' }],
+    ['payer', { payerAccountId: '0.0.5001' }],
+    ['payment attempt', { paymentAttemptId: 'persisted-attempt-substitute' }],
+    ['receiver', { receiverAccountId: '0.0.4001' }],
+  ] as const)(
+    'rejects a signed attestation against substituted persisted %s consensus fields',
+    async (_label, persistedOverrides) => {
+      const test = recoveryFixture();
+      const consensus = await consensusAttempt(test);
+
+      await expect(
+        decideVerificationPaymentRecovery(
+          test.context,
+          test.identitySource,
+          {
+            ...consensus,
+            ...persistedOverrides,
+          },
+          recoveryInput(),
+        ),
+      ).rejects.toThrow();
+    },
+  );
 
   it('atomically abandons an expired CLAIMED row for a fresh quote', async () => {
     const test = recoveryFixture();

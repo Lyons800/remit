@@ -10,11 +10,13 @@ import {
   HEDERA_TESTNET_CAIP2,
   supplierEvidenceMemo,
   supplierEvidenceRequestDigest,
+  verifyFacilitatorPaymentAttestationV2,
   verifySupplierEvidenceBindingContextV2,
   type SignedFacilitatorPaymentAttestationV2,
   type SupplierEvidenceBindingContextV2,
   type SupplierEvidenceQuoteV2,
   type SupplierEvidenceRequestV2,
+  type TrustedEd25519Key,
 } from './supplier-evidence-v2.js';
 
 const BASE64_PATTERN =
@@ -22,6 +24,7 @@ const BASE64_PATTERN =
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const MAX_SIGNED_INT64 = 9_223_372_036_854_775_807n;
 const INSPECTED_PREPARED = Symbol('inspected-prepared-verification-payment');
+const VERIFIED_CONSENSUS = Symbol('verified-consensus-verification-payment');
 
 export type VerificationEffectIdentity = Readonly<{
   actionDigest: string;
@@ -93,6 +96,21 @@ export type ConsensusVerificationPayment = Readonly<
   }
 >;
 
+export type VerifiedConsensusVerificationPayment =
+  ConsensusVerificationPayment & {
+    readonly [VERIFIED_CONSENSUS]: true;
+  };
+
+/**
+ * The facilitator trust anchor is supplied by application composition. It is
+ * never selected from the persisted attestation's self-asserted key ID.
+ */
+export type VerificationPaymentRecoveryContextV2 =
+  SupplierEvidenceBindingContextV2 &
+    Readonly<{
+      trustedFacilitator: TrustedEd25519Key;
+    }>;
+
 export type VerificationPaymentAttempt =
   | ClaimedVerificationPayment
   | PreparedVerificationPayment
@@ -161,7 +179,7 @@ export type VerificationRecoveryDecision =
       kind: 'RECONCILE_PREPARED';
     }>
   | Readonly<{
-      attempt: ConsensusVerificationPayment;
+      attempt: VerifiedConsensusVerificationPayment;
       kind: 'RETURN_CONSENSUS';
     }>;
 
@@ -436,23 +454,41 @@ async function assertStoredPrepared(
     attempt.fullySignedTransactionBase64,
   );
   assertSamePreparedTransaction(attempt, inspected);
+}
+
+async function verifyStoredConsensus(
+  context: VerificationPaymentRecoveryContextV2,
+  attempt: ConsensusVerificationPayment,
+): Promise<VerifiedConsensusVerificationPayment> {
+  await assertStoredPrepared(context, attempt);
+  const body = verifyFacilitatorPaymentAttestationV2(
+    context,
+    attempt.attestation,
+    context.trustedFacilitator,
+  );
   if (
-    attempt.state === 'CONSENSUS' &&
-    (attempt.attestation.body.paymentAttemptId !== attempt.paymentAttemptId ||
-      attempt.attestation.body.paymentTransactionId !== attempt.transactionId ||
-      attempt.attestation.body.requestDigest !== attempt.requestDigest ||
-      attempt.attestation.body.quoteDigest !== attempt.quoteDigest ||
-      attempt.attestation.body.quoteId !== attempt.quoteId ||
-      attempt.attestation.body.actionDigest !== attempt.actionDigest ||
-      attempt.attestation.body.payerAccountId !== attempt.payerAccountId ||
-      attempt.attestation.body.receiverAccountId !==
-        attempt.receiverAccountId ||
-      attempt.attestation.body.amountTinybars !== attempt.amountTinybars)
+    body.actionDigest !== attempt.actionDigest ||
+    body.amountTinybars !== attempt.amountTinybars ||
+    body.payerAccountId !== attempt.payerAccountId ||
+    body.paymentAttemptId !== attempt.paymentAttemptId ||
+    body.paymentTransactionId !== attempt.transactionId ||
+    body.quoteDigest !== attempt.quoteDigest ||
+    body.quoteId !== attempt.quoteId ||
+    body.receiverAccountId !== attempt.receiverAccountId ||
+    body.requestDigest !== attempt.requestDigest
   ) {
     throw new TypeError(
       'Consensus attestation differs from the prepared payment attempt.',
     );
   }
+  return Object.freeze({
+    ...attempt,
+    [VERIFIED_CONSENSUS]: true as const,
+    attestation: Object.freeze({
+      ...attempt.attestation,
+      body,
+    }),
+  });
 }
 
 export function assertSamePreparedTransaction(
@@ -489,7 +525,7 @@ export function assertSamePreparedTransaction(
 }
 
 export async function decideVerificationPaymentRecovery(
-  context: SupplierEvidenceBindingContextV2,
+  context: VerificationPaymentRecoveryContextV2,
   identitySource: VerificationEffectIdentitySource,
   stored: VerificationPaymentAttempt | null,
   input: Readonly<{
@@ -516,9 +552,9 @@ export async function decideVerificationPaymentRecovery(
   assertClaimBase(stored, effect, identity, request);
   if (stored.state === 'CONSENSUS') {
     assertQuoteAttemptBinding(stored, quote);
-    await assertStoredPrepared(context, stored);
+    const verified = await verifyStoredConsensus(context, stored);
     return Object.freeze({
-      attempt: stored,
+      attempt: verified,
       kind: 'RETURN_CONSENSUS',
     });
   }
