@@ -1,78 +1,220 @@
 # InvoiceGuard
 
-InvoiceGuard is an agentic accounts-payable operations system with an
-exact-action authorization engine. It gives a finance team one place to receive,
-check, approve, pay, and reconcile supplier invoices.
+**Let agents pay the invoices. Prove they paid the right thing.**
 
-The problem is concrete: paying even ten suppliers at our Lisbon padel club
-already means scattered invoices, copied bank details, slow approvals, and
-awkward payment screens. At enterprise scale, that becomes hundreds or thousands
-of invoices. InvoiceGuard lets agents clear repetitive work under narrow
-standing mandates and sends material exceptions to people.
+ETHGlobal Lisbon 2026 · Classic track ·
+[invoiceguard-hq.vercel.app](https://invoiceguard-hq.vercel.app)
 
-An invoice or model may propose payment fields, but neither can authorize money.
-InvoiceGuard reconciles the candidate against supplier records and policy,
-freezes one exact action, purchases any required evidence check, and either
-executes within an approved mandate or collects fresh, action-bound human
-decisions. Only the unchanged request can settle, once.
+---
 
-## Status
+## The problem
 
-Active build for ETHGlobal Lisbon 2026.
+I run a padel club in Portugal. We get a lot of supplier invoices, and they are
+a pain — to manage, to approve, to check line by line, and to actually pay. The
+same job at a large company runs to hundreds or thousands of invoices a month.
 
-- Track: Classic / From Scratch
-- Target partner surfaces: World AgentKit, World Human-in-the-Loop, and Hedera
-- World evidence: the offline AgentKit, AgentBook, IDKit request, and
-  whole-bundle authority-admission contract are implemented; live World
-  authority remains a NO-GO until the authenticated persistence gates in
-  [the spike record](docs/sponsors/WORLD-SPIKE.md) pass
-- 0G admission: rejected on 2026-07-25; no suitable testnet private,
-  authenticated text-inference path is currently available
-- Financial operations: Hedera Testnet only
-- Identity exception: AgentBook registration and lookup use World Chain
-  `eip155:480`
+Agents should obviously be doing this work. So why aren't they?
 
-InvoiceGuard does not detect deepfakes or prove caller identity, employment,
-beneficiary ownership, or the truth of external evidence.
+**It is not AI capability.** Models read invoices fine.
 
-## Development
+The blocker is **authorisation**. No finance director lets an agent pay a
+thousand invoices a month unless the control survives the agent being wrong,
+confused, or compromised. Today's controls cannot survive it.
 
-Requirements:
+Every company will tell you it has a control: _two people must approve_. Ask
+what that actually verifies and it falls apart. It verifies that **two accounts
+clicked approve** — not that two _people_ did, not that they approved _this_
+payment rather than one edited afterwards, and not that the thing paid is the
+thing approved. That control was designed for a human in a browser. Point an
+agent at it and a second "independent" approver costs one `new Wallet()`.
 
-- Node.js `24.11.0`;
-- pnpm `11.17.0` through Corepack; and
-- no live financial or sponsor credentials for the foundation build.
+## What it does
+
+Every payment request becomes **one exact identifier** — supplier, current
+account, proposed account, amount, purpose, expiry, nonce — hashed into a single
+digest. That digest _is_ the payment, not a description of it. Then the work
+splits the way a finance director actually would:
+
+|             |                                                                                                                  |
+| ----------- | ---------------------------------------------------------------------------------------------------------------- |
+| **The 990** | Known supplier, unchanged account, within tolerance → the agent settles it unattended. Nobody is asked anything. |
+| **The 10**  | Anything that changes where money can go → escalates and demands **two provably distinct humans**.               |
+
+## Architecture
+
+```
+                    ┌──────────────────────────────────────────┐
+   invoice ────────▶│ packages/protocol                        │
+                    │   canonical action (12 fields, Zod)      │
+                    │   digestCanonicalValue → action digest   │
+                    │   evaluatePaymentPolicy → route          │
+                    └───────────────┬──────────────────────────┘
+                                    │
+                 STRAIGHT_THROUGH ◀──┴──▶ HUMAN_APPROVAL
+                         │                      │
+                         │                      ▼
+                         │        ┌─────────────────────────────┐
+                         │        │ packages/domain             │
+                         │        │   validateApprovalQuorum    │
+                         │        │   counts distinct HUMANS    │
+                         │        └──────────┬──────────────────┘
+                         │                   │ resolves via
+                         │                   ▼
+                         │        ┌─────────────────────────────┐
+                         │        │ packages/world-adapter      │
+                         │        │   AgentKit / AgentBook      │
+                         │        │   agent wallet → humanId    │
+                         │        │   World Chain eip155:480    │
+                         │        └──────────┬──────────────────┘
+                         │                   │
+                         ▼                   ▼
+                    ┌──────────────────────────────────────────┐
+                    │ Hedera Testnet                            │
+                    │   x402 paid verification (crypto service) │
+                    │   supplier payment    (crypto service)    │
+                    │   audit marker        (token service)     │
+                    └───────────────┬──────────────────────────┘
+                                    ▼
+                    ┌──────────────────────────────────────────┐
+                    │ packages/persistence (Postgres/Neon)      │
+                    │   payment_actions, approval_facts,        │
+                    │   workspace_people — scoped by org        │
+                    └──────────────────────────────────────────┘
+```
+
+**Three facts are kept deliberately separate and never conflated:**
+
+1. **Human backing** — _is a unique human behind this agent?_ → World AgentKit
+2. **Company role** — _is that person your treasurer?_ → the company's own
+   issuer
+3. **Action permission** — _may this proceed unattended?_ → policy over the
+   digest
+
+World tells you someone is a distinct person. It does **not** tell you their
+job. Conflating those is how you build a control that looks rigorous and isn't.
+
+## Payment flow mechanics
+
+A beneficiary-changing invoice, end to end:
+
+1. **Freeze.** The request is parsed into `PaymentActionCoreV1` and hashed with
+   `digestCanonicalValue` under a domain separator. Change one character of the
+   IBAN and the digest changes, which voids every approval bound to it.
+2. **Route.** `evaluatePaymentPolicy` returns `STRAIGHT_THROUGH` or
+   `HUMAN_APPROVAL` with a required quorum. A changed beneficiary withdraws the
+   standing mandate, so the route becomes `HUMAN_APPROVAL` with
+   `actionHumanQuorum: 2`.
+3. **Collect approvals.** Each approver's agent wallet is resolved against
+   AgentBook to an anonymous `humanId` **at approval time**. The mapping is
+   never stored — a cached agent→human would let anyone who reached our database
+   manufacture a quorum.
+4. **Count humans, not accounts.** `validateApprovalQuorum` groups by
+   `actionHumanPrincipal`. Two wallets backed by one person collapse to one vote
+   and the surplus is reported as `ACTION_HUMAN_NOT_DISTINCT`.
+5. **Buy the evidence.** The agent requests a beneficiary check and receives
+   `402 Payment Required`. It signs an exact-scheme payload; a facilitator
+   verifies the payer signature on-chain and settles real HBAR after consensus.
+   **The agent pays the price; the facilitator absorbs the network fee** — the
+   agent is a paying customer, not a gas payer. The answer is signed over
+   _(digest, result, payment tx)_, so it cannot be lifted onto another invoice.
+6. **Pay.** The supplier payment executes on Hedera as a native HBAR transfer.
+7. **Publish.** The action digest is minted as an HTS token, read back from
+   Mirror Node, and burned at consumption — an audit marker anyone can verify
+   without asking us.
+
+Routine invoices skip steps 3–5 entirely: the agent pays them directly.
+
+## Hedera integration
+
+**JS/TS SDK only. No Solidity. No smart contracts deployed.**
+`git ls-files '*.sol'` returns nothing.
+
+Two native Hedera services:
+
+| Service            | Where it is used                                                                                                                                                                               |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cryptocurrency** | supplier payment (`TransferTransaction`), and x402 settlement of the verification fee                                                                                                          |
+| **Token Service**  | audit marker — `TokenCreateTransaction` (non-fungible, finite supply 1, supply+admin keys) → `TokenMintTransaction` with the action digest as metadata → `TokenBurnTransaction` at consumption |
+
+That is token **creation**, **configuration**, and **two lifecycle operations**.
+
+## Proven live
+
+Executed against real networks and verified by reading it back from Mirror Node,
+not from our own call:
+
+| Claim                                | Evidence                                                                                                       |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| Agent pays for verification via x402 | [`0.0.9758618-1785026905-665197442`](https://hashscan.io/testnet/transaction/0.0.9758618-1785026905-665197442) |
+| Three-party economics                | agent `−1,000,000` tinybar · service `+1,000,000` · facilitator `−282,113` fee                                 |
+| Audit marker carries the digest      | Mirror read-back matches byte-for-byte                                                                         |
+| Marker burned at consumption         | `deleted=true`, `total_supply=0`, `max_supply=1`                                                               |
+
+More in [`docs/evidence/`](docs/evidence/).
+
+## Run it
 
 ```bash
 corepack enable
 pnpm install --frozen-lockfile
+pnpm test                 # 363 tests
+
+pnpm demo -- --offline    # the full narrative, no network
+pnpm demo                 # the full narrative, live on Hedera testnet
+pnpm gate:agentbook       # does one human's two agents collapse to one id?
+```
+
+The demo **refuses to invent a human identity**. Unregistered agents are marked
+`[SIMULATED]` on every line they touch, and `--simulate-humans` makes that
+explicit for rehearsal. A rehearsal can never be mistaken for a proof.
+
+## What we do not claim
+
+InvoiceGuard proves the integrity of the **authorisation path**. It does not
+prove that a supplier owns a bank account, that an invoice is genuine, that a
+person is honest, or that a verification service is truthful.
+
+- The HTS token is an **audit marker**, not payment authority. Its burn does
+  **not** prevent replay — replay is refused by the approval layer via
+  `REPLAY_DETECTED` and `ACTION_DIGEST_MISMATCH`. See
+  [`docs/evidence/README.md`](docs/evidence/README.md).
+- Act 1's transfer is a direct HBAR payment;
+  `packages/hedera-settlement-adapter` is not implemented.
+- The demo speaks x402 directly rather than through
+  `packages/hedera-x402-adapter`, so it is protocol-real but not adapter-bound.
+- 0G was evaluated and **not** integrated: opening a compute ledger requires a 3
+  0G minimum enforced by the LedgerManager contract. See
+  [`docs/sponsors/ZERO-G-NO-GO.md`](docs/sponsors/ZERO-G-NO-GO.md).
+
+It inherits World's proof-of-personhood rather than creating it: the strength of
+the quorum guarantee equals the strength of World's verification level.
+
+Being precise about this is not a weakness in the pitch. It is why the claims we
+_do_ make are believable.
+
+## Development
+
+Node.js `24.11.0`, pnpm `11.17.0` via Corepack.
+
+```bash
+pnpm check     # format, lint, typecheck, test, build
+pnpm migrate   # apply persistence migrations
 pnpm dev
 ```
 
-Development loads the safe defaults in `.env.example` and then an optional
-uncommitted `.env`. The foundation services run with sponsor adapters
-`inactive`; `/livez` reports process liveness and `/readyz` deliberately returns
-503 until the owning integration is implemented. No payment path is active.
-
-| Process           | Local port |
-| ----------------- | ---------: |
-| Web               |       3000 |
-| Control API       |       4100 |
-| Extraction worker |       4150 |
-| Verifier          |       4200 |
-| x402 facilitator  |       4300 |
-| Payment agent     |       4400 |
-| Settlement worker |       4500 |
-
-Run the complete local quality gate before every push:
-
-```bash
-pnpm check
-```
+| Process           | Port |
+| ----------------- | ---: |
+| Web               | 3000 |
+| Control API       | 4100 |
+| Extraction worker | 4150 |
+| Verifier          | 4200 |
+| x402 facilitator  | 4300 |
+| Payment agent     | 4400 |
+| Settlement worker | 4500 |
 
 ## Provenance
 
-Project-specific work began in this repository during ETHGlobal Lisbon 2026. See
+Work began in this repository during ETHGlobal Lisbon 2026. See
 [HACKATHON_PROVENANCE.md](HACKATHON_PROVENANCE.md).
 
 ## License
