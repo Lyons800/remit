@@ -42,6 +42,8 @@ blockExoticSubdeps: true
 strictDepBuilds: true
 allowBuilds:
   esbuild: true
-  # Required by the pinned @hiero-ledger/proto dependency graph.
-  protobufjs: true
+  # Only the reviewed @x402/hedera peer graph may run protobufjs' install check.
+  protobufjs@7.6.5: false
+  protobufjs@8.0.1: true
+  protobufjs@8.2.0: false
   sharp: true

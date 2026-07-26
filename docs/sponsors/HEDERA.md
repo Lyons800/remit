@@ -58,11 +58,17 @@ POST /v2/supplier-evidence-checks/{actionDigest}
 
 1. The adapter derives the request only from a revalidated
    `AuthorizationBundleV1`, its exact `VerificationQuoteRequestEffect`, the
-   frozen invoice revision, and the verified supplier snapshot.
+   frozen invoice revision, and the verified supplier snapshot. Payment and
+   result construction independently re-derive that complete request; neither
+   trusts a caller-provided identity, beneficiary, policy, invoice, or snapshot
+   digest.
 2. Without payment, it returns HTTP 402 requirements for `hedera:testnet`, HBAR
    asset `0.0.0`, an exact tinybar amount, concrete service receiver, short
    expiry, challenge ID, facilitator fee payer, action digest, request digest,
    evidence-policy digest, service identity, key, and AP network ID.
+   Construction first verifies a signed deployment policy that authorizes the
+   exact amount, receiver, facilitator fee payer, transaction-fee cap, service
+   identity, key, network, validity window, and node-account allowlist.
 3. The payment agent creates a native Hedera `TransferTransaction`, signs the
    buyer debit, and uses:
 
@@ -100,12 +106,32 @@ their exact canonical Base64 bytes, SHA-256 byte hash, and transaction ID. A
 durable consensus record is loaded before applying live-window expiry, while a
 new payment cannot begin after the AP effect or quote expires.
 
+`PREPARED` is admitted only after the pinned Hiero SDK decodes and exactly
+re-serializes the real transaction bytes. Inspection requires one frozen HBAR
+`TransferTransaction` with at least two serialized signature entries, one
+allowed node account, the facilitator transaction fee payer, one exact buyer
+debit, one exact receiver credit, no token or NFT transfers, the request memo,
+and a transaction fee no greater than the signed deployment cap. Hedera
+transaction bytes do not carry a ledger/network ID; the network semantic is
+therefore bound by the authenticated deployment policy and its node-account
+allowlist, not inferred from an unencoded field.
+
+A `CLAIMED` lease that expires before `PREPARED` cannot be resumed. Recovery
+requires a quote issued after the old lease, a distinct quote ID and digest, and
+a distinct payment-attempt ID. `takeoverExpiredClaim` is the application store
+seam that atomically appends `ABANDONED` history and installs the replacement
+claim; racing callers must leave exactly one winner.
+
 The adapter does not implement or duplicate the application persistence layer.
 `VerificationEffectIdentitySource` is the explicit prerequisite seam for the
 durable event identity that is not currently carried by
 `VerificationQuoteRequestEffect`; the adapter never invents one. The
 application-owned store must make claims and state advances durable before any
 submission.
+
+The later application/persistence merge must provide both the trusted event
+identity and compare-and-swap implementation of `takeoverExpiredClaim`. No
+domain effect field or caller authority was invented in this adapter branch.
 
 This slice performs no network calls, signs no live transaction, creates no
 runtime environment variables, and provides no G4 or G5 evidence. Consensus
