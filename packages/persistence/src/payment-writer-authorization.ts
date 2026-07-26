@@ -46,7 +46,10 @@ function requireIdentifier(value: string, field: string): void {
     value.length === 0 ||
     value.length > 256 ||
     value !== value.trim() ||
-    /[\u0000-\u001f\u007f]/u.test(value)
+    [...value].some((character) => {
+      const codePoint = character.codePointAt(0);
+      return codePoint === undefined || codePoint < 32 || codePoint === 127;
+    })
   ) {
     throw new TypeError(`${field} must contain 1 to 256 printable characters`);
   }

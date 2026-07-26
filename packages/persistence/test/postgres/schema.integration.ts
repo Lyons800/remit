@@ -49,7 +49,6 @@ import {
   type PaymentWriterAuthorization,
 } from '../../src/index.js';
 import {
-  DISPOSABLE_DATABASE_CONFIRMATION,
   assertDisposableDatabaseUrl,
   assertDisposableSchemaName,
   assertLiveDisposableDatabase,
