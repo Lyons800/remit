@@ -5,15 +5,15 @@ import {
   canManageWorkspace,
 } from './workspace-access.js';
 
-  describe('authConfigurationState', () => {
-    it('allows the public demo only when auth is entirely absent', () => {
-      expect(authConfigurationState({})).toBe('absent');
-      expect(
-        authConfigurationState({
-          DATABASE_URL: 'postgresql://demo-database',
-        }),
-      ).toBe('absent');
-    });
+describe('authConfigurationState', () => {
+  it('allows the public demo only when auth is entirely absent', () => {
+    expect(authConfigurationState({})).toBe('absent');
+    expect(
+      authConfigurationState({
+        DATABASE_URL: 'postgresql://demo-database',
+      }),
+    ).toBe('absent');
+  });
 
   it('rejects partially configured auth instead of silently using the demo', () => {
     expect(
