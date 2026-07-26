@@ -1,32 +1,37 @@
-import { describe, expect, it } from 'vitest';
+import { generateKeyPairSync, sign } from 'node:crypto';
+import { createRequire } from 'node:module';
 
-import {
-  assertSamePreparedTransaction,
-  decideVerificationPaymentRecovery,
-  preparedTransactionByteHash,
-  type ConsensusVerificationPayment,
-  type PreparedVerificationPayment,
-  type VerificationEffectIdentitySource,
-} from '../src/index.js';
-import {
-  createSupplierEvidenceQuoteV2,
-  createSupplierEvidenceRequestV2,
-  signFacilitatorPaymentAttestationV2,
-  type Ed25519SignatureProvider,
-  type FacilitatorPaymentAttestationBodyV2,
-} from '../src/index.js';
 import {
   createPaymentActionAggregate,
   transitionPaymentAction,
 } from '@invoiceguard/domain';
+import type { CanonicalInvoiceV1 } from '@invoiceguard/protocol';
 import {
   createAuthorizationBundle,
   createSupplierMasterSnapshot,
   hashCanonicalInvoice,
 } from '@invoiceguard/protocol/hashing';
-import type { CanonicalInvoiceV1 } from '@invoiceguard/protocol';
-import { generateKeyPairSync, sign } from 'node:crypto';
+import { describe, expect, it } from 'vitest';
 
+import {
+  assertSamePreparedTransaction,
+  createSupplierEvidenceQuoteV2,
+  createSupplierEvidenceRequestV2,
+  decideVerificationPaymentRecovery,
+  inspectPreparedVerificationTransaction,
+  signFacilitatorPaymentAttestationV2,
+  signSupplierEvidenceDeploymentPolicyV1,
+  supplierEvidenceMemo,
+  type ClaimedVerificationPayment,
+  type ConsensusVerificationPayment,
+  type Ed25519SignatureProvider,
+  type FacilitatorPaymentAttestationBodyV2,
+  type SupplierEvidenceBindingContextV2,
+  type SupplierEvidenceQuoteV2,
+  type TrustedEd25519Key,
+  type VerificationEffectIdentitySource,
+  type VerificationPaymentStore,
+} from '../src/index.js';
 import {
   BENEFICIARY,
   DIGESTS,
@@ -35,6 +40,43 @@ import {
   actionCore,
   policyEvaluationForCore,
 } from '../../domain/test/fixtures/authorization.js';
+
+type TestPrivateKey = Readonly<Record<string, never>>;
+interface TestTransaction {
+  addHbarTransfer(accountId: string, amount: unknown): TestTransaction;
+  freeze(): TestTransaction;
+  setMaxTransactionFee(amount: unknown): TestTransaction;
+  setNodeAccountIds(accountIds: readonly unknown[]): TestTransaction;
+  setTransactionId(transactionId: unknown): TestTransaction;
+  setTransactionMemo(memo: string): TestTransaction;
+  sign(privateKey: TestPrivateKey): Promise<TestTransaction>;
+  toBytesAsync(): Promise<Uint8Array>;
+}
+type TestHederaSdk = Readonly<{
+  AccountId: Readonly<{ fromString(value: string): unknown }>;
+  Hbar: Readonly<{ fromTinybars(value: string | number): unknown }>;
+  PrivateKey: Readonly<{ generateED25519(): TestPrivateKey }>;
+  TransactionId: Readonly<{ fromString(value: string): unknown }>;
+  TransferTransaction: new () => TestTransaction;
+}>;
+
+const require = createRequire(import.meta.url);
+const testHederaSdk = require('@hiero-ledger/sdk') as TestHederaSdk;
+
+function signerFixture(keyId: string): Readonly<{
+  signer: Ed25519SignatureProvider;
+  trusted: TrustedEd25519Key;
+}> {
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  return {
+    signer: {
+      keyId,
+      sign: (payload) =>
+        sign(null, Buffer.from(payload), privateKey).toString('base64'),
+    },
+    trusted: { keyId, publicKey },
+  };
+}
 
 function recoveryFixture() {
   const snapshot = createSupplierMasterSnapshot({
@@ -113,15 +155,45 @@ function recoveryFixture() {
     invoice,
     snapshot,
   );
-  const quote = createSupplierEvidenceQuoteV2(request, {
-    amountTinybars: '1000',
-    challengeId: 'challenge_1234567890',
-    feePayerAccountId: '0.0.3000',
-    now: new Date('2026-07-25T10:05:00.000Z'),
-    quoteId: 'quote-1',
-    quoteTtlSeconds: 120,
-    receiverAccountId: '0.0.4000',
-  });
+  const deploymentAuthority = signerFixture('deployment-authority-key-1');
+  const signedDeploymentPolicy = signSupplierEvidenceDeploymentPolicyV1(
+    {
+      allowedNodeAccountIds: ['0.0.3'],
+      amountTinybars: '1000',
+      deploymentId: 'synthetic-testnet-deployment',
+      expiresAt: '2026-07-25T12:00:00.000Z',
+      facilitatorFeePayerAccountId: '0.0.3000',
+      maximumTransactionFeeTinybars: '200000000',
+      receiverAccountId: '0.0.4000',
+      schemaVersion: 'supplier-evidence-deployment-policy.v1',
+      serviceId: effect.serviceId,
+      serviceKeyId: effect.serviceKeyId,
+      serviceNetworkId: 'hedera:296',
+      validFrom: '2026-07-25T09:00:00.000Z',
+    },
+    deploymentAuthority.signer,
+  );
+  const quote = createSupplierEvidenceQuoteV2(
+    request,
+    signedDeploymentPolicy,
+    deploymentAuthority.trusted,
+    {
+      challengeId: 'challenge_1234567890',
+      now: new Date('2026-07-25T10:05:00.000Z'),
+      quoteId: 'quote-1',
+      quoteTtlSeconds: 120,
+    },
+  );
+  const context: SupplierEvidenceBindingContextV2 = {
+    authorization,
+    effect,
+    invoice,
+    quote,
+    request,
+    signedDeploymentPolicy,
+    supplierSnapshot: snapshot,
+    trustedDeploymentAuthority: deploymentAuthority.trusted,
+  };
   const identitySource: VerificationEffectIdentitySource = {
     resolve: (candidate) => ({
       actionDigest: candidate.actionDigest,
@@ -129,7 +201,18 @@ function recoveryFixture() {
       eventId: `test-only-event:${candidate.actionDigest}`,
     }),
   };
-  return { effect, identitySource, quote, request };
+  return {
+    context,
+    deploymentAuthority,
+    identitySource,
+  };
+}
+
+function withQuote(
+  test: ReturnType<typeof recoveryFixture>,
+  quote: SupplierEvidenceQuoteV2,
+): SupplierEvidenceBindingContextV2 {
+  return { ...test.context, quote };
 }
 
 function recoveryInput() {
@@ -140,103 +223,146 @@ function recoveryInput() {
   };
 }
 
+async function preparedTransactionBytes(
+  context: SupplierEvidenceBindingContextV2,
+  overrides: Readonly<{
+    amountTinybars?: string;
+    feePayerAccountId?: string;
+    maximumTransactionFeeTinybars?: string;
+    memo?: string;
+    nodeAccountId?: string;
+    receiverAccountId?: string;
+    signatures?: number;
+  }> = {},
+): Promise<string> {
+  const amount = overrides.amountTinybars ?? context.quote.requirements.amount;
+  const receiver =
+    overrides.receiverAccountId ?? context.quote.requirements.payTo;
+  const feePayer =
+    overrides.feePayerAccountId ?? context.quote.facilitatorFeePayerAccountId;
+  let transaction = new testHederaSdk.TransferTransaction()
+    .addHbarTransfer('0.0.5000', testHederaSdk.Hbar.fromTinybars(`-${amount}`))
+    .addHbarTransfer(receiver, testHederaSdk.Hbar.fromTinybars(amount))
+    .setTransactionId(
+      testHederaSdk.TransactionId.fromString(
+        `${feePayer}@1753437930.000000001`,
+      ),
+    )
+    .setNodeAccountIds([
+      testHederaSdk.AccountId.fromString(overrides.nodeAccountId ?? '0.0.3'),
+    ])
+    .setTransactionMemo(
+      overrides.memo ?? supplierEvidenceMemo(context.quote.requestDigest),
+    )
+    .setMaxTransactionFee(
+      testHederaSdk.Hbar.fromTinybars(
+        overrides.maximumTransactionFeeTinybars ?? '100000000',
+      ),
+    )
+    .freeze();
+  for (let index = 0; index < (overrides.signatures ?? 2); index += 1) {
+    transaction = await transaction.sign(
+      testHederaSdk.PrivateKey.generateED25519(),
+    );
+  }
+  return Buffer.from(await transaction.toBytesAsync()).toString('base64');
+}
+
+async function firstClaim(test: ReturnType<typeof recoveryFixture>) {
+  const decision = await decideVerificationPaymentRecovery(
+    test.context,
+    test.identitySource,
+    null,
+    recoveryInput(),
+  );
+  if (decision.kind !== 'CLAIM_NEW') {
+    throw new Error('invalid fixture');
+  }
+  return decision.claim;
+}
+
 describe('verification payment recovery seam', () => {
-  it('requires the trusted prerequisite identity and returns one claim', () => {
+  it('requires trusted prerequisite identity and returns one claim', async () => {
     const test = recoveryFixture();
-    const decision = decideVerificationPaymentRecovery(
-      test.effect,
+    const decision = await decideVerificationPaymentRecovery(
+      test.context,
       test.identitySource,
-      test.request,
-      test.quote,
       null,
       recoveryInput(),
     );
 
     expect(decision).toMatchObject({
       claim: {
-        actionDigest: test.effect.actionDigest,
-        eventId: `test-only-event:${test.effect.actionDigest}`,
+        actionDigest: test.context.effect.actionDigest,
+        eventId: `test-only-event:${test.context.effect.actionDigest}`,
         state: 'CLAIMED',
       },
       kind: 'CLAIM_NEW',
     });
   });
 
-  it('rejects an identity that is not bound to the AP effect', () => {
+  it('rejects identity and request substitution', async () => {
     const test = recoveryFixture();
     const substituted: VerificationEffectIdentitySource = {
       resolve: () => ({
         actionDigest: 'f'.repeat(64),
-        atomicGroupKey: test.effect.atomicGroupKey,
+        atomicGroupKey: test.context.effect.atomicGroupKey,
         eventId: 'wrong-event',
       }),
     };
 
-    expect(() =>
+    await expect(
       decideVerificationPaymentRecovery(
-        test.effect,
+        test.context,
         substituted,
-        test.request,
-        test.quote,
         null,
         recoveryInput(),
       ),
-    ).toThrow(/does not bind/u);
+    ).rejects.toThrow(/does not bind/u);
+    await expect(
+      decideVerificationPaymentRecovery(
+        {
+          ...test.context,
+          request: {
+            ...test.context.request,
+            legalIdentityHash: 'f'.repeat(64),
+          },
+        },
+        test.identitySource,
+        null,
+        recoveryInput(),
+      ),
+    ).rejects.toThrow(/not derived/u);
   });
 
-  it('rejects a request or quote substituted across AP effects', () => {
+  it('inspects a real pinned-SDK transaction before PREPARED', async () => {
     const test = recoveryFixture();
-
-    expect(() =>
-      decideVerificationPaymentRecovery(
-        test.effect,
-        test.identitySource,
-        { ...test.request, actionDigest: 'f'.repeat(64) },
-        test.quote,
-        null,
-        recoveryInput(),
-      ),
-    ).toThrow();
-    expect(() =>
-      decideVerificationPaymentRecovery(
-        test.effect,
-        test.identitySource,
-        test.request,
-        { ...test.quote, quoteId: 'substituted-quote' },
-        null,
-        recoveryInput(),
-      ),
-    ).toThrow(/not bound/u);
-  });
-
-  it('reconciles prepared bytes and never constructs a replacement', () => {
-    const test = recoveryFixture();
-    const first = decideVerificationPaymentRecovery(
-      test.effect,
-      test.identitySource,
-      test.request,
-      test.quote,
-      null,
-      recoveryInput(),
+    const claim = await firstClaim(test);
+    const bytes = await preparedTransactionBytes(test.context);
+    const prepared = await inspectPreparedVerificationTransaction(
+      test.context,
+      claim,
+      bytes,
     );
-    if (first.kind !== 'CLAIM_NEW') throw new Error('invalid fixture');
-    const bytes = Buffer.from('exact signed transaction').toString('base64');
-    const prepared: PreparedVerificationPayment = {
-      ...first.claim,
-      fullySignedTransactionBase64: bytes,
-      state: 'PREPARED',
-      transactionByteHash: preparedTransactionByteHash(bytes),
-      transactionId: '0.0.5000@1753437930.000000001',
-    };
-    const decision = decideVerificationPaymentRecovery(
-      test.effect,
+    const decision = await decideVerificationPaymentRecovery(
+      test.context,
       test.identitySource,
-      test.request,
-      test.quote,
       prepared,
       recoveryInput(),
     );
 
+    expect(prepared).toMatchObject({
+      amountTinybars: '1000',
+      facilitatorFeePayerAccountId: '0.0.3000',
+      maximumTransactionFeeTinybars: '100000000',
+      memo: supplierEvidenceMemo(claim.requestDigest),
+      networkId: 'hedera:296',
+      nodeAccountId: '0.0.3',
+      payerAccountId: '0.0.5000',
+      receiverAccountId: '0.0.4000',
+      state: 'PREPARED',
+      transactionId: '0.0.3000@1753437930.000000001',
+    });
     expect(decision).toEqual({
       attempt: prepared,
       kind: 'RECONCILE_PREPARED',
@@ -244,67 +370,71 @@ describe('verification payment recovery seam', () => {
     expect(() =>
       assertSamePreparedTransaction(prepared, {
         ...prepared,
-        fullySignedTransactionBase64: Buffer.from(
-          'replacement transaction',
-        ).toString('base64'),
+        transactionId: '0.0.3000@1753437930.000000002',
       }),
     ).toThrow(/original prepared transaction/u);
   });
 
-  it('loads durable consensus before applying expired live windows', () => {
+  it.each([
+    ['amount', { amountTinybars: '1001' }],
+    ['receiver', { receiverAccountId: '0.0.4999' }],
+    ['memo', { memo: 'wrong-memo' }],
+    ['node/network context', { nodeAccountId: '0.0.4' }],
+    ['fee payer', { feePayerAccountId: '0.0.3001' }],
+    ['fee cap', { maximumTransactionFeeTinybars: '200000001' }],
+    ['missing signature', { signatures: 1 }],
+  ] as const)(
+    'rejects real prepared bytes with substituted %s semantics',
+    async (_label, overrides) => {
+      const test = recoveryFixture();
+      const claim = await firstClaim(test);
+      const bytes = await preparedTransactionBytes(test.context, overrides);
+
+      await expect(
+        inspectPreparedVerificationTransaction(test.context, claim, bytes),
+      ).rejects.toThrow();
+    },
+  );
+
+  it('loads durable consensus before applying expired live windows', async () => {
     const test = recoveryFixture();
-    const first = decideVerificationPaymentRecovery(
-      test.effect,
-      test.identitySource,
-      test.request,
-      test.quote,
-      null,
-      recoveryInput(),
+    const claim = await firstClaim(test);
+    const prepared = await inspectPreparedVerificationTransaction(
+      test.context,
+      claim,
+      await preparedTransactionBytes(test.context),
     );
-    if (first.kind !== 'CLAIM_NEW') throw new Error('invalid fixture');
-    const bytes = Buffer.from('exact signed transaction').toString('base64');
-    const prepared: PreparedVerificationPayment = {
-      ...first.claim,
-      fullySignedTransactionBase64: bytes,
-      state: 'PREPARED',
-      transactionByteHash: preparedTransactionByteHash(bytes),
-      transactionId: '0.0.5000@1753437930.000000001',
-    };
-    const { privateKey } = generateKeyPairSync('ed25519');
-    const signer: Ed25519SignatureProvider = {
-      keyId: 'facilitator-key-1',
-      sign: (payload) =>
-        sign(null, Buffer.from(payload), privateKey).toString('base64'),
-    };
+    const facilitator = signerFixture('facilitator-key-1');
     const body: FacilitatorPaymentAttestationBodyV2 = {
       actionDigest: prepared.actionDigest,
-      amountTinybars: test.quote.requirements.amount,
+      amountTinybars: prepared.amountTinybars,
       asset: '0.0.0',
-      challengeId: test.quote.challengeId,
+      challengeId: test.context.quote.challengeId,
       paidAt: '2026-07-25T10:05:30.000Z',
-      payerAccountId: '0.0.5000',
+      payerAccountId: prepared.payerAccountId,
       paymentAttemptId: prepared.paymentAttemptId,
       paymentTransactionId: prepared.transactionId,
       quoteDigest: prepared.quoteDigest,
       quoteId: prepared.quoteId,
       receiptStatus: 'SUCCESS',
-      receiverAccountId: test.quote.requirements.payTo,
+      receiverAccountId: prepared.receiverAccountId,
       requestDigest: prepared.requestDigest,
-      resourceUrl: test.quote.resourceUrl,
+      resourceUrl: test.context.quote.resourceUrl,
       schemaVersion: 'facilitator-payment-attestation.v2',
-      serviceId: test.quote.serviceId,
+      serviceId: test.context.quote.serviceId,
       x402Network: 'hedera:testnet',
     };
     const consensus: ConsensusVerificationPayment = {
       ...prepared,
-      attestation: signFacilitatorPaymentAttestationV2(body, signer),
+      attestation: signFacilitatorPaymentAttestationV2(
+        body,
+        facilitator.signer,
+      ),
       state: 'CONSENSUS',
     };
-    const decision = decideVerificationPaymentRecovery(
-      test.effect,
+    const decision = await decideVerificationPaymentRecovery(
+      test.context,
       test.identitySource,
-      test.request,
-      test.quote,
       consensus,
       {
         ...recoveryInput(),
@@ -319,15 +449,132 @@ describe('verification payment recovery seam', () => {
     });
   });
 
-  it('refuses a new payment after the quote expires', () => {
+  it('atomically abandons an expired CLAIMED row for a fresh quote', async () => {
+    const test = recoveryFixture();
+    const stale = await firstClaim(test);
+    const freshQuote = createSupplierEvidenceQuoteV2(
+      test.context.request,
+      test.context.signedDeploymentPolicy,
+      test.context.trustedDeploymentAuthority,
+      {
+        challengeId: 'challenge_fresh_12345',
+        now: new Date('2026-07-25T10:06:01.000Z'),
+        quoteId: 'quote-2',
+        quoteTtlSeconds: 120,
+      },
+    );
+    const freshContext = withQuote(test, freshQuote);
+    const decision = await decideVerificationPaymentRecovery(
+      freshContext,
+      test.identitySource,
+      stale,
+      {
+        leaseExpiresAt: '2026-07-25T10:07:00.000Z',
+        now: '2026-07-25T10:06:10.000Z',
+        paymentAttemptId: 'verification-attempt-2',
+      },
+    );
+
+    expect(decision).toMatchObject({
+      abandonment: {
+        paymentAttemptId: 'verification-attempt-1',
+        reason: 'LEASE_EXPIRED_BEFORE_PREPARED',
+        replacementPaymentAttemptId: 'verification-attempt-2',
+        state: 'ABANDONED',
+      },
+      claim: {
+        paymentAttemptId: 'verification-attempt-2',
+        quoteId: 'quote-2',
+        state: 'CLAIMED',
+      },
+      kind: 'TAKEOVER_EXPIRED_CLAIM',
+    });
+    if (decision.kind !== 'TAKEOVER_EXPIRED_CLAIM') {
+      throw new Error('invalid fixture');
+    }
+    let current: ClaimedVerificationPayment = stale;
+    const history: string[] = [];
+    const store: Pick<VerificationPaymentStore, 'takeoverExpiredClaim'> = {
+      takeoverExpiredClaim: async (input) => {
+        await Promise.resolve();
+        if (current !== input.expected) {
+          return { status: 'CONFLICT' };
+        }
+        current = input.replacement;
+        history.push(input.abandonment.paymentAttemptId);
+        return {
+          abandonment: input.abandonment,
+          attempt: input.replacement,
+          status: 'TAKEN',
+        };
+      },
+    };
+    const takeoverInput = {
+      abandonment: decision.abandonment,
+      expected: decision.expected,
+      replacement: decision.claim,
+    };
+    const outcomes = await Promise.all([
+      store.takeoverExpiredClaim(takeoverInput),
+      store.takeoverExpiredClaim(takeoverInput),
+    ]);
+
+    expect(outcomes.map((outcome) => outcome.status).sort()).toEqual([
+      'CONFLICT',
+      'TAKEN',
+    ]);
+    expect(history).toEqual(['verification-attempt-1']);
+  });
+
+  it('never reuses an expired claim with its stale quote or attempt', async () => {
+    const test = recoveryFixture();
+    const stale = await firstClaim(test);
+
+    await expect(
+      decideVerificationPaymentRecovery(
+        test.context,
+        test.identitySource,
+        stale,
+        {
+          leaseExpiresAt: '2026-07-25T10:06:30.000Z',
+          now: '2026-07-25T10:06:10.000Z',
+          paymentAttemptId: stale.paymentAttemptId,
+        },
+      ),
+    ).rejects.toThrow(/fresh quote and attempt/u);
+
+    const quoteIssuedAtLeaseExpiry = createSupplierEvidenceQuoteV2(
+      test.context.request,
+      test.context.signedDeploymentPolicy,
+      test.context.trustedDeploymentAuthority,
+      {
+        challengeId: 'challenge_equal_12345',
+        now: new Date(stale.leaseExpiresAt),
+        quoteId: 'quote-issued-at-expiry',
+        quoteTtlSeconds: 120,
+      },
+    );
+    await expect(
+      decideVerificationPaymentRecovery(
+        withQuote(test, quoteIssuedAtLeaseExpiry),
+        test.identitySource,
+        stale,
+        {
+          leaseExpiresAt: '2026-07-25T10:07:00.000Z',
+          now: '2026-07-25T10:06:10.000Z',
+          paymentAttemptId: 'verification-attempt-2',
+        },
+      ),
+    ).rejects.toThrow(/fresh quote and attempt/u);
+  });
+
+  it('refuses a new payment after the quote expires', async () => {
     const test = recoveryFixture();
 
-    expect(() =>
+    await expect(
       decideVerificationPaymentRecovery(
-        test.effect,
+        test.context,
         test.identitySource,
-        test.request,
-        test.quote,
         null,
         {
           ...recoveryInput(),
@@ -335,6 +582,6 @@ describe('verification payment recovery seam', () => {
           now: '2026-07-25T10:07:30.000Z',
         },
       ),
-    ).toThrow(/outside its live window/u);
+    ).rejects.toThrow(/outside its live window/u);
   });
 });

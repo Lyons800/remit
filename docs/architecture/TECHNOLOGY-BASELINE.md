@@ -40,10 +40,10 @@ current LTS line according to the
 | Package                       | Verified current version | Status                   | Boundary                                    |
 | ----------------------------- | -----------------------: | ------------------------ | ------------------------------------------- |
 | `@worldcoin/agentkit`         |                    0.2.0 | pending World spike      | `packages/world-adapter` only               |
-| `@x402/core`                  |                   2.19.0 | pending x402 spike       | x402 protocol boundary                      |
-| `@x402/hedera`                |                   2.19.0 | pending x402 spike       | x402 buyer/facilitator runtime only         |
+| `@x402/core`                  |                   2.19.0 | installed; live pending  | x402 protocol boundary                      |
+| `@x402/hedera`                |                   2.19.0 | installed; live pending  | x402 buyer/facilitator runtime only         |
 | `@x402/hono`                  |                   2.19.0 | pending x402 spike       | Verifier service boundary                   |
-| `@hiero-ledger/sdk`           |                   2.85.0 | pending x402 spike       | x402 runtime, matching `@x402/hedera`       |
+| `@hiero-ledger/sdk`           |                   2.85.0 | installed; live pending  | x402 runtime, matching `@x402/hedera`       |
 | `@hashgraph/hedera-agent-kit` |                    4.0.0 | pending settlement spike | settlement planner runtime only             |
 | `@hiero-ledger/sdk`           |                   2.81.0 | pending settlement spike | settlement runtime, pinned Agent Kit peer   |
 | Viem                          |                   2.55.8 | candidate                | EVM typed-data and address primitives       |
@@ -89,6 +89,24 @@ official source.
 At foundation install, Turborepo 2.10.7 and ESLint 10.8.0 were less than 24
 hours old and were rejected by policy. InvoiceGuard selected the newest mature
 releases instead of creating a convenience exception.
+
+The isolated Hedera x402 graph adds three narrowly reviewed admissions:
+
+- `protobufjs@8.0.1` may run its install compatibility check only for the exact
+  pinned `@x402/hedera` peer graph. pnpm 11 supports version-scoped
+  `allowBuilds` selectors. The other resolved versions, `7.6.5` and `8.2.0`, are
+  explicitly denied because their postinstall is the same optional
+  dependency-range check and is not required by the runtime.
+- `semver@6.3.1` and `undici-types@6.19.8` are exact-version
+  `trustPolicyExclude` entries. They are legacy transitives in the pinned
+  `@hiero-ledger/sdk@2.85.0` graph, have lockfile integrity, and do not publish
+  the npm provenance needed by the workspace's no-downgrade check.
+- No release-age exception, exotic source, broad build permission, credential,
+  or runtime environment variable was added.
+
+These admissions establish only an offline dependency and serialization
+baseline. They do not establish payer-signature behavior, Testnet consensus, or
+any live sponsor evidence.
 
 TypeScript 7.0.2 was also rejected after peer validation:
 `typescript-eslint@8.65.0` supports TypeScript below 6.1. The foundation pins
