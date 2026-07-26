@@ -619,10 +619,15 @@ claim's expected aggregate version; require the effect atomic-group key; and
 write the aggregate, outbox item, receipt consumption, uniqueness rows, and
 mandate mutation in one serializable transaction. A caller cannot self-assert a
 writer, service, adapter or `CURRENT` status merely because it can construct the
-same JSON shape. Concurrent approval admission similarly consumes its decision,
-session, World proof, AgentKit challenge, and three quorum-principal claims in
-the aggregate's atomic group. Re-enqueue uses an upsert of the same outbox
-event, never a second logical event ID.
+same JSON shape or recompute a `recordDigest`. Concurrent World approval
+admission accepts the complete `WorldAuthorityAdmissionBundle`, authenticates
+the owning writer capability, verifies its deployment and composition-policy
+identity, and consumes its decision, session, World proof and AgentKit challenge
+while reserving every current and overlap approval/requester identity claim in
+the aggregate's atomic group. The bundle, both structural domain facts and the
+matching writer receipt are persisted together; only that repository record may
+feed quorum. Re-enqueue uses an upsert of the same outbox event, never a second
+logical event ID.
 
 Every request carries `actionId`, `actionDigest`, `attemptId`, `traceId`, and
 the source commit SHA.

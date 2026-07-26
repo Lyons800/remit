@@ -22,9 +22,9 @@ Active build for ETHGlobal Lisbon 2026.
 
 - Track: Classic / From Scratch
 - Target partner surfaces: World AgentKit, World Human-in-the-Loop, and Hedera
-- World evidence: the offline AgentKit, AgentBook, IDKit request-contract, and
-  canonical authority-fact integration is implemented; live World authority
-  remains a NO-GO until the gates in
+- World evidence: the offline AgentKit, AgentBook, IDKit request, and
+  whole-bundle authority-admission contract are implemented; live World
+  authority remains a NO-GO until the authenticated persistence gates in
   [the spike record](docs/sponsors/WORLD-SPIKE.md) pass
 - 0G admission: rejected on 2026-07-25; no suitable testnet private,
   authenticated text-inference path is currently available

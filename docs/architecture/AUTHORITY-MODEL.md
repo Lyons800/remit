@@ -112,32 +112,52 @@ signal, nullifier scope and expiry. The company credential adapter verifies the
 issuer, role, subject, revocation and time bounds. The AgentBook adapter
 resolves the current tenant-scoped backing principal.
 
-Only one verifier/composition path may project the canonical
-`AdapterVerifiedApprovalFact`. It correlates the validated AP authorization
-bundle, exact trusted IDKit request and verified response, opaque approval and
-requester AgentKit claims, current AgentBook resolutions, and current company
-role authority. The request derives its app, environment, and relying-party ID
-from one trusted deployment context. AgentKit claims become opaque results only
-after signature verification and atomic challenge consumption; a serialized or
-structurally copied claim must be verified again.
+One World verifier/composition path correlates the validated AP authorization
+bundle, exact IDKit request and verified response, approval and requester
+AgentKit claims, current AgentBook resolutions, and current company-role
+authority. Its configured World deployment and composition policy are
+process-branded and frozen. The request, evidence IDs, identity claims, and
+admission bundle all bind the deployment and composition-policy digests.
+Serialized copies lose those process brands and must re-enter through the owning
+verifier or an authenticated persistence boundary.
 
-That path derives tenant and action principals plus every current and overlap
+Every successful AgentBook resolution carries the observed numeric chain and
+CAIP-2 network, registry ID and contract address, resolver adapter ID and
+version, backing-record source, record ID, and validity window. The composition
+path compares all of that provenance to the frozen policy before it selects a
+`CURRENT` status.
+
+The path derives tenant and action principals plus every current and overlap
 alias directly from transient raw identifiers and the authoritative keyring. It
-rejects caller-supplied alias arrays and computes the admitted expiry as the
-minimum of every authorization, session, relying-party, AgentKit, AgentBook,
-role, and World-proof ceiling. Only then does it assign the fact's `CURRENT` and
-`VERIFIED` states. No exported structural constructor accepts those states, and
-a later projection repeats verification rather than refreshing retained
-evidence.
+rejects caller-supplied alias arrays and computes each fact expiry as the
+minimum of every applicable authorization, session, relying-party, AgentKit,
+AgentBook, role, and World-proof ceiling.
 
-The domain still checks the fact's action, decision, role, time, status and
-independent distinctness. Persistence must consume the decision, proof,
-challenge, approval-session, and company-subject, AgentBook-principal, and
-action-human-principal claims under uniqueness constraints in the same
-serializable authorization transaction. The offline World adapter projects that
-canonical domain fact and does not define a parallel durable human-decision
-record. The physical transaction and repository constraints remain a separate
-live admission gate.
+The domain's `createAdapterVerifiedApprovalFact` and
+`createRequestingAgentExecutionFact` factories are intentionally public
+structural validators. Their `recordDigest` values are canonical integrity
+checks, not signatures, authentication, writer provenance, or proof that the
+fields came from World. Any code with the same fields can construct the same
+record. Consequently a loose fact is never authority merely because it parses,
+has a valid digest, or says `CURRENT` or `VERIFIED`.
+
+Instead, the World path creates one `WorldAuthorityAdmissionBundle` whose digest
+binds both facts, exact AgentBook provenance, deployment and policy identities,
+and all approval and requester identity claims, including every current and
+overlap alias. The public World API returns no loose facts. It succeeds only
+after passing the whole bundle to its configured process-branded
+admission-writer capability and returns that writer's bundle-bound receipt. The
+process brand protects the in-process seam from deserialized structural
+substitution; it is not durable authentication and does not make an
+untrustworthy composition root safe.
+
+The domain still checks action, decision, role, time, status and distinctness.
+Live authority additionally requires the authenticated physical repository to
+consume the decision, proof, challenge and approval session; reserve every
+company-subject, AgentBook-principal and action-human alias; and persist the
+whole bundle, both facts and its writer receipt under one serializable
+transaction and atomic group. That persistence integration is not present on
+this branch, so live World authority remains a NO-GO.
 
 ## Exact-agent execution
 
@@ -160,10 +180,11 @@ and must match the frozen adapter, policy, signed-proof identity, fact identity,
 and original validity ceiling exactly. A refresh may be newer and shorter lived;
 it cannot extend the original authorization.
 
-The same opaque World authority projection yields the canonical
-`RequestingAgentExecutionFact`, deriving all policy-owned fields from the
-verified authorization bundle rather than caller input. A public structural
-execution-fact constructor is not part of the adapter boundary.
+The same World admission bundle carries the `RequestingAgentExecutionFact`,
+deriving policy-owned fields from the verified authorization bundle and observed
+AgentBook provenance rather than caller input. The public domain factory remains
+structural; only the authenticated bundle write can establish repository
+authority.
 
 AgentKit proves that the wallet is registered to a World ID human. It does not
 prove that the backing human reviewed this payment at signing time; the
