@@ -177,10 +177,12 @@ describe('AgentKit exact-action challenge', () => {
         actionDigest: ACTION_DIGEST,
         agentAddress: account.address,
         approvalUri: challenge.approvalUri,
+        challengeId: expect.stringMatching(/^world-agentkit:[0-9a-f]{64}$/u),
         expiresAt: challenge.expiresAt,
         issuedAt: challenge.issuedAt,
         nonce: challenge.nonce,
         organizationId: ORGANIZATION_ID,
+        signedProofDigest: expect.stringMatching(/^[0-9a-f]{64}$/u),
       },
       ok: true,
     });
