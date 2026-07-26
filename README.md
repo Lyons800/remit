@@ -131,11 +131,11 @@ Routine invoices skip steps 3–5 entirely: the agent pays them directly.
 
 Three native Hedera services, matching the track's own examples:
 
-| Service            | Where it is used                                                                                                                                                                               |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Token Service**  | audit marker — `TokenCreateTransaction` (non-fungible, finite supply 1, supply+admin keys) → `TokenMintTransaction` with the action digest as metadata → `TokenBurnTransaction` at consumption |
-| **Mirror Node**    | the digest is read back from Mirror Node to prove the ledger carries what we claim, and the burn is confirmed there before we state it                                                         |
-| **Cryptocurrency** | supplier payment (`TransferTransaction`) and x402 settlement of the verification fee                                                                                                           |
+| Service            | Where it is used                                                                                                                                                                                                                                                                                               |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Token Service**  | audit marker — `TokenCreateTransaction` (non-fungible) → `TokenMintTransaction` carrying the action digest as metadata → `TokenBurnTransaction` at consumption. `scripts/demo.ts` mints with finite max supply 1 and an admin key; the published gate evidence predates that and used the looser configuration |
+| **Mirror Node**    | the digest is read back from Mirror Node to prove the ledger carries what we claim, and the burn is confirmed there before we state it                                                                                                                                                                         |
+| **Cryptocurrency** | supplier payment (`TransferTransaction`) and x402 settlement of the verification fee                                                                                                                                                                                                                           |
 
 That is token **creation**, **configuration**, and **two lifecycle operations**.
 
@@ -179,6 +179,11 @@ honest, or that a verification service is truthful.
   **not** prevent replay — replay is refused by the approval layer via
   `REPLAY_DETECTED` and `ACTION_DIGEST_MISMATCH`. See
   [`docs/evidence/README.md`](docs/evidence/README.md).
+- Act 3's x402 **payment** is real and settles on Hedera. The beneficiary
+  **verification service is not** — there is no such service, so the demo stands
+  one in with a generated keypair and a fixed answer, marked `[SIMULATED]` on
+  screen. The signature binding is genuine; the verdict it carries proves
+  nothing about the beneficiary.
 - Act 1's transfer is a direct HBAR payment;
   `packages/hedera-settlement-adapter` is not implemented.
 - The demo speaks x402 directly rather than through

@@ -1,5 +1,22 @@
 # 0G admission record
 
+> **Superseding reason (2026-07-26).** The original no-go argued no suitable
+> private testnet text model existed. That was wrong — a live catalog probe
+> found `qwen/qwen2.5-omni-7b`, TeeML, healthy at 100% uptime on testnet, and
+> mainnet carries several stronger models. The actual blocker is funding:
+> `LedgerProcessor.MIN_LEDGER_BALANCE_OG = 3`, matching `MIN_ACCOUNT_BALANCE` in
+> the LedgerManager contract, so opening a compute ledger costs 3 0G before a
+> single inference. `acknowledgeProviderSigner` then moves 1 0G and the first
+> `getRequestHeaders` needs roughly 2 more. Testnet faucets dispense a fraction
+> of that. The adapter is written and its provider selection works live; it
+> stops at the ledger.
+>
+> A second finding worth recording: `processResponse` verifies an **ECDSA
+> signature**, not a TEE attestation — it recovers the signer and compares it to
+> the provider's registered TEE signer address. Genuine attestation lives in
+> `verifyService()`. Any future integration must not describe a signed response
+> as attested compute.
+
 Decision: **NO-GO** for the current Remit submission.
 
 Last refreshed: 2026-07-25 22:42 WEST.
@@ -9,7 +26,7 @@ runtime is installed.
 
 ## Why admission failed
 
-### No suitable private testnet text model
+# 0G: no-go — the compute ledger minimum is 3 0G
 
 The live testnet Router catalog exposes:
 
