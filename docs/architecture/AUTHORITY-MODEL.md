@@ -4,16 +4,23 @@ Remit deliberately separates facts that are often collapsed into "identity."
 
 ## Independent facts
 
-| Fact                | Source                               | What it permits                                                               | What it does not prove                                        |
-| ------------------- | ------------------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Agent backing       | World AgentKit / AgentBook           | The enrolled agent is backed by a registered human and may enter the workflow | Name, employment, honesty, company role, or payment authority |
-| Company role        | Configured company credential issuer | The enrolled agent and authenticated application subject hold a required role | Distinct humanity, fresh review, or beneficiary ownership     |
-| Human decision      | World Human-in-the-Loop / IDKit      | A unique human made a decision bound to this exception before expiry          | Employment, company authority, or correctness of the action   |
-| Agent execution     | Exact agent signature                | The eligible agent requested the authorized effect for this digest            | Fresh human review or evidence truth                          |
-| Verification result | Configured paid service              | The service returned its declared result for this evidence and action         | Legal ownership, compliance, or universal truth               |
+| Fact                    | Source                               | What it permits                                                               | What it does not prove                                            |
+| ----------------------- | ------------------------------------ | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Application identity    | Google through Better Auth           | The subject may hold a revocable InvoiceGuard session                         | Employment, company role, distinct humanity, or payment authority |
+| Organization membership | Better Auth organization plugin      | The subject may access one organization's configured product surfaces         | A finance role, approval authority, or permission to move value   |
+| Agent backing           | World AgentKit / AgentBook           | The enrolled agent is backed by a registered human and may enter the workflow | Name, employment, honesty, company role, or payment authority     |
+| Company role            | Configured company credential issuer | The enrolled agent and authenticated application subject hold a required role | Distinct humanity, fresh review, or beneficiary ownership         |
+| Human decision          | World Human-in-the-Loop / IDKit      | A unique human made a decision bound to this exception before expiry          | Employment, company authority, or correctness of the action       |
+| Agent execution         | Exact agent signature                | The eligible agent requested the authorized effect for this digest            | Fresh human review or evidence truth                              |
+| Verification result     | Configured paid service              | The service returned its declared result for this evidence and action         | Legal ownership, compliance, or universal truth                   |
 
 Settlement requires every configured fact under one deterministic policy. No
 fact substitutes for another.
+
+Application identity and organization membership are prerequisite access facts,
+not financial authority. A Better Auth owner or admin has no payment role until
+the configured company credential issuer separately grants one. Email domain,
+Google profile data, and organization creation never perform that grant.
 
 ## Human identifier privacy
 

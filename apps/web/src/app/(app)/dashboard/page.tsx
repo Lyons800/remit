@@ -68,9 +68,14 @@ export default async function DashboardPage() {
             A product scenario beside independently verified public evidence.
           </p>
         </div>
-        <Link href="/invoices">
-          <Button variant="outline">Open queue</Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/sign-in">
+            <Button variant="outline">Company sign in</Button>
+          </Link>
+          <Link href="/invoices">
+            <Button variant="outline">Open demo queue</Button>
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

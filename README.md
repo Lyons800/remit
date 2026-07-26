@@ -218,6 +218,48 @@ pnpm dev
 | Payment agent     | 4400 |
 | Settlement worker | 4500 |
 
+### Company sign-in
+
+The web app uses Google through Better Auth for application identity and
+organization membership. Copy only the variable names from `.env.example` into
+`apps/web/.env.local` and provide:
+
+- `BETTER_AUTH_URL` (`http://localhost:3000` locally);
+- a random `BETTER_AUTH_SECRET` of at least 32 characters;
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`;
+- pooled `DATABASE_URL`; and
+- unpooled `DATABASE_URL_UNPOOLED` for migrations.
+
+The Google OAuth client must allow
+`http://localhost:3000/api/auth/callback/google` locally and the corresponding
+production origin callback. Apply the isolated, idempotent auth migration before
+enabling sign-in:
+
+```bash
+cd apps/web
+pnpm auth:migrate
+```
+
+The migration owns only the `invoiceguard_auth` schema. Google and Better Auth
+organization roles never grant payment authority; that remains a separate
+control-API decision.
+
+| Process           | Local port |
+| ----------------- | ---------: |
+| Web               |       3000 |
+| Control API       |       4100 |
+| Extraction worker |       4150 |
+| Verifier          |       4200 |
+| x402 facilitator  |       4300 |
+| Payment agent     |       4400 |
+| Settlement worker |       4500 |
+
+Run the complete local quality gate before every push:
+
+```bash
+pnpm check
+```
+
 ## Provenance
 
 Work began in this repository during ETHGlobal Lisbon 2026. See

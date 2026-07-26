@@ -4,6 +4,8 @@ import {
   ArrowLeftRight,
   Building2,
   LayoutGrid,
+  LogIn,
+  LogOut,
   ReceiptText,
   ScrollText,
   Users,
@@ -11,9 +13,10 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { authClient } from '../lib/auth-client';
 import { cn } from '../lib/utils';
 
 /* midday's sidebar recipe: fixed rail, 70px -> 240px on hover, 200ms
@@ -34,6 +37,81 @@ const items = [
   { href: '/audit', icon: ScrollText, label: 'Evidence' },
   { href: '/policies', icon: SlidersHorizontal, label: 'Policies' },
 ] as const;
+
+function initials(value: string): string {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
+}
+
+function SidebarAccount({ isExpanded }: Readonly<{ isExpanded: boolean }>) {
+  const router = useRouter();
+  const session = authClient.useSession();
+  const activeOrganization = authClient.useActiveOrganization();
+
+  if (session.data === null || session.data === undefined) {
+    return (
+      <Link className="flex items-center" href="/sign-in">
+        <span className="flex w-[70px] shrink-0 items-center justify-center">
+          <LogIn aria-hidden="true" size={18} strokeWidth={1.5} />
+        </span>
+        <span
+          className={cn(
+            'text-xs font-medium whitespace-nowrap transition-opacity duration-200',
+            isExpanded ? 'opacity-100' : 'opacity-0',
+          )}
+        >
+          Company sign in
+        </span>
+      </Link>
+    );
+  }
+
+  const organizationName = activeOrganization.data?.name ?? 'Company workspace';
+
+  async function signOut() {
+    await authClient.signOut();
+    router.push('/');
+    router.refresh();
+  }
+
+  return (
+    <div className="flex w-full items-center">
+      <span className="flex w-[70px] shrink-0 items-center justify-center">
+        <span className="flex h-8 w-8 items-center justify-center border border-border font-mono text-[10px] text-muted-foreground">
+          {initials(organizationName) || 'IG'}
+        </span>
+      </span>
+      <span
+        className={cn(
+          'min-w-0 flex-1 overflow-hidden transition-opacity duration-200',
+          isExpanded ? 'opacity-100' : 'opacity-0',
+        )}
+      >
+        <span className="block truncate text-xs font-medium">
+          {organizationName}
+        </span>
+        <span className="microlabel block truncate">
+          {session.data.user.email}
+        </span>
+      </span>
+      <button
+        aria-label="Sign out"
+        className={cn(
+          'mr-3 text-muted-foreground transition-opacity hover:text-foreground',
+          isExpanded ? 'opacity-100' : 'pointer-events-none opacity-0',
+        )}
+        onClick={signOut}
+        type="button"
+      >
+        <LogOut aria-hidden="true" size={16} strokeWidth={1.5} />
+      </button>
+    </div>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -102,26 +180,7 @@ export function Sidebar() {
           })}
         </nav>
 
-        <div className="flex items-center">
-          <span className="flex w-[70px] shrink-0 items-center justify-center">
-            <span className="flex h-8 w-8 items-center justify-center border border-border font-mono text-[10px] text-muted-foreground">
-              PP
-            </span>
-          </span>
-          <span
-            className={cn(
-              'overflow-hidden transition-opacity duration-200',
-              isExpanded ? 'opacity-100' : 'opacity-0',
-            )}
-          >
-            <span className="block text-xs font-medium whitespace-nowrap">
-              Padel Peru, Lda
-            </span>
-            <span className="microlabel block whitespace-nowrap">
-              synthetic scenario
-            </span>
-          </span>
-        </div>
+        <SidebarAccount isExpanded={isExpanded} />
       </aside>
 
       <nav

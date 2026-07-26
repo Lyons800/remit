@@ -7,7 +7,13 @@ import {
   type WorkspacePerson,
 } from '@remit/persistence';
 
-import { DEMO_ORGANIZATION_ID, db } from '../../../lib/workspace.server';
+import { headers } from 'next/headers';
+
+import {
+  DEMO_ORGANIZATION_ID,
+  db,
+  resolveOrganizationId,
+} from '../../../lib/workspace.server';
 
 /**
  * The workspace roster.
@@ -46,25 +52,35 @@ const SEED = [
   },
 ];
 
-async function roster(): Promise<readonly WorkspacePerson[]> {
+async function roster(
+  organizationId: string,
+): Promise<readonly WorkspacePerson[]> {
   const sql = db();
-  const existing = await listWorkspacePeople(sql, DEMO_ORGANIZATION_ID);
+  const existing = await listWorkspacePeople(sql, organizationId);
   if (existing.length > 0) return existing;
+
+  // Only the public demo organisation is ever pre-populated. A real workspace
+  // starts empty; inserting these agents into someone's company would be
+  // inventing approvers they never added.
+  if (organizationId !== DEMO_ORGANIZATION_ID) return existing;
 
   for (const person of SEED) {
     try {
-      await addWorkspacePerson(sql, DEMO_ORGANIZATION_ID, person);
+      await addWorkspacePerson(sql, organizationId, person);
     } catch {
       /* a concurrent request seeded first — harmless */
     }
   }
-  return listWorkspacePeople(sql, DEMO_ORGANIZATION_ID);
+  return listWorkspacePeople(sql, organizationId);
 }
 
 export async function GET(): Promise<Response> {
   try {
+    const { organizationId, isDemo } = await resolveOrganizationId(
+      await headers(),
+    );
     return Response.json(
-      { people: await roster() },
+      { people: await roster(organizationId), isDemo },
       { headers: { 'cache-control': 'no-store' } },
     );
   } catch (error) {
@@ -126,7 +142,8 @@ export async function POST(request: Request): Promise<Response> {
     typeof role === 'string' && ROLES.has(role) ? (role as PersonRole) : null;
 
   try {
-    const person = await addWorkspacePerson(db(), DEMO_ORGANIZATION_ID, {
+    const { organizationId } = await resolveOrganizationId(await headers());
+    const person = await addWorkspacePerson(db(), organizationId, {
       personId: `p-${resolvedAddress.slice(2, 10).toLowerCase()}`,
       displayName,
       agentAddress: resolvedAddress,
@@ -165,9 +182,10 @@ export async function PATCH(request: Request): Promise<Response> {
     typeof role === 'string' && ROLES.has(role) ? (role as PersonRole) : null;
 
   try {
+    const { organizationId } = await resolveOrganizationId(await headers());
     const person = await setWorkspacePersonRole(
       db(),
-      DEMO_ORGANIZATION_ID,
+      organizationId,
       personId,
       nextRole,
     );

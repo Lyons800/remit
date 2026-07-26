@@ -32,3 +32,53 @@ export function isDatabaseConfigured(): boolean {
   const url = process.env['DATABASE_URL'];
   return url !== undefined && url !== '';
 }
+
+/**
+ * Which organisation the current request is acting for.
+ *
+ * A signed-in user acts for the organisation on their session. Everyone else
+ * gets the demo organisation, which is deliberately public and holds only
+ * synthetic records.
+ *
+ * The important property is the direction of the fallback: an unauthenticated
+ * visitor can only ever reach the demo organisation, and a signed-in user can
+ * never accidentally be handed it in place of their own. If the session has no
+ * active organisation the caller is sent to onboarding rather than silently
+ * shown somebody else's ledger.
+ *
+ * This is the only place the id is decided. Every repository function already
+ * takes it as a parameter, so scoping happens here and nowhere else.
+ */
+export async function resolveOrganizationId(headers: Headers): Promise<{
+  organizationId: string;
+  isDemo: boolean;
+  needsOnboarding: boolean;
+}> {
+  try {
+    const { getAuth } = await import('./auth.server');
+    const session = await getAuth().api.getSession({ headers });
+    if (session === null) {
+      return {
+        organizationId: DEMO_ORGANIZATION_ID,
+        isDemo: true,
+        needsOnboarding: false,
+      };
+    }
+    const active = session.session.activeOrganizationId;
+    if (active === null || active === undefined || active === '') {
+      return {
+        organizationId: DEMO_ORGANIZATION_ID,
+        isDemo: true,
+        needsOnboarding: true,
+      };
+    }
+    return { organizationId: active, isDemo: false, needsOnboarding: false };
+  } catch {
+    // Auth not configured in this environment — the demo remains reachable.
+    return {
+      organizationId: DEMO_ORGANIZATION_ID,
+      isDemo: true,
+      needsOnboarding: false,
+    };
+  }
+}

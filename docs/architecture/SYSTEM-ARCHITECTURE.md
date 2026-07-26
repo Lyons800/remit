@@ -50,15 +50,15 @@ flowchart LR
 
 ## Deployable boundaries
 
-| Deployable                   | Responsibility                                                                               | Secrets                                          |
-| ---------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `apps/web`                   | Responsive desktop control room and mobile approval experience                               | No treasury, issuer, provider, RP, or agent keys |
-| `apps/control-api`           | Invoice acceptance, authentication, deterministic policy, action state, API, audit           | Database, object-store, connector, and HMAC keys |
-| `services/extraction-worker` | Sandboxed parsing and candidate-field extraction from one staged document                    | No long-lived secret and no network egress       |
-| `services/verifier`          | x402 resource, evidence check, and signed digest-bound response                              | Service-signing key                              |
-| `services/payment-agent`     | Autonomously purchases the configured verifier resource                                      | Low-balance x402 buyer key                       |
-| `services/x402-facilitator`  | Verifies, co-signs, submits, and settles Hedera x402 transactions                            | Capped facilitator fee-payer key                 |
-| `services/settlement-worker` | Plans, guards, signs, submits, and recovers the exact approved transfer; writes HCS evidence | Separate settlement and audit-writer keys        |
+| Deployable                   | Responsibility                                                                               | Secrets                                                                                  |
+| ---------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `apps/web`                   | Responsive control room, mobile approval, and server-side application identity boundary      | OAuth client and session secrets only; no financial, issuer, verifier, RP, or agent keys |
+| `apps/control-api`           | Invoice acceptance, membership enforcement, deterministic policy, action state, API, audit   | Database, object-store, connector, and HMAC keys                                         |
+| `services/extraction-worker` | Sandboxed parsing and candidate-field extraction from one staged document                    | No long-lived secret and no network egress                                               |
+| `services/verifier`          | x402 resource, evidence check, and signed digest-bound response                              | Service-signing key                                                                      |
+| `services/payment-agent`     | Autonomously purchases the configured verifier resource                                      | Low-balance x402 buyer key                                                               |
+| `services/x402-facilitator`  | Verifies, co-signs, submits, and settles Hedera x402 transactions                            | Capped facilitator fee-payer key                                                         |
+| `services/settlement-worker` | Plans, guards, signs, submits, and recovers the exact approved transfer; writes HCS evidence | Separate settlement and audit-writer keys                                                |
 
 The control API remains a modular monolith. Untrusted document parsing is
 separate because attachment bytes are an execution boundary: each extraction job

@@ -23,17 +23,19 @@ current LTS line according to the
 
 ## Application framework candidates
 
-| Technology                                                           |               Verified current version | Status             | Intended use                                          |
-| -------------------------------------------------------------------- | -------------------------------------: | ------------------ | ----------------------------------------------------- |
-| Next.js                                                              |                                16.2.11 | installed          | Product web application                               |
-| React                                                                |                                 19.2.8 | installed          | Product UI                                            |
-| Hono                                                                 |                                4.12.32 | installed          | Control API and x402 verifier HTTP services           |
-| Zod                                                                  |                                  4.4.3 | installed          | Runtime validation at every external boundary         |
-| `@hono/zod-openapi`                                                  |                                  1.5.1 | candidate for PR 2 | OpenAPI contract generation                           |
-| PostgreSQL driver [`postgres`](https://github.com/porsager/postgres) |                                  3.4.9 | installed          | Database access below the repository layer; Unlicense |
-| Drizzle ORM                                                          |                                 0.45.2 | candidate for PR 3 | Typed schema and migrations                           |
-| Pino                                                                 |                                 10.3.1 | candidate for PR 3 | Structured logs with explicit redaction               |
-| OpenTelemetry                                                        | version pinned during observability PR | not yet selected   | Cross-service traces and metrics                      |
+| Technology                                                           |               Verified current version | Status             | Intended use                                                     |
+| -------------------------------------------------------------------- | -------------------------------------: | ------------------ | ---------------------------------------------------------------- |
+| Next.js                                                              |                                16.2.11 | installed          | Product web application                                          |
+| React                                                                |                                 19.2.8 | installed          | Product UI                                                       |
+| Hono                                                                 |                                4.12.32 | installed          | Control API and x402 verifier HTTP services                      |
+| Zod                                                                  |                                  4.4.3 | installed          | Runtime validation at every external boundary                    |
+| `@hono/zod-openapi`                                                  |                                  1.5.1 | candidate for PR 2 | OpenAPI contract generation                                      |
+| PostgreSQL driver [`postgres`](https://github.com/porsager/postgres) |                                  3.4.9 | installed          | Payment persistence below the repository layer; Unlicense        |
+| PostgreSQL driver [`pg`](https://github.com/brianc/node-postgres)    |                                 8.22.0 | installed          | Server-only Better Auth database connection; MIT                 |
+| Better Auth                                                          |                                 1.6.23 | installed          | Google identity, revocable sessions, and organization membership |
+| Drizzle ORM                                                          |                                 0.45.2 | candidate for PR 3 | Typed schema and migrations                                      |
+| Pino                                                                 |                                 10.3.1 | candidate for PR 3 | Structured logs with explicit redaction                          |
+| OpenTelemetry                                                        | version pinned during observability PR | not yet selected   | Cross-service traces and metrics                                 |
 
 The persistence-contract work admitted `postgres@3.4.9` from its
 [first-party repository](https://github.com/porsager/postgres), under the
@@ -42,6 +44,19 @@ Rollback removes the dependency and its lockfile entry together with the
 PostgreSQL repository implementation; it does not require weakening workspace
 supply-chain policy. Drizzle remains uninstalled because the reviewed migration
 and transaction surface does not need an ORM.
+
+The company-identity slice admits `better-auth@1.6.23`, `pg@8.22.0`, and
+development-only `@types/pg@8.20.0`. All are exact lockfile pins with unmodified
+published artifacts. Better Auth and node-postgres are MIT licensed. Better Auth
+owns only the `invoiceguard_auth` PostgreSQL schema and the web `/api/auth/*`
+boundary. The web compiler skips checking third-party declaration files because
+Better Auth publishes optional Bun and Cloudflare type references; InvoiceGuard
+source retains every strict compiler rule.
+
+Rollback disables the auth route and sign-in UI, removes the three direct
+packages and their lock entries, and redeploys before retiring
+`invoiceguard_auth`. Dropping that schema is a separate, explicitly approved
+operation because it revokes sessions and deletes organization membership.
 
 ## Web3 and sponsor baseline
 

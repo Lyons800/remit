@@ -28,11 +28,14 @@ The Hedera x402 slice consumes these exact public packages. pnpm installs their
 published artifacts under the repository lockfile; no third-party package source
 is copied, vendored, patched, or modified.
 
-| Package             | Exact version | Published source                                                               | Upstream source                                                      | License    | Modifications                           |
-| ------------------- | ------------: | ------------------------------------------------------------------------------ | -------------------------------------------------------------------- | ---------- | --------------------------------------- |
-| `@x402/core`        |      `2.19.0` | [npm registry manifest](https://registry.npmjs.org/@x402%2Fcore/2.19.0)        | [x402 Foundation `x402`](https://github.com/x402-foundation/x402)    | Apache-2.0 | None; installed artifact is unmodified. |
-| `@x402/hedera`      |      `2.19.0` | [npm registry manifest](https://registry.npmjs.org/@x402%2Fhedera/2.19.0)      | [x402 Foundation `x402`](https://github.com/x402-foundation/x402)    | Apache-2.0 | None; installed artifact is unmodified. |
-| `@hiero-ledger/sdk` |      `2.85.0` | [npm registry manifest](https://registry.npmjs.org/@hiero-ledger%2Fsdk/2.85.0) | [Hiero JavaScript SDK](https://github.com/hiero-ledger/hiero-sdk-js) | Apache-2.0 | None; installed artifact is unmodified. |
+| Package             | Exact version | Published source                                                               | Upstream source                                                       | License    | Modifications                           |
+| ------------------- | ------------: | ------------------------------------------------------------------------------ | --------------------------------------------------------------------- | ---------- | --------------------------------------- |
+| `@x402/core`        |      `2.19.0` | [npm registry manifest](https://registry.npmjs.org/@x402%2Fcore/2.19.0)        | [x402 Foundation `x402`](https://github.com/x402-foundation/x402)     | Apache-2.0 | None; installed artifact is unmodified. |
+| `@x402/hedera`      |      `2.19.0` | [npm registry manifest](https://registry.npmjs.org/@x402%2Fhedera/2.19.0)      | [x402 Foundation `x402`](https://github.com/x402-foundation/x402)     | Apache-2.0 | None; installed artifact is unmodified. |
+| `@hiero-ledger/sdk` |      `2.85.0` | [npm registry manifest](https://registry.npmjs.org/@hiero-ledger%2Fsdk/2.85.0) | [Hiero JavaScript SDK](https://github.com/hiero-ledger/hiero-sdk-js)  | Apache-2.0 | None; installed artifact is unmodified. |
+| `better-auth`       |      `1.6.23` | [npm registry manifest](https://registry.npmjs.org/better-auth/1.6.23)         | [Better Auth](https://github.com/better-auth/better-auth)             | MIT        | None; installed artifact is unmodified. |
+| `pg`                |      `8.22.0` | [npm registry manifest](https://registry.npmjs.org/pg/8.22.0)                  | [node-postgres](https://github.com/brianc/node-postgres)              | MIT        | None; installed artifact is unmodified. |
+| `@types/pg`         |      `8.20.0` | [npm registry manifest](https://registry.npmjs.org/@types%2Fpg/8.20.0)         | [DefinitelyTyped](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT        | None; development types are unmodified. |
 
 Remit's adapter, trust-policy checks, canonical bindings, recovery seam, and
 tests are original event-window code outside those packages.

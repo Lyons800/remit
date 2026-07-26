@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "auth:migrate": "node --env-file-if-exists=.env.local scripts/migrate-auth.mjs",
     "build": "next build",
     "clean": "rm -rf .next",
     "dev": "next dev --port 3000",
@@ -14,10 +15,12 @@
     "@remit/persistence": "workspace:*",
     "@remit/world-adapter": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
+    "better-auth": "1.6.23",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.26.0",
     "next": "16.2.11",
+    "pg": "8.22.0",
     "postgres": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
@@ -26,6 +29,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pg": "8.20.0",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "typescript": "catalog:"
