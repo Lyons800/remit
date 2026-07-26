@@ -1843,15 +1843,17 @@ function atomicGroupKey(
   return `payment:${aggregate.authorization.envelope.actionDigest}:v${nextVersion}`;
 }
 
-export function deriveSettlementRequestEventId(
+export function deriveSettlementSubmissionEventId(
   attempt: FrozenSettlementAttempt,
-  eventAtomicGroupKey: string,
-  kind: 'SETTLEMENT_RETRY' | 'SETTLEMENT_SUBMISSION',
 ): string {
-  return derivePaymentDomainEventId(kind, {
+  return derivePaymentDomainEventId('SETTLEMENT_SUBMISSION', {
     actionDigest: attempt.actionDigest,
-    atomicGroupKey: eventAtomicGroupKey,
     attemptId: attempt.attemptId,
+    effectDigest: attempt.effectDigest,
+    idempotencyKey: attempt.idempotencyKey,
+    networkId: attempt.networkId,
+    signedBytesHash: attempt.signedBytesHash,
+    transactionId: attempt.transactionId,
   });
 }
 
@@ -2298,11 +2300,7 @@ function handleQueue(
         authorityFactDigest: requestingAgent.value.recordDigest,
         authorizationBasisDigest: basis.basisDigest,
         evidenceResultDigest: evidence.value?.recordDigest ?? null,
-        eventId: deriveSettlementRequestEventId(
-          attempt.value,
-          atomicGroupKey(aggregate),
-          'SETTLEMENT_SUBMISSION',
-        ),
+        eventId: deriveSettlementSubmissionEventId(attempt.value),
         idempotencyKey: attempt.value.idempotencyKey,
         type: 'SETTLEMENT_SUBMISSION_REQUEST',
       }),
@@ -2859,11 +2857,7 @@ export function transitionPaymentAction(
         authorityFactDigest: requestingAgent.value.recordDigest,
         authorizationBasisDigest: basis.basisDigest,
         evidenceResultDigest: evidence.value?.recordDigest ?? null,
-        eventId: deriveSettlementRequestEventId(
-          attempt,
-          atomicGroupKey(aggregate),
-          'SETTLEMENT_RETRY',
-        ),
+        eventId: deriveSettlementSubmissionEventId(attempt),
         idempotencyKey: attempt.idempotencyKey,
         requestingAgent: requestingAgent.value,
         type: 'SETTLEMENT_RETRY_REQUEST',

@@ -18,7 +18,7 @@ import {
   createPaymentActionAggregate,
   createRequestingAgentExecutionFact,
   deriveExecutionAuditEventId,
-  deriveSettlementRequestEventId,
+  deriveSettlementSubmissionEventId,
   deriveVerificationQuoteEventId,
   hydratePaymentActionAggregate,
   invoiceRevisionEvents,
@@ -697,11 +697,9 @@ describe('persisted payment-action aggregate', () => {
     const attempt = frozenAttempt(authorization, T5, {
       attemptId: 'a'.repeat(512),
     });
-    const group = `payment:${attempt.actionDigest}:v99`;
     const eventIds = [
       deriveExecutionAuditEventId(attempt),
-      deriveSettlementRequestEventId(attempt, group, 'SETTLEMENT_SUBMISSION'),
-      deriveSettlementRequestEventId(attempt, group, 'SETTLEMENT_RETRY'),
+      deriveSettlementSubmissionEventId(attempt),
     ];
 
     expect(eventIds.every(isPaymentDomainEventId)).toBe(true);
@@ -741,11 +739,7 @@ describe('persisted payment-action aggregate', () => {
         authorityFactDigest: queued.aggregate.executionAuthority?.recordDigest,
         authorizationBasisDigest: basis.basisDigest,
         evidenceResultDigest: null,
-        eventId: deriveSettlementRequestEventId(
-          attempt,
-          queued.atomicGroupKey,
-          'SETTLEMENT_SUBMISSION',
-        ),
+        eventId: deriveSettlementSubmissionEventId(attempt),
         idempotencyKey: attempt.idempotencyKey,
         type: 'SETTLEMENT_SUBMISSION_REQUEST',
       },
@@ -992,11 +986,7 @@ describe('persisted payment-action aggregate', () => {
         authorityFactDigest: queued.aggregate.executionAuthority?.recordDigest,
         authorizationBasisDigest: basis.basisDigest,
         evidenceResultDigest: queued.aggregate.evidenceResult?.recordDigest,
-        eventId: deriveSettlementRequestEventId(
-          attempt,
-          queued.atomicGroupKey,
-          'SETTLEMENT_SUBMISSION',
-        ),
+        eventId: deriveSettlementSubmissionEventId(attempt),
         idempotencyKey: attempt.idempotencyKey,
         type: 'SETTLEMENT_SUBMISSION_REQUEST',
       }),
@@ -1166,6 +1156,20 @@ describe('persisted payment-action aggregate', () => {
     if (!retried.ok) {
       throw new Error(`retry failed: ${retried.error.code}`);
     }
+    const initialSubmission = queued.effects[0];
+    const retrySubmission = retried.value.effects[0];
+    if (
+      initialSubmission === undefined ||
+      retrySubmission === undefined ||
+      !('eventId' in initialSubmission) ||
+      !('eventId' in retrySubmission)
+    ) {
+      throw new Error('settlement requests must carry event identities');
+    }
+    expect(retrySubmission.eventId).toBe(initialSubmission.eventId);
+    expect(retrySubmission.idempotencyKey).toBe(
+      initialSubmission.idempotencyKey,
+    );
     expect(retried.value).toMatchObject({
       aggregate: {
         settlementUncertainty: uncertainty,
@@ -1175,11 +1179,7 @@ describe('persisted payment-action aggregate', () => {
         {
           authorizationBasisDigest: recoveryBasis.basisDigest,
           attempt,
-          eventId: deriveSettlementRequestEventId(
-            attempt,
-            retried.value.atomicGroupKey,
-            'SETTLEMENT_RETRY',
-          ),
+          eventId: deriveSettlementSubmissionEventId(attempt),
           idempotencyKey: attempt.idempotencyKey,
           type: 'SETTLEMENT_RETRY_REQUEST',
         },
