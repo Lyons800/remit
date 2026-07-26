@@ -310,3 +310,53 @@ export function createWorldChainAgentBookResolver({
     },
   );
 }
+
+/** One agent wallet and the anonymous human AgentBook says stands behind it. */
+export type AgentHumanBacking = Readonly<{
+  address: string;
+  humanId: string | null;
+}>;
+
+/**
+ * Look up who backs each agent wallet, for administrative surfaces.
+ *
+ * Deliberately plain: it returns the raw AgentBook answer rather than a scoped
+ * principal, because the caller's job is to show an operator which agents share
+ * a human. Equality between two results is the whole signal.
+ *
+ * An unregistered agent — or a lookup that fails — resolves to `null`. Absence
+ * of a vouching human is a legitimate state, and a failed read must never be
+ * mistaken for one, so both fail closed to "cannot carry authority".
+ *
+ * Nothing here is cached. A stored "this agent is that human" would let anyone
+ * who reached our storage manufacture a quorum, which is the attack the whole
+ * product exists to prevent.
+ */
+export async function lookupAgentHumanBackings(
+  addresses: readonly string[],
+  options: Readonly<{ rpcUrl?: string; timeoutMs?: number }> = {},
+): Promise<readonly AgentHumanBacking[]> {
+  const timeoutMs = options.timeoutMs ?? 8_000;
+  const verifier = createAgentBookVerifier(
+    options.rpcUrl === undefined
+      ? { contractAddress: WORLD_AGENTBOOK_ADDRESS }
+      : { contractAddress: WORLD_AGENTBOOK_ADDRESS, rpcUrl: options.rpcUrl },
+  );
+
+  return Promise.all(
+    addresses.map(async (address): Promise<AgentHumanBacking> => {
+      if (!isAddress(address)) return { address, humanId: null };
+      try {
+        const humanId = await Promise.race([
+          verifier.lookupHuman(getAddress(address)),
+          new Promise<null>((resolve) => {
+            setTimeout(() => resolve(null), timeoutMs);
+          }),
+        ]);
+        return { address, humanId };
+      } catch {
+        return { address, humanId: null };
+      }
+    }),
+  );
+}
