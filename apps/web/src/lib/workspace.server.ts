@@ -2,6 +2,12 @@ import 'server-only';
 
 import postgres from 'postgres';
 
+import {
+  authConfigurationState,
+  canManageWorkspace,
+  WorkspaceAccessError,
+} from './workspace-access';
+
 /**
  * The demo organisation.
  *
@@ -33,6 +39,79 @@ export function isDatabaseConfigured(): boolean {
   return url !== undefined && url !== '';
 }
 
+type WorkspaceResolution = Readonly<{
+  canManage: boolean;
+  isDemo: boolean;
+  needsOnboarding: boolean;
+  organizationId: string;
+}>;
+
+async function authenticatedWorkspace(
+  requestHeaders: Headers,
+): Promise<WorkspaceResolution | null> {
+  const state = authConfigurationState();
+  if (state === 'absent') return null;
+  if (state === 'partial') {
+    throw new WorkspaceAccessError(
+      'Authentication is only partially configured.',
+      503,
+      'AUTH_NOT_CONFIGURED',
+    );
+  }
+
+  const auth = await import('./auth.server')
+    .then(({ getAuth }) => getAuth())
+    .catch(() => {
+      throw new WorkspaceAccessError(
+        'Authentication is unavailable.',
+        503,
+        'AUTH_UNAVAILABLE',
+      );
+    });
+
+  let session: Awaited<ReturnType<typeof auth.api.getSession>>;
+  try {
+    session = await auth.api.getSession({ headers: requestHeaders });
+  } catch {
+    throw new WorkspaceAccessError(
+      'Authentication is unavailable.',
+      503,
+      'AUTH_UNAVAILABLE',
+    );
+  }
+
+  if (session === null) return null;
+
+  const active = session.session.activeOrganizationId;
+  if (active === null || active === undefined || active === '') {
+    return {
+      canManage: false,
+      organizationId: DEMO_ORGANIZATION_ID,
+      isDemo: true,
+      needsOnboarding: true,
+    };
+  }
+
+  try {
+    const membership = await auth.api.getActiveMemberRole({
+      headers: requestHeaders,
+      query: { organizationId: active },
+    });
+    return {
+      canManage: canManageWorkspace(membership.role),
+      organizationId: active,
+      isDemo: false,
+      needsOnboarding: false,
+    };
+  } catch {
+    throw new WorkspaceAccessError(
+      'You are not a member of the active company workspace.',
+      403,
+      'MEMBERSHIP_REQUIRED',
+    );
+  }
+}
+
 /**
  * Which organisation the current request is acting for.
  *
@@ -50,35 +129,55 @@ export function isDatabaseConfigured(): boolean {
  * takes it as a parameter, so scoping happens here and nowhere else.
  */
 export async function resolveOrganizationId(headers: Headers): Promise<{
+  canManage: boolean;
   organizationId: string;
   isDemo: boolean;
   needsOnboarding: boolean;
 }> {
-  try {
-    const { getAuth } = await import('./auth.server');
-    const session = await getAuth().api.getSession({ headers });
-    if (session === null) {
-      return {
-        organizationId: DEMO_ORGANIZATION_ID,
-        isDemo: true,
-        needsOnboarding: false,
-      };
-    }
-    const active = session.session.activeOrganizationId;
-    if (active === null || active === undefined || active === '') {
-      return {
-        organizationId: DEMO_ORGANIZATION_ID,
-        isDemo: true,
-        needsOnboarding: true,
-      };
-    }
-    return { organizationId: active, isDemo: false, needsOnboarding: false };
-  } catch {
-    // Auth not configured in this environment — the demo remains reachable.
-    return {
+  const workspace = await authenticatedWorkspace(headers);
+  return (
+    workspace ?? {
+      canManage: false,
       organizationId: DEMO_ORGANIZATION_ID,
       isDemo: true,
       needsOnboarding: false,
-    };
+    }
+  );
+}
+
+export async function requireManagedOrganization(
+  headers: Headers,
+): Promise<{ organizationId: string }> {
+  if (authConfigurationState() === 'absent') {
+    throw new WorkspaceAccessError(
+      'Sign-in is not configured in this environment.',
+      503,
+      'AUTH_NOT_CONFIGURED',
+    );
   }
+
+  const workspace = await authenticatedWorkspace(headers);
+  if (workspace === null) {
+    throw new WorkspaceAccessError(
+      'Sign in to change the company workspace.',
+      401,
+      'SIGN_IN_REQUIRED',
+    );
+  }
+  if (workspace.needsOnboarding) {
+    throw new WorkspaceAccessError(
+      'Create or select a company workspace first.',
+      409,
+      'ONBOARDING_REQUIRED',
+    );
+  }
+  if (!workspace.canManage) {
+    throw new WorkspaceAccessError(
+      'Only a company owner or administrator can manage the roster.',
+      403,
+      'MEMBERSHIP_REQUIRED',
+    );
+  }
+
+  return { organizationId: workspace.organizationId };
 }

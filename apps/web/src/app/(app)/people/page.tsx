@@ -38,6 +38,8 @@ type IdentityMap = ReadonlyMap<string, Identity>;
 
 export default function PeoplePage() {
   const [people, setPeople] = useState<readonly Person[]>([]);
+  const [canManage, setCanManage] = useState(false);
+  const [isDemo, setIsDemo] = useState(true);
   const [identities, setIdentities] = useState<IdentityMap>(new Map());
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(false);
@@ -93,6 +95,8 @@ export default function PeoplePage() {
         return;
       }
       const data = (await response.json()) as {
+        canManage: boolean;
+        isDemo: boolean;
         people: {
           personId: string;
           displayName: string;
@@ -100,6 +104,8 @@ export default function PeoplePage() {
           role: PersonRole;
         }[];
       };
+      setCanManage(data.canManage);
+      setIsDemo(data.isDemo);
       const roster: Person[] = data.people.map((p) => ({
         id: p.personId,
         name: p.displayName,
@@ -143,6 +149,12 @@ export default function PeoplePage() {
   );
 
   async function addPerson(): Promise<void> {
+    if (!canManage) {
+      setError(
+        'Sign in as a company owner or administrator to change the roster.',
+      );
+      return;
+    }
     if (name.trim() === '') {
       setError('Give the person a name.');
       return;
@@ -173,6 +185,7 @@ export default function PeoplePage() {
   }
 
   async function changeRole(id: string, next: PersonRole): Promise<void> {
+    if (!canManage) return;
     setPeople((current) =>
       current.map((person) =>
         person.id === id ? { ...person, role: next } : person,
@@ -252,7 +265,16 @@ export default function PeoplePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Workspace</CardTitle>
+          <div>
+            <CardTitle>Workspace</CardTitle>
+            {canManage ? null : (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {isDemo
+                  ? 'Public demo data is read-only. Sign in and create a company to manage a roster.'
+                  : 'Only a company owner or administrator can change this roster.'}
+              </p>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -313,6 +335,7 @@ export default function PeoplePage() {
                     <TableCell>
                       <select
                         className="border border-border bg-background px-2 py-1 text-xs"
+                        disabled={!canManage}
                         onChange={(event) => {
                           const value = event.target.value;
                           void changeRole(
@@ -349,45 +372,52 @@ export default function PeoplePage() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col gap-3 md:flex-row md:items-end">
-            <label className="flex flex-1 flex-col gap-1 text-xs">
-              Name
-              <input
-                className="border border-border bg-background px-2 py-1.5 text-sm"
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Maria Santos"
-                value={name}
-              />
-            </label>
-            <label className="flex flex-[2] flex-col gap-1 text-xs">
-              Agent wallet or ENS name
-              <input
-                className="tabular border border-border bg-background px-2 py-1.5 text-sm"
-                onChange={(event) => setAddress(event.target.value)}
-                placeholder="maria.eth or 0x…"
-                value={address}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs">
-              Role
-              <select
-                className="border border-border bg-background px-2 py-1.5 text-sm"
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setRole(value === '' ? null : (value as PersonRole));
-                }}
-                value={role ?? ''}
-              >
-                <option value="">No approval rights</option>
-                {APPROVER_ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Button onClick={() => void addPerson()}>Add</Button>
-          </div>
+          {canManage ? (
+            <div className="flex flex-col gap-3 md:flex-row md:items-end">
+              <label className="flex flex-1 flex-col gap-1 text-xs">
+                Name
+                <input
+                  className="border border-border bg-background px-2 py-1.5 text-sm"
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Maria Santos"
+                  value={name}
+                />
+              </label>
+              <label className="flex flex-[2] flex-col gap-1 text-xs">
+                Agent wallet or ENS name
+                <input
+                  className="tabular border border-border bg-background px-2 py-1.5 text-sm"
+                  onChange={(event) => setAddress(event.target.value)}
+                  placeholder="maria.eth or 0x…"
+                  value={address}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs">
+                Role
+                <select
+                  className="border border-border bg-background px-2 py-1.5 text-sm"
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setRole(value === '' ? null : (value as PersonRole));
+                  }}
+                  value={role ?? ''}
+                >
+                  <option value="">No approval rights</option>
+                  {APPROVER_ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button onClick={() => void addPerson()}>Add</Button>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Sign in as a company owner or administrator to add people and
+              assign company roles.
+            </p>
+          )}
           {error === null ? null : (
             <p className="mt-2 text-xs text-destructive">{error}</p>
           )}

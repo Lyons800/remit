@@ -12,8 +12,10 @@ import { headers } from 'next/headers';
 import {
   DEMO_ORGANIZATION_ID,
   db,
+  requireManagedOrganization,
   resolveOrganizationId,
 } from '../../../lib/workspace.server';
+import { WorkspaceAccessError } from '../../../lib/workspace-access';
 
 /**
  * The workspace roster.
@@ -76,17 +78,19 @@ async function roster(
 
 export async function GET(): Promise<Response> {
   try {
-    const { organizationId, isDemo } = await resolveOrganizationId(
+    const { canManage, organizationId, isDemo } = await resolveOrganizationId(
       await headers(),
     );
     return Response.json(
-      { people: await roster(organizationId), isDemo },
+      { canManage, people: await roster(organizationId), isDemo },
       { headers: { 'cache-control': 'no-store' } },
     );
   } catch (error) {
+    const status =
+      error instanceof WorkspaceAccessError ? error.status : (503 as const);
     return Response.json(
       { error: error instanceof Error ? error.message : 'unavailable' },
-      { status: 503 },
+      { status },
     );
   }
 }
@@ -142,7 +146,9 @@ export async function POST(request: Request): Promise<Response> {
     typeof role === 'string' && ROLES.has(role) ? (role as PersonRole) : null;
 
   try {
-    const { organizationId } = await resolveOrganizationId(await headers());
+    const { organizationId } = await requireManagedOrganization(
+      await headers(),
+    );
     const person = await addWorkspacePerson(db(), organizationId, {
       personId: `p-${resolvedAddress.slice(2, 10).toLowerCase()}`,
       displayName,
@@ -151,6 +157,12 @@ export async function POST(request: Request): Promise<Response> {
     });
     return Response.json({ person }, { status: 201 });
   } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      return Response.json(
+        { code: error.code, error: error.message },
+        { status: error.status },
+      );
+    }
     const message = error instanceof Error ? error.message : 'insert failed';
     // A duplicate agent is a client mistake, not a server fault.
     const status = /unique|duplicate/i.test(message) ? 409 : 500;
@@ -182,7 +194,9 @@ export async function PATCH(request: Request): Promise<Response> {
     typeof role === 'string' && ROLES.has(role) ? (role as PersonRole) : null;
 
   try {
-    const { organizationId } = await resolveOrganizationId(await headers());
+    const { organizationId } = await requireManagedOrganization(
+      await headers(),
+    );
     const person = await setWorkspacePersonRole(
       db(),
       organizationId,
@@ -194,6 +208,12 @@ export async function PATCH(request: Request): Promise<Response> {
     }
     return Response.json({ person });
   } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      return Response.json(
+        { code: error.code, error: error.message },
+        { status: error.status },
+      );
+    }
     return Response.json(
       { error: error instanceof Error ? error.message : 'update failed' },
       { status: 500 },

@@ -24,7 +24,7 @@ export default async function SignInPage() {
       <Card className="w-full">
         <CardHeader>
           <p className="microlabel">Company workspace</p>
-          <CardTitle>Sign in to InvoiceGuard</CardTitle>
+          <CardTitle>Sign in to Remit</CardTitle>
           <p className="text-sm text-muted-foreground">
             Use your work Google account. Payment approval remains a separate,
             explicit authority check.

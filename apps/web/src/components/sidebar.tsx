@@ -82,7 +82,7 @@ function SidebarAccount({ isExpanded }: Readonly<{ isExpanded: boolean }>) {
     <div className="flex w-full items-center">
       <span className="flex w-[70px] shrink-0 items-center justify-center">
         <span className="flex h-8 w-8 items-center justify-center border border-border font-mono text-[10px] text-muted-foreground">
-          {initials(organizationName) || 'IG'}
+          {initials(organizationName) || 'R'}
         </span>
       </span>
       <span
@@ -130,7 +130,7 @@ export function Sidebar() {
         <div className="flex h-[70px] shrink-0 items-center border-b border-border">
           <Link className="pl-[23px]" href="/">
             <span className="flex h-6 w-6 items-center justify-center bg-primary font-mono text-xs font-semibold text-primary-foreground">
-              IG
+              R
             </span>
           </Link>
           <span
