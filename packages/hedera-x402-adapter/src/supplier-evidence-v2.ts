@@ -3,6 +3,7 @@ import { createHash, verify, type KeyObject } from 'node:crypto';
 import {
   createAdapterVerifiedEvidenceResult,
   createAdapterVerifiedVerificationPayment,
+  derivePaymentDomainEventId,
   parseAdapterVerifiedVerificationPayment,
   type AdapterVerifiedEvidenceResult,
   type AdapterVerifiedVerificationPayment,
@@ -494,12 +495,18 @@ function assertEffectBinding(
 ): AuthorizationBundleV1 {
   const authorization = verifyAuthorizationBundle(authorizationInput);
   const policy = authorization.decision.evidencePolicy;
+  const expectedEventId = derivePaymentDomainEventId('VERIFICATION_QUOTE', {
+    actionDigest: authorization.envelope.actionDigest,
+    evidencePolicyDigest: policy.digest,
+  });
   if (
     effect.type !== 'VERIFICATION_QUOTE_REQUEST' ||
     authorization.decision.verificationMode !== 'REQUIRED' ||
     effect.actionDigest !== authorization.envelope.actionDigest ||
     effect.evidencePolicyDigest !== policy.digest ||
+    effect.eventId !== expectedEventId ||
     effect.expiresAt !== authorization.actionCore.expiresAt ||
+    effect.idempotencyKey !== expectedEventId ||
     effect.serviceId !== policy.serviceId ||
     effect.serviceKeyId !== policy.serviceKeyId ||
     effect.serviceNetworkId !== policy.serviceNetworkId ||
