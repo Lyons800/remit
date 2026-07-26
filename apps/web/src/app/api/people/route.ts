@@ -1,3 +1,4 @@
+import { looksLikeEnsName, resolveEnsName } from '@remit/world-adapter';
 import {
   addWorkspacePerson,
   listWorkspacePeople,
@@ -13,7 +14,7 @@ import { DEMO_ORGANIZATION_ID, db } from '../../../lib/workspace.server';
  *
  * Only the organisation's own claims live here — a name, an agent wallet, and
  * a granted role. Which human backs a wallet is read from AgentBook at request
- * time by /api/agentbook and is never persisted, because a stored
+ * time by /api/identity and is never persisted, because a stored
  * agent-to-human mapping would let anyone who reached this database
  * manufacture a quorum.
  */
@@ -91,9 +92,33 @@ export async function POST(request: Request): Promise<Response> {
   if (typeof displayName !== 'string' || displayName.trim() === '') {
     return Response.json({ error: 'displayName is required' }, { status: 400 });
   }
-  if (typeof agentAddress !== 'string' || !ADDRESS.test(agentAddress.trim())) {
+  if (typeof agentAddress !== 'string' || agentAddress.trim() === '') {
     return Response.json(
-      { error: 'agentAddress must be a 0x-prefixed 20-byte address' },
+      { error: 'agentAddress is required' },
+      { status: 400 },
+    );
+  }
+
+  // An ENS name is accepted in place of an address. Resolving it here means an
+  // administrator types "maria.eth" rather than forty hex characters, which is
+  // the step where a mistyped address silently becomes a wallet nobody
+  // controls. The name is only ever a lookup key — what gets stored, and what
+  // AgentBook is later asked about, is the resolved address.
+  let resolvedAddress = agentAddress.trim();
+  if (looksLikeEnsName(resolvedAddress)) {
+    const resolved = await resolveEnsName(resolvedAddress);
+    if (resolved === null) {
+      return Response.json(
+        { error: `${resolvedAddress} does not resolve to an address` },
+        { status: 400 },
+      );
+    }
+    resolvedAddress = resolved;
+  }
+
+  if (!ADDRESS.test(resolvedAddress)) {
+    return Response.json(
+      { error: 'agentAddress must be an address or a resolvable ENS name' },
       { status: 400 },
     );
   }
@@ -102,9 +127,9 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const person = await addWorkspacePerson(db(), DEMO_ORGANIZATION_ID, {
-      personId: `p-${agentAddress.trim().slice(2, 10).toLowerCase()}`,
+      personId: `p-${resolvedAddress.slice(2, 10).toLowerCase()}`,
       displayName,
-      agentAddress,
+      agentAddress: resolvedAddress,
       role: nextRole,
     });
     return Response.json({ person }, { status: 201 });
