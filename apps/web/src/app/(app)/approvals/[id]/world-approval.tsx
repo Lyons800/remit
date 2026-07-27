@@ -21,24 +21,40 @@ import { Button } from '../../../../components/ui/button';
  */
 
 type Phase =
-  'error' | 'idle' | 'opening' | 'verified' | 'verifying' | 'waiting';
+  | 'error'
+  | 'idle'
+  | 'opening'
+  | 'paid'
+  | 'paying'
+  | 'verified'
+  | 'verifying'
+  | 'waiting';
+
+interface SettlementReceipt {
+  readonly consensusStatus: string;
+  readonly hashscanUrl: string;
+  readonly transactionId: string;
+}
 
 interface Properties {
   readonly actionDigest: string;
   readonly agentAddress: string;
   readonly approverLabel: string;
+  readonly invoiceId: string;
 }
 
 export function WorldApproval({
   actionDigest,
   agentAddress,
   approverLabel,
+  invoiceId,
 }: Properties) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [qr, setQr] = useState<string | null>(null);
   const [uri, setUri] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [verifiedAt, setVerifiedAt] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<SettlementReceipt | null>(null);
   const activeRequest = useRef<AbortController | null>(null);
 
   useEffect(
@@ -57,6 +73,7 @@ export function WorldApproval({
     setQr(null);
     setUri(null);
     setVerifiedAt(null);
+    setReceipt(null);
 
     try {
       const minted = await fetch('/api/approvals/request', {
@@ -159,12 +176,53 @@ export function WorldApproval({
 
       setVerifiedAt(verification.verifiedAt);
       setPhase('verified');
+
+      // The verified approval authorizes exactly one settlement. The server
+      // consumes the session before submitting, so a retry cannot double-pay.
+      setPhase('paying');
+      const settled = await fetch('/api/payments/execute', {
+        body: JSON.stringify({
+          actionDigest,
+          approvalSessionId: payload.approvalSessionId,
+          invoiceId,
+        }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+        signal: controller.signal,
+      });
+      const settlement = (await settled.json()) as {
+        consensusStatus?: string;
+        error?: string;
+        hashscanUrl?: string;
+        success?: boolean;
+        transactionId?: string;
+      };
+      if (
+        !settled.ok ||
+        settlement.success !== true ||
+        settlement.hashscanUrl === undefined ||
+        settlement.transactionId === undefined ||
+        settlement.consensusStatus === undefined
+      ) {
+        setPhase('error');
+        setMessage(
+          settlement.error ??
+            'The approval verified, but the settlement did not execute.',
+        );
+        return;
+      }
+      setReceipt({
+        consensusStatus: settlement.consensusStatus,
+        hashscanUrl: settlement.hashscanUrl,
+        transactionId: settlement.transactionId,
+      });
+      setPhase('paid');
     } catch (cause) {
       if (controller.signal.aborted) return;
       setPhase('error');
       setMessage(cause instanceof Error ? cause.message : 'Approval failed.');
     }
-  }, [actionDigest, agentAddress]);
+  }, [actionDigest, agentAddress, invoiceId]);
 
   return (
     <div className="flex flex-col gap-3 border border-border p-5">
@@ -224,7 +282,7 @@ export function WorldApproval({
         </p>
       ) : null}
 
-      {phase === 'verified' ? (
+      {phase === 'verified' || phase === 'paying' ? (
         <div className="flex flex-col gap-2">
           <Badge variant="default">World proof verified</Badge>
           <p className="text-xs text-muted-foreground">
@@ -234,9 +292,37 @@ export function WorldApproval({
               ? '.'
               : ` at ${new Date(verifiedAt).toLocaleTimeString()}.`}
           </p>
+          {phase === 'paying' ? (
+            <p className="text-sm text-muted-foreground">
+              Executing the supplier settlement on Hedera Testnet…
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {phase === 'paid' && receipt !== null ? (
+        <div className="flex flex-col gap-2">
+          <Badge variant="default">Paid — settled on Hedera</Badge>
           <p className="text-xs text-muted-foreground">
-            The local demo consumes the session in memory. It does not claim
-            that the proof has been admitted to the durable payment quorum.
+            A verified human approved this exact payment
+            {verifiedAt === null
+              ? ''
+              : ` at ${new Date(verifiedAt).toLocaleTimeString()}`}
+            , and only then did the settlement execute. Consensus status{' '}
+            {receipt.consensusStatus}.
+          </p>
+          <a
+            className="text-xs underline"
+            href={receipt.hashscanUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            View transaction {receipt.transactionId} on HashScan
+          </a>
+          <p className="text-xs text-muted-foreground">
+            The approval session is consumed: this settlement cannot run twice.
+            The demo settlement is a fixed testnet sum memo-bound to the action
+            digest; the invoice amount is narrative.
           </p>
         </div>
       ) : null}

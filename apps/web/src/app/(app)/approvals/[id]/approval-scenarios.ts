@@ -55,8 +55,60 @@ const scenarios: Readonly<Record<string, ApprovalScenario>> = {
   },
 };
 
+/**
+ * Any other INV-XXXX-XXXX id gets a generated scenario whose digests are
+ * derived from the id. World enforces one approval per human per exact
+ * action, so a repeatable demo needs each run to be a genuinely new payment:
+ * bump the invoice number in the URL and the action — and therefore the World
+ * approval — is fresh.
+ */
+const GENERATED_ID = /^INV-\d{4}-\d{4}$/;
+
+function derivedDigest(seed: string): string {
+  // FNV-1a over the seed, expanded to 64 hex chars. Deterministic so the
+  // page, the approval request and the settlement all agree, with no
+  // node:crypto import in a module a client bundle may reach.
+  let hash = 0x811c9dc5;
+  let out = '';
+  for (let round = 0; round < 8; round += 1) {
+    const input = `${seed}:${String(round)}`;
+    for (let index = 0; index < input.length; index += 1) {
+      hash ^= input.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    out += hash.toString(16).padStart(8, '0');
+  }
+  return out;
+}
+
+function generatedScenario(invoiceId: string): ApprovalScenario {
+  const suffix = invoiceId.slice(-4);
+  const amount = `€${(1000 + (Number(suffix) % 8000)).toLocaleString('en-IE')}.00`;
+  return {
+    actionDigest: derivedDigest(`remit-demo-action:${invoiceId}`),
+    amount,
+    changedActionDigest: derivedDigest(`remit-demo-changed:${invoiceId}`),
+    facts: [
+      ['Supplier', 'Padel Surfaces Lda (SUP-4471)'],
+      ['Amount', amount],
+      ['Account on file', 'PT50 0002 0123 …9015 4'],
+      ['Account on invoice', 'LT12 1000 1111 …1000', true],
+      ['Reference', `Generated demo payment ${invoiceId}`],
+      ['Expires', '24 Aug 2026'],
+    ],
+    invoiceId,
+    reason:
+      'The proposed account differs from the supplier baseline used by 14 illustrative history records.',
+    supplier: 'Padel Surfaces Lda',
+  };
+}
+
 export function findApprovalScenario(
   invoiceId: string,
 ): ApprovalScenario | undefined {
-  return scenarios[invoiceId];
+  const fixed = scenarios[invoiceId];
+  if (fixed !== undefined) return fixed;
+  return GENERATED_ID.test(invoiceId)
+    ? generatedScenario(invoiceId)
+    : undefined;
 }

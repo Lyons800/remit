@@ -22,6 +22,7 @@ export default async function ApprovalPage({ params }: ApprovalPageProperties) {
         actionDigest={scenario.actionDigest}
         agentAddress="0xA03F5F37Dcb5A16c317dbf88941c2049B9B96f34"
         approverLabel="A1"
+        invoiceId={scenario.invoiceId}
       />
     </div>
   );

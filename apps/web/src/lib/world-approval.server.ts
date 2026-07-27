@@ -59,7 +59,12 @@ const APPROVAL_TTL_MS = 5 * 60_000;
 const WORLD_VERIFY_TIMEOUT_MS = 12_000;
 const MAXIMUM_PENDING_APPROVALS = 64;
 
-type ApprovalStatus = 'failed' | 'pending' | 'verified' | 'verifying';
+type ApprovalStatus =
+  | 'executed'
+  | 'failed'
+  | 'pending'
+  | 'verified'
+  | 'verifying';
 
 interface PendingWorldApproval {
   readonly actionDigest: string;
@@ -145,7 +150,8 @@ function portalVerified(
   return value.results.some(
     (result) =>
       isRecord(result) &&
-      result.identifier === 'proof_of_human' &&
+      (result.identifier === 'proof_of_human' ||
+        result.identifier === 'orb') &&
       result.success === true &&
       typeof result.nullifier === 'string' &&
       result.nullifier.toLowerCase() === nullifier.toLowerCase(),
@@ -369,4 +375,39 @@ export async function verifyWorldApprovalProof(input: {
     ok: true,
     verifiedAt: now.toISOString(),
   });
+}
+
+export type ApprovalConsumptionResult =
+  | Readonly<{ ok: true; actionDigest: string }>
+  | Readonly<{
+      ok: false;
+      reason: 'ALREADY_EXECUTED' | 'DIGEST_MISMATCH' | 'NOT_VERIFIED';
+    }>;
+
+/**
+ * Consume a verified approval so it can authorize exactly one execution.
+ *
+ * The status flips to 'executed' before any payment is submitted, so a
+ * concurrent second call refuses rather than double-paying. Like the rest of
+ * this store, consumption is in-memory demo state, not durable authority.
+ */
+export function consumeVerifiedApproval(input: {
+  readonly approvalSessionId: string;
+  readonly actionDigest: string;
+}): ApprovalConsumptionResult {
+  const pending = approvalStore().pending.get(input.approvalSessionId);
+  if (pending === undefined || pending.status === 'failed') {
+    return { ok: false, reason: 'NOT_VERIFIED' };
+  }
+  if (pending.status === 'executed') {
+    return { ok: false, reason: 'ALREADY_EXECUTED' };
+  }
+  if (pending.status !== 'verified') {
+    return { ok: false, reason: 'NOT_VERIFIED' };
+  }
+  if (pending.actionDigest !== input.actionDigest) {
+    return { ok: false, reason: 'DIGEST_MISMATCH' };
+  }
+  pending.status = 'executed';
+  return { ok: true, actionDigest: pending.actionDigest };
 }
