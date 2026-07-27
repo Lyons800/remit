@@ -17,5 +17,8 @@
   },
   "devDependencies": {
     "typescript": "catalog:"
+  },
+  "dependencies": {
+    "@hiero-ledger/sdk": "2.85.0"
   }
 }

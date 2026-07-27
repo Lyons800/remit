@@ -167,9 +167,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.115.0
         version: 0.115.0(zod@4.4.3)
-      '@hiero-ledger/sdk':
-        specifier: 2.85.0
-        version: 2.85.0(bn.js@5.2.3)(react-native@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.8)(supports-color@8.1.1))(supports-color@8.1.1)
+      '@remit/hedera-settlement-adapter':
+        specifier: workspace:*
+        version: link:../../packages/hedera-settlement-adapter
       '@remit/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
@@ -252,6 +252,10 @@ importers:
         version: 6.0.3
 
   packages/hedera-settlement-adapter:
+    dependencies:
+      '@hiero-ledger/sdk':
+        specifier: 2.85.0
+        version: 2.85.0(bn.js@5.2.3)(react-native@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.8)(supports-color@8.1.1))(supports-color@8.1.1)
     devDependencies:
       typescript:
         specifier: 'catalog:'
