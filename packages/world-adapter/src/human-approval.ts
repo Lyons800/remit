@@ -751,7 +751,7 @@ export function validateWorldProofOfHumanResult(
 
   if (
     !isRecord(proof) ||
-    proof.protocol_version !== '4.0' ||
+    (proof.protocol_version !== '4.0' && proof.protocol_version !== '3.0') ||
     'session_id' in proof
   ) {
     return Object.freeze({ ok: false, reason: 'PROTOCOL_MISMATCH' });
@@ -780,19 +780,37 @@ export function validateWorldProofOfHumanResult(
   if (response.signal_hash !== request.expectedSignalHash) {
     return Object.freeze({ ok: false, reason: 'SIGNAL_MISMATCH' });
   }
-  if (
-    response.identifier !== 'proof_of_human' ||
-    response.issuer_schema_id !== PROOF_OF_HUMAN_ISSUER_SCHEMA_ID ||
-    parseNonzeroUint256(response.nullifier) === null ||
-    typeof response.expires_at_min !== 'number' ||
-    !Number.isSafeInteger(response.expires_at_min) ||
-    response.expires_at_min <= 0 ||
-    !Array.isArray(response.proof) ||
-    response.proof.length !== 5 ||
-    !response.proof.every(
-      (item) => typeof item === 'string' && HEX_IDENTIFIER_PATTERN.test(item),
-    )
-  ) {
+  // World App answers with whichever credential format it holds: the 4.0
+  // proof_of_human schema, or the 3.0 orb credential (merkle_root plus a
+  // single ZK proof blob). Both carry the same binding — action, nonce and
+  // signal_hash are checked above — and World's verifier accepts either, so
+  // this only checks the fields each format actually has.
+  if (response.identifier === 'proof_of_human') {
+    if (
+      response.issuer_schema_id !== PROOF_OF_HUMAN_ISSUER_SCHEMA_ID ||
+      parseNonzeroUint256(response.nullifier) === null ||
+      typeof response.expires_at_min !== 'number' ||
+      !Number.isSafeInteger(response.expires_at_min) ||
+      response.expires_at_min <= 0 ||
+      !Array.isArray(response.proof) ||
+      response.proof.length !== 5 ||
+      !response.proof.every(
+        (item) => typeof item === 'string' && HEX_IDENTIFIER_PATTERN.test(item),
+      )
+    ) {
+      return Object.freeze({ ok: false, reason: 'CREDENTIAL_INVALID' });
+    }
+  } else if (response.identifier === 'orb') {
+    if (
+      parseNonzeroUint256(response.nullifier) === null ||
+      typeof response.merkle_root !== 'string' ||
+      !HEX_IDENTIFIER_PATTERN.test(response.merkle_root) ||
+      typeof response.proof !== 'string' ||
+      !HEX_IDENTIFIER_PATTERN.test(response.proof)
+    ) {
+      return Object.freeze({ ok: false, reason: 'CREDENTIAL_INVALID' });
+    }
+  } else {
     return Object.freeze({ ok: false, reason: 'CREDENTIAL_INVALID' });
   }
 
