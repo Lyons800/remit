@@ -27,7 +27,10 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "tailwind-merge": "^3.6.0",
-    "tailwindcss": "^4.3.3"
+    "tailwindcss": "^4.3.3",
+    "@anthropic-ai/sdk": "^0.115.0",
+    "zod": "catalog:",
+    "@remit/protocol": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

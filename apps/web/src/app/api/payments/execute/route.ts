@@ -1,8 +1,16 @@
 import {
+  getInvoice,
+  recordSettledSupplierInvoice,
+  setInvoiceOutcome,
+} from '@remit/persistence';
+import { headers } from 'next/headers';
+
+import {
   executeSupplierSettlement,
   isHederaPaymentConfigured,
 } from '../../../../lib/hedera-payment.server';
 import { consumeVerifiedApproval } from '../../../../lib/world-approval.server';
+import { db, resolveOrganizationId } from '../../../../lib/workspace.server';
 
 /**
  * Execute the payment a verified World approval authorized.
@@ -90,6 +98,31 @@ export async function POST(request: Request): Promise<Response> {
       actionDigest,
       invoiceId,
     });
+
+    // Settle the invoice record and teach the supplier baseline. The human
+    // just approved these exact details, which is precisely what makes them
+    // trustworthy enough to become the supplier's reference account.
+    const { organizationId } = await resolveOrganizationId(await headers());
+    const sql = db();
+    const invoice = await getInvoice(sql, organizationId, invoiceId);
+    if (invoice !== undefined && invoice.actionDigest === actionDigest) {
+      await setInvoiceOutcome(sql, {
+        invoiceId,
+        settlement: { ...receipt },
+        status: 'settled',
+      });
+      if (invoice.supplierKey !== null && invoice.supplierName !== null) {
+        await recordSettledSupplierInvoice(sql, {
+          displayName: invoice.supplierName,
+          iban: invoice.iban,
+          organizationId,
+          supplierKey: invoice.supplierKey,
+          taxId: null,
+          totalCents: invoice.totalCents ?? 0,
+        });
+      }
+    }
+
     return Response.json(
       { success: true, ...receipt },
       { headers: { 'cache-control': 'no-store' } },
