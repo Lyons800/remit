@@ -15,7 +15,7 @@
     "@remit/persistence": "workspace:*",
     "@remit/world-adapter": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
-    "better-auth": "1.6.23",
+    "better-auth": "1.6.25",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.26.0",
