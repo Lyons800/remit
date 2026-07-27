@@ -1,232 +1,108 @@
+import { listInvoices, listSuppliers } from '@remit/persistence';
+import { headers } from 'next/headers';
 import Link from 'next/link';
 
-import { HederaEvidenceSummary } from '../../../components/hedera-evidence';
 import { Badge } from '../../../components/ui/badge';
-import { Button } from '../../../components/ui/button';
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from '../../../components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../../components/ui/table';
-import { auditEvents, dayInvoices, initialQueue } from '../../../lib/demo';
-import { loadHederaEvidence } from '../../../lib/mirror-evidence.server';
+import { db, resolveOrganizationId } from '../../../lib/workspace.server';
+
+/** Real numbers only: what came in, what settled, what is waiting on a human. */
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const evidence = await loadHederaEvidence();
-  const scenario = [...dayInvoices, ...initialQueue];
-  const held = scenario.filter(
-    (invoice) => invoice.status === 'review_required',
+  const { organizationId } = await resolveOrganizationId(await headers());
+  const sql = db();
+  const [invoices, suppliers] = await Promise.all([
+    listInvoices(sql, organizationId),
+    listSuppliers(sql, organizationId),
+  ]);
+
+  const blocked = invoices.filter((invoice) => invoice.status === 'blocked');
+  const settled = invoices.filter((invoice) => invoice.status === 'settled');
+  const settledCents = settled.reduce(
+    (sum, invoice) => sum + (invoice.totalCents ?? 0),
+    0,
   );
-  const eligible = scenario.filter(
-    (invoice) => invoice.status === 'policy_eligible',
-  );
-  const evidenceLabel = {
-    mismatch: 'Mismatch',
-    unavailable: 'Unavailable',
-    verified: 'Live',
-  }[evidence.status];
-  const kpis = [
-    {
-      hint: 'clearly labelled fixtures',
-      label: 'Scenario invoices',
-      value: String(scenario.length),
-    },
-    {
-      hint: 'no payment initiated',
-      label: 'Policy eligible',
-      value: String(eligible.length),
-    },
-    {
-      hint: 'awaiting scenario review',
-      label: 'Review required',
-      value: String(held.length),
-    },
-    {
-      hint: 'public Mirror Node',
-      label: 'Live evidence',
-      value: evidence.status === 'verified' ? 'Verified' : evidenceLabel,
-    },
-  ] as const;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            A product scenario beside independently verified public evidence.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link href="/sign-in">
-            <Button variant="outline">Company sign in</Button>
-          </Link>
-          <Link href="/invoices">
-            <Button variant="outline">Open demo queue</Button>
-          </Link>
-        </div>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
+        <p className="text-sm text-muted-foreground">
+          Agents pay the routine invoices; you decide the flagged ones.
+        </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {kpis.map((kpi) => (
-          <Card key={kpi.label}>
-            <CardContent className="py-3">
-              <p className="text-xs text-muted-foreground">{kpi.label}</p>
-              <p className="tabular text-2xl font-semibold">{kpi.value}</p>
-              <p className="text-xs text-muted-foreground">{kpi.hint}</p>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <Card>
+          <CardContent className="py-3">
+            <p className="text-xs text-muted-foreground">Invoices received</p>
+            <p className="tabular text-2xl font-semibold">{invoices.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3">
+            <p className="text-xs text-muted-foreground">Awaiting your approval</p>
+            <p className="tabular text-2xl font-semibold">{blocked.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3">
+            <p className="text-xs text-muted-foreground">Settled</p>
+            <p className="tabular text-2xl font-semibold">{settled.length}</p>
+            <p className="text-xs text-muted-foreground">
+              {(settledCents / 100).toLocaleString('en-IE', {
+                minimumFractionDigits: 2,
+              })}{' '}
+              total
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3">
+            <p className="text-xs text-muted-foreground">Supplier baselines</p>
+            <p className="tabular text-2xl font-semibold">{suppliers.length}</p>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <div>
-            <CardTitle>Needs a decision</CardTitle>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Synthetic product scenario · no live authority or payment
-            </p>
-          </div>
-          <Badge variant="destructive">{held.length} review</Badge>
+        <CardHeader>
+          <CardTitle>Needs you</CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
-          <div className="divide-y divide-border sm:hidden">
-            {held.map((invoice) => (
-              <div className="bg-destructive/5 p-4" key={invoice.id}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs text-muted-foreground">
-                      {invoice.id}
-                    </p>
-                    <p className="font-medium">{invoice.supplier}</p>
-                  </div>
-                  <p className="tabular font-medium whitespace-nowrap">
-                    {invoice.amount}
-                  </p>
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {invoice.handledBy}
-                </p>
-                <Link className="mt-3 block" href={`/approvals/${invoice.id}`}>
-                  <Button className="w-full" size="sm" variant="secondary">
-                    Review {invoice.id}
-                  </Button>
+        <CardContent className="flex flex-col gap-2 text-sm">
+          {blocked.length === 0 ? (
+            <p className="text-muted-foreground">
+              Nothing is waiting on a human right now.{' '}
+              <Link className="underline" href="/invoices">
+                Upload an invoice
+              </Link>{' '}
+              to put the pipeline to work.
+            </p>
+          ) : (
+            blocked.map((invoice) => (
+              <div
+                className="flex items-center justify-between gap-3"
+                key={invoice.invoiceId}
+              >
+                <Link className="underline" href={`/invoices/${invoice.invoiceId}`}>
+                  {invoice.supplierName ?? invoice.originalFilename}
+                  {invoice.invoiceNumber === null
+                    ? ''
+                    : ` · ${invoice.invoiceNumber}`}
                 </Link>
+                <Badge variant="destructive">blocked</Badge>
               </div>
-            ))}
-          </div>
-          <div className="hidden sm:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Invoice</TableHead>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Why it stopped</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {held.map((invoice) => (
-                  <TableRow className="bg-destructive/5" key={invoice.id}>
-                    <TableCell className="font-medium">{invoice.id}</TableCell>
-                    <TableCell>{invoice.supplier}</TableCell>
-                    <TableCell className="tabular text-right">
-                      {invoice.amount}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {invoice.handledBy}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Link href={`/approvals/${invoice.id}`}>
-                        <Button size="sm" variant="secondary">
-                          Review
-                        </Button>
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+            ))
+          )}
         </CardContent>
       </Card>
-
-      <HederaEvidenceSummary result={evidence} />
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>Scenario control trace</CardTitle>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Illustrative outcomes, not an audit export
-              </p>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <ol className="flex flex-col gap-2 text-sm">
-              {auditEvents.slice(0, 4).map((event) => (
-                <li
-                  className={`border-l-2 pl-3 text-xs leading-relaxed ${
-                    event.kind === 'refuse'
-                      ? 'border-destructive'
-                      : 'border-primary'
-                  }`}
-                  key={event.text}
-                >
-                  <span className="text-muted-foreground">{event.at} · </span>
-                  {event.text}
-                </li>
-              ))}
-            </ol>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>What is connected today</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3 text-sm">
-            <StatusRow label="Hedera x402 transfer" status={evidenceLabel} />
-            <StatusRow label="HTS marker lifecycle" status={evidenceLabel} />
-            <StatusRow label="World authority" status="Offline contract" />
-            <StatusRow label="Supplier settlement" status="Not demonstrated" />
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-function StatusRow({
-  label,
-  status,
-}: Readonly<{ label: string; status: string }>) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-border pb-3 last:border-b-0 last:pb-0">
-      <span>{label}</span>
-      <Badge
-        variant={
-          status === 'Live'
-            ? 'default'
-            : status === 'Mismatch'
-              ? 'destructive'
-              : 'outline'
-        }
-      >
-        {status}
-      </Badge>
     </div>
   );
 }

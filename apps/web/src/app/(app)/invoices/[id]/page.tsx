@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 
 import { Badge } from '../../../../components/ui/badge';
 import { db, resolveOrganizationId } from '../../../../lib/workspace.server';
-import { WorldApproval } from '../../approvals/[id]/world-approval';
+import { WorldApproval } from '../../../../components/world-approval';
 
 /**
  * One uploaded invoice: what the AI read, what the checks found, and — when

@@ -7,9 +7,7 @@ import {
   LogIn,
   LogOut,
   ReceiptText,
-  ScrollText,
   Users,
-  ShieldCheck,
   SlidersHorizontal,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -25,16 +23,9 @@ import { cn } from '../lib/utils';
 const items = [
   { href: '/dashboard', icon: LayoutGrid, label: 'Overview' },
   { href: '/invoices', icon: ReceiptText, label: 'Invoices' },
-  {
-    href: '/approvals/INV-2026-0912',
-    icon: ShieldCheck,
-    label: 'Approvals',
-    match: '/approvals',
-  },
   { href: '/people', icon: Users, label: 'People' },
   { href: '/suppliers', icon: Building2, label: 'Suppliers' },
   { href: '/payments', icon: ArrowLeftRight, label: 'Payments' },
-  { href: '/audit', icon: ScrollText, label: 'Evidence' },
   { href: '/policies', icon: SlidersHorizontal, label: 'Policies' },
 ] as const;
 
@@ -146,9 +137,7 @@ export function Sidebar() {
         <nav className="mb-3 flex w-full flex-1 flex-col gap-1 overflow-hidden border-b border-border pt-4">
           {items.map((item) => {
             const active =
-              'match' in item
-                ? pathname.startsWith(item.match)
-                : pathname === item.href;
+              pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
             return (
               <Link
@@ -185,13 +174,11 @@ export function Sidebar() {
 
       <nav
         aria-label="Primary navigation"
-        className="fixed right-0 bottom-0 left-0 z-50 grid h-14 grid-cols-8 border-t border-border bg-background md:hidden"
+        className="fixed right-0 bottom-0 left-0 z-50 grid h-14 grid-cols-6 border-t border-border bg-background md:hidden"
       >
         {items.map((item) => {
           const active =
-            'match' in item
-              ? pathname.startsWith(item.match)
-              : pathname === item.href;
+            pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
           return (
             <Link

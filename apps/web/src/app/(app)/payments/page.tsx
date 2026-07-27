@@ -1,5 +1,8 @@
+import { listInvoices } from '@remit/persistence';
+import { headers } from 'next/headers';
+import Link from 'next/link';
+
 import { HederaEvidenceDetail } from '../../../components/hedera-evidence';
-import { Badge } from '../../../components/ui/badge';
 import {
   Card,
   CardContent,
@@ -7,11 +10,19 @@ import {
   CardTitle,
 } from '../../../components/ui/card';
 import { loadHederaEvidence } from '../../../lib/mirror-evidence.server';
+import { db, resolveOrganizationId } from '../../../lib/workspace.server';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PaymentsPage() {
-  const evidence = await loadHederaEvidence();
+  const [evidence, settled] = await Promise.all([
+    loadHederaEvidence(),
+    (async () => {
+      const { organizationId } = await resolveOrganizationId(await headers());
+      const invoices = await listInvoices(db(), organizationId);
+      return invoices.filter((invoice) => invoice.status === 'settled');
+    })(),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -20,29 +31,56 @@ export default async function PaymentsPage() {
           Payments & ledger evidence
         </h1>
         <p className="max-w-3xl text-sm text-muted-foreground">
-          Public Hedera Testnet facts are live. Supplier invoice settlement is
-          not: the x402 HBAR transfer paid a test verification service, and the
-          HTS NFT is an audited no-value lifecycle marker.
+          Every settlement below is a real Hedera Testnet transaction,
+          memo-bound to the invoice&apos;s action digest and publicly checkable
+          on HashScan. Amounts settle as fixed testnet sums — the euro figures
+          are the invoices&apos; face values.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Claim boundary</CardTitle>
+          <CardTitle>Settled invoices</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 text-sm md:grid-cols-3">
-          <div className="border border-border p-3">
-            <Badge>Demonstrated</Badge>
-            <p className="mt-2">Three-party x402 HBAR transfer on Testnet</p>
-          </div>
-          <div className="border border-border p-3">
-            <Badge>Demonstrated</Badge>
-            <p className="mt-2">Treasury-held HTS NFT create, mint, and burn</p>
-          </div>
-          <div className="border border-border p-3">
-            <Badge variant="destructive">Not demonstrated</Badge>
-            <p className="mt-2">Supplier payment or canonical AP execution</p>
-          </div>
+        <CardContent className="flex flex-col gap-2 text-sm">
+          {settled.length === 0 ? (
+            <p className="text-muted-foreground">No settlements yet.</p>
+          ) : (
+            settled.map((invoice) => {
+              const receipt = invoice.settlement as {
+                hashscanUrl?: string;
+                transactionId?: string;
+              } | null;
+              return (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3"
+                  key={invoice.invoiceId}
+                >
+                  <Link className="underline" href={`/invoices/${invoice.invoiceId}`}>
+                    {invoice.supplierName ?? invoice.originalFilename}
+                    {invoice.invoiceNumber === null
+                      ? ''
+                      : ` · ${invoice.invoiceNumber}`}
+                  </Link>
+                  <span className="tabular">
+                    {invoice.totalCents === null
+                      ? '—'
+                      : `${(invoice.totalCents / 100).toLocaleString('en-IE', { minimumFractionDigits: 2 })} ${invoice.currency ?? ''}`}
+                  </span>
+                  {receipt?.hashscanUrl === undefined ? null : (
+                    <a
+                      className="text-xs underline"
+                      href={receipt.hashscanUrl}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {receipt.transactionId} on HashScan
+                    </a>
+                  )}
+                </div>
+              );
+            })
+          )}
         </CardContent>
       </Card>
 

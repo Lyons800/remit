@@ -365,3 +365,34 @@ export async function recordSettledSupplierInvoice(
       updated_at = transaction_timestamp()
   `;
 }
+
+export async function listSuppliers(
+  sql: postgres.Sql,
+  organizationId: string,
+): Promise<readonly SupplierBaseline[]> {
+  const rows = await sql<
+    readonly Readonly<{
+      supplier_key: string;
+      display_name: string;
+      tax_id: string | null;
+      iban: string | null;
+      invoice_count: number;
+      total_cents: string;
+    }>[]
+  >`
+    SELECT supplier_key, display_name, tax_id, iban, invoice_count,
+           total_cents::text AS total_cents
+    FROM suppliers
+    WHERE organization_id = ${organizationId}
+    ORDER BY updated_at DESC
+    LIMIT 200
+  `;
+  return rows.map((row) => ({
+    displayName: row.display_name,
+    iban: row.iban,
+    invoiceCount: row.invoice_count,
+    supplierKey: row.supplier_key,
+    taxId: row.tax_id,
+    totalCents: Number(row.total_cents),
+  }));
+}

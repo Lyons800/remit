@@ -5,38 +5,71 @@ import {
   CardHeader,
   CardTitle,
 } from '../../../components/ui/card';
-import { POLICY_VERSION, policyRules } from '../../../lib/demo';
+
+/**
+ * The rules the pipeline actually enforces — this page documents the
+ * implemented checks, not an aspiration.
+ */
+
+const CHECKS = [
+  [
+    'Arithmetic',
+    'Line items must sum to the subtotal; VAT must equal rate × subtotal; subtotal + VAT must equal the total (±2 cents rounding).',
+    'critical',
+  ],
+  [
+    'IBAN checksum',
+    'The payee IBAN must pass its ISO 13616 mod-97 checksum. A typo or fabricated account fails structurally.',
+    'critical',
+  ],
+  [
+    'Supplier baseline',
+    'The first settled invoice establishes the supplier’s account. A later invoice naming a different IBAN is blocked — the classic redirection fraud.',
+    'critical',
+  ],
+  [
+    'Duplicates',
+    'The identical document is refused outright; a re-used invoice number from the same supplier is blocked.',
+    'critical',
+  ],
+  [
+    'Readability',
+    'Fields the AI could not read reliably are flagged for human eyes rather than silently trusted.',
+    'warning',
+  ],
+  [
+    'Amount anomaly',
+    'A total more than 3× the supplier’s historical average is flagged.',
+    'warning',
+  ],
+] as const;
 
 export default function PoliciesPage() {
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center gap-3">
+      <div>
         <h1 className="text-2xl font-semibold tracking-tight">Policies</h1>
-        <Badge variant="outline">version {POLICY_VERSION}</Badge>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Every uploaded invoice passes these deterministic checks. A clean
+          invoice under €500 from an established supplier settles straight
+          through; anything flagged — and every first invoice from a new
+          supplier — waits for a World-verified human.
+        </p>
       </div>
-      <p className="max-w-2xl text-sm text-muted-foreground">
-        Illustrative versioned routing rules. The committed protocol binds a
-        policy decision into the canonical action digest; this page does not
-        execute that protocol.
-      </p>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {policyRules.map((rule) => (
-          <Card key={rule.trigger}>
+      <div className="grid gap-4 md:grid-cols-2">
+        {CHECKS.map(([title, description, severity]) => (
+          <Card key={title}>
             <CardHeader>
-              <CardTitle className="text-sm">{rule.trigger}</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle>{title}</CardTitle>
+                <Badge variant={severity === 'critical' ? 'destructive' : 'warning'}>
+                  {severity}
+                </Badge>
+              </div>
             </CardHeader>
-            <CardContent className="flex flex-col gap-2">
-              <Badge
-                variant={
-                  rule.outcome.startsWith('Eligible')
-                    ? 'default'
-                    : 'destructive'
-                }
-              >
-                {rule.outcome}
-              </Badge>
-              <p className="text-sm text-muted-foreground">{rule.rationale}</p>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">{description}</p>
             </CardContent>
           </Card>
         ))}
@@ -44,23 +77,13 @@ export default function PoliciesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Approval requirements once held</CardTitle>
+          <CardTitle>What approval means</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2 text-sm text-muted-foreground">
-          <p>
-            The product rule requires two independently admitted backing classes
-            and action-time human decisions. The current World integration is an
-            offline contract, not live authority.
-          </p>
-          <p>
-            Each approval is designed to bind the canonical bare 64-hex action
-            digest. Changing one request field creates a different action.
-          </p>
-          <p>
-            Company roles come from the company&apos;s credential issuer. World
-            human backing would remain an independent fact, never a job title or
-            treasury grant.
-          </p>
+        <CardContent className="text-sm text-muted-foreground">
+          Approving a blocked invoice is a World proof-of-personhood bound to
+          that exact payment’s digest — not a role, not a password. One
+          approval settles at most one payment, and a deliberately approved
+          account change becomes the supplier’s new baseline.
         </CardContent>
       </Card>
     </div>
