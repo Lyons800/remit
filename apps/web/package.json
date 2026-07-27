@@ -18,7 +18,7 @@
     "better-auth": "1.6.23",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "^1.26.0",
+    "lucide-react": "^1.27.0",
     "next": "16.2.11",
     "pg": "8.22.0",
     "postgres": "catalog:",
