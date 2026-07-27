@@ -78,3 +78,14 @@ export async function applyWorkspacePeopleMigration(
 ): Promise<MigrationResult> {
   return applyNamedMigration(sql, WORKSPACE_PEOPLE_MIGRATION_ID, migrationSql);
 }
+
+export async function applyWorldApprovalSessionsMigration(
+  sql: postgres.Sql,
+  migrationSql: string,
+): Promise<MigrationResult> {
+  return applyNamedMigration(
+    sql,
+    '0003_world_approval_sessions.sql',
+    migrationSql,
+  );
+}

@@ -6,22 +6,29 @@ import {
   mintApprovalRequest,
   verifyWorldApprovalProof,
 } from './world-approval.server.js';
+import { inMemoryWorldApprovalStore } from './world-approval-store.server.js';
 
 const ADDRESS = '0xA03F5F37Dcb5A16c317dbf88941c2049B9B96f34';
 
+// One store per test run; the state machine is what these tests exercise.
+let store = inMemoryWorldApprovalStore();
+
 function mint(actionDigest: string) {
-  return mintApprovalRequest({
-    actionDigest,
-    agentAddress: ADDRESS,
-    humanId: '0x1234',
-    organizationId: `test-org-${actionDigest.slice(0, 8)}`,
-    requiredRole: 'TREASURY_APPROVER',
-    roleGrantId: `grant-${actionDigest.slice(0, 8)}`,
-    subjectId: `subject-${actionDigest.slice(0, 8)}`,
-  });
+  return mintApprovalRequest(
+    {
+      actionDigest,
+      agentAddress: ADDRESS,
+      humanId: '0x1234',
+      organizationId: `test-org-${actionDigest.slice(0, 8)}`,
+      requiredRole: 'TREASURY_APPROVER',
+      roleGrantId: `grant-${actionDigest.slice(0, 8)}`,
+      subjectId: `subject-${actionDigest.slice(0, 8)}`,
+    },
+    store,
+  );
 }
 
-function proofFor(minted: ReturnType<typeof mintApprovalRequest>) {
+function proofFor(minted: Awaited<ReturnType<typeof mintApprovalRequest>>) {
   const config = minted.config as { rp_context: { nonce: string } };
   return {
     action: minted.worldActionId,
@@ -58,6 +65,7 @@ function verifiedPortal(proof: ReturnType<typeof proofFor>) {
 }
 
 beforeEach(() => {
+  store = inMemoryWorldApprovalStore();
   vi.stubEnv('WORLD_APP_ID', 'app_invoiceguard');
   vi.stubEnv('WORLD_RP_ID', 'rp_invoiceguard');
   vi.stubEnv(
@@ -73,7 +81,7 @@ afterEach(() => {
 
 describe('World browser approval verification', () => {
   it('forwards the exact IDKit result and consumes the demo session', async () => {
-    const minted = mint('1'.repeat(64));
+    const minted = await mint('1'.repeat(64));
     const proof = proofFor(minted);
     const fetcher = vi.fn(
       async (_input: string | URL | Request, init?: RequestInit) => {
@@ -83,6 +91,7 @@ describe('World browser approval verification', () => {
     ) as unknown as typeof fetch;
 
     const first = await verifyWorldApprovalProof({
+      store,
       approvalSessionId: minted.approvalSessionId,
       fetcher,
       organizationId: 'test-org-11111111',
@@ -97,6 +106,7 @@ describe('World browser approval verification', () => {
     expect(fetcher).toHaveBeenCalledOnce();
     await expect(
       verifyWorldApprovalProof({
+        store,
         approvalSessionId: minted.approvalSessionId,
         fetcher,
         organizationId: 'test-org-11111111',
@@ -106,12 +116,13 @@ describe('World browser approval verification', () => {
   });
 
   it('refuses a mismatched signal without calling World', async () => {
-    const minted = mint('2'.repeat(64));
+    const minted = await mint('2'.repeat(64));
     const proof = proofFor(minted);
     const fetcher = vi.fn() as unknown as typeof fetch;
 
     await expect(
       verifyWorldApprovalProof({
+        store,
         approvalSessionId: minted.approvalSessionId,
         fetcher,
         organizationId: 'test-org-22222222',
@@ -127,7 +138,7 @@ describe('World browser approval verification', () => {
   });
 
   it('allows a retry when the World verifier is temporarily unavailable', async () => {
-    const minted = mint('3'.repeat(64));
+    const minted = await mint('3'.repeat(64));
     const proof = proofFor(minted);
     const unavailable = vi.fn(async () => {
       throw new Error('offline');
@@ -135,6 +146,7 @@ describe('World browser approval verification', () => {
 
     await expect(
       verifyWorldApprovalProof({
+        store,
         approvalSessionId: minted.approvalSessionId,
         fetcher: unavailable,
         organizationId: 'test-org-33333333',
@@ -147,6 +159,7 @@ describe('World browser approval verification', () => {
     ) as unknown as typeof fetch;
     await expect(
       verifyWorldApprovalProof({
+        store,
         approvalSessionId: minted.approvalSessionId,
         fetcher: recovered,
         organizationId: 'test-org-33333333',
@@ -156,7 +169,7 @@ describe('World browser approval verification', () => {
   });
 
   it('keeps the session retryable when World rate-limits verification', async () => {
-    const minted = mint('4'.repeat(64));
+    const minted = await mint('4'.repeat(64));
     const proof = proofFor(minted);
     const rateLimited = vi.fn(async () =>
       Response.json({ message: 'rate limited' }, { status: 429 }),
@@ -164,6 +177,7 @@ describe('World browser approval verification', () => {
 
     await expect(
       verifyWorldApprovalProof({
+        store,
         approvalSessionId: minted.approvalSessionId,
         fetcher: rateLimited,
         organizationId: 'test-org-44444444',
@@ -176,6 +190,7 @@ describe('World browser approval verification', () => {
     ) as unknown as typeof fetch;
     await expect(
       verifyWorldApprovalProof({
+        store,
         approvalSessionId: minted.approvalSessionId,
         fetcher: recovered,
         organizationId: 'test-org-44444444',

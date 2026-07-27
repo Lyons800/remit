@@ -96,7 +96,7 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const minted = mintApprovalRequest({
+    const minted = await mintApprovalRequest({
       actionDigest,
       agentAddress: person.agentAddress as `0x${string}`,
       humanId: backing.humanId,

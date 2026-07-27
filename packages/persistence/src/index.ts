@@ -13,3 +13,4 @@ export * from './postgres/migrations.js';
 export * from './postgres/postgres-outbox-repository.js';
 export * from './postgres/postgres-payment-repository.js';
 export * from './workspace-people-repository.js';
+export * from './world-approval-repository.js';

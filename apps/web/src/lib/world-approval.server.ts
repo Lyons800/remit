@@ -15,6 +15,15 @@ import {
   deriveActionHumanPrincipal,
   deriveAgentTenantPrincipal,
 } from '@remit/world-adapter/privacy';
+import {
+  postgresWorldApprovalStore,
+  type WorldApprovalSessionStore,
+} from './world-approval-store.server';
+import { db } from './workspace.server';
+
+function defaultStore(): WorldApprovalSessionStore {
+  return postgresWorldApprovalStore(db());
+}
 
 /**
  * Mint a World App approval request for one exact payment.
@@ -59,29 +68,6 @@ const APPROVAL_TTL_MS = 5 * 60_000;
 const WORLD_VERIFY_TIMEOUT_MS = 12_000;
 const MAXIMUM_PENDING_APPROVALS = 64;
 
-type ApprovalStatus =
-  | 'executed'
-  | 'failed'
-  | 'pending'
-  | 'verified'
-  | 'verifying';
-
-interface PendingWorldApproval {
-  readonly actionDigest: string;
-  readonly organizationId: string;
-  readonly request: WorldProofOfHumanRequest;
-  status: ApprovalStatus;
-}
-
-interface WorldApprovalStore {
-  readonly pending: Map<string, PendingWorldApproval>;
-  readonly usedActionHumans: Map<string, number>;
-}
-
-type WorldApprovalGlobal = typeof globalThis & {
-  __remitWorldApprovalStore?: WorldApprovalStore;
-};
-
 export type WorldApprovalVerificationResult =
   | Readonly<{
       ok: true;
@@ -100,27 +86,6 @@ export type WorldApprovalVerificationResult =
         | 'WORLD_REJECTED'
         | 'WORLD_UNAVAILABLE';
     }>;
-
-function approvalStore(): WorldApprovalStore {
-  const shared = globalThis as WorldApprovalGlobal;
-  shared.__remitWorldApprovalStore ??= {
-    pending: new Map(),
-    usedActionHumans: new Map(),
-  };
-  return shared.__remitWorldApprovalStore;
-}
-
-function purgeExpiredApprovals(now: number): void {
-  const store = approvalStore();
-  for (const [sessionId, approval] of store.pending) {
-    if (Date.parse(approval.request.binding.expiresAt) <= now) {
-      store.pending.delete(sessionId);
-    }
-  }
-  for (const [principal, expiresAt] of store.usedActionHumans) {
-    if (expiresAt <= now) store.usedActionHumans.delete(principal);
-  }
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -177,9 +142,10 @@ export function isWorldApprovalConfigured(): boolean {
     .every((value) => value !== undefined && value !== '');
 }
 
-export function mintApprovalRequest(
+export async function mintApprovalRequest(
   input: ApprovalRequestInput,
-): MintedApprovalRequest {
+  store: WorldApprovalSessionStore = defaultStore(),
+): Promise<MintedApprovalRequest> {
   const deployment = createTrustedWorldDeploymentContext({
     appId: need('WORLD_APP_ID'),
     environment: 'production',
@@ -235,13 +201,15 @@ export function mintApprovalRequest(
     },
   });
 
-  const store = approvalStore();
-  purgeExpiredApprovals(Date.now());
-  if (store.pending.size >= MAXIMUM_PENDING_APPROVALS) {
+  await store.purgeExpired(createdAt);
+  const open = await store.countOpen(binding.organizationId, createdAt);
+  if (open >= MAXIMUM_PENDING_APPROVALS) {
     throw new Error('Too many World approval sessions are already open.');
   }
-  store.pending.set(binding.approvalSessionId, {
+  await store.insert({
     actionDigest: binding.actionDigest,
+    approvalSessionId: binding.approvalSessionId,
+    expiresAt,
     organizationId: binding.organizationId,
     request,
     status: 'pending',
@@ -258,13 +226,12 @@ export function mintApprovalRequest(
 }
 
 /**
- * Verify one completed IDKit result with World and consume its local demo
- * session.
+ * Verify one completed IDKit result with World and mark its durable session.
  *
- * This proves the phone returned a valid proof for the exact World action and
- * signal. The in-memory store prevents replay inside one dev process, but it is
- * deliberately not presented as durable payment authority: production still
- * requires the serializable repository admission described in WORLD.md.
+ * The session is atomically claimed (pending → verifying) before any external
+ * call, so concurrent verifications of one session race for a single claim
+ * and the loser refuses. A World outage releases the claim (verifying →
+ * pending) so retrying is safe; every other outcome is terminal.
  */
 export async function verifyWorldApprovalProof(input: {
   readonly approvalSessionId: string;
@@ -272,6 +239,7 @@ export async function verifyWorldApprovalProof(input: {
   readonly proof: unknown;
   readonly fetcher?: typeof fetch;
   readonly now?: Date;
+  readonly store?: WorldApprovalSessionStore;
 }): Promise<WorldApprovalVerificationResult> {
   const now = input.now ?? new Date();
   const nowMilliseconds = now.getTime();
@@ -279,39 +247,43 @@ export async function verifyWorldApprovalProof(input: {
     return { ok: false, reason: 'PROOF_MISMATCH' };
   }
 
-  const store = approvalStore();
-  const pending = store.pending.get(input.approvalSessionId);
+  const store = input.store ?? defaultStore();
+  const session = await store.get(input.approvalSessionId);
   if (
-    pending === undefined ||
-    pending.organizationId !== input.organizationId
+    session === undefined ||
+    session.organizationId !== input.organizationId
   ) {
     return { ok: false, reason: 'SESSION_NOT_FOUND' };
   }
-  if (nowMilliseconds >= Date.parse(pending.request.binding.expiresAt)) {
-    store.pending.delete(input.approvalSessionId);
-    purgeExpiredApprovals(nowMilliseconds);
+  if (nowMilliseconds >= session.expiresAt.getTime()) {
     return { ok: false, reason: 'SESSION_EXPIRED' };
   }
-  if (pending.status !== 'pending') {
+  const request = session.request as WorldProofOfHumanRequest;
+
+  const claimed = await store.transition(
+    session.approvalSessionId,
+    ['pending'],
+    'verifying',
+  );
+  if (!claimed) {
     return { ok: false, reason: 'SESSION_REPLAYED' };
   }
+  const settle = async (to: 'failed' | 'pending' | 'verified') => {
+    await store.transition(session.approvalSessionId, ['verifying'], to);
+  };
 
-  const validated = validateWorldProofOfHumanResult(
-    input.proof,
-    pending.request,
-  );
+  const validated = validateWorldProofOfHumanResult(input.proof, request);
   if (!validated.ok) {
-    pending.status = 'failed';
+    await settle('failed');
     return { ok: false, reason: 'PROOF_MISMATCH' };
   }
 
-  pending.status = 'verifying';
   const fetcher = input.fetcher ?? fetch;
   let portalResponse: Response;
   try {
     portalResponse = await fetcher(
       `https://developer.world.org/api/v4/verify/${encodeURIComponent(
-        pending.request.config.rp_context.rp_id,
+        request.config.rp_context.rp_id,
       )}`,
       {
         body: JSON.stringify(validated.proof),
@@ -322,7 +294,7 @@ export async function verifyWorldApprovalProof(input: {
       },
     );
   } catch {
-    pending.status = 'pending';
+    await settle('pending');
     return { ok: false, reason: 'WORLD_UNAVAILABLE' };
   }
 
@@ -331,7 +303,7 @@ export async function verifyWorldApprovalProof(input: {
     portalResult = await portalResponse.json();
   } catch {
     const retryable = isRetryableWorldStatus(portalResponse.status);
-    pending.status = retryable ? 'pending' : 'failed';
+    await settle(retryable ? 'pending' : 'failed');
     return {
       ok: false,
       reason: retryable ? 'WORLD_UNAVAILABLE' : 'WORLD_REJECTED',
@@ -340,10 +312,10 @@ export async function verifyWorldApprovalProof(input: {
 
   if (
     !portalResponse.ok ||
-    !portalVerified(portalResult, pending.request, validated.response.nullifier)
+    !portalVerified(portalResult, request, validated.response.nullifier)
   ) {
     const retryable = isRetryableWorldStatus(portalResponse.status);
-    pending.status = retryable ? 'pending' : 'failed';
+    await settle(retryable ? 'pending' : 'failed');
     return {
       ok: false,
       reason: retryable ? 'WORLD_UNAVAILABLE' : 'WORLD_REJECTED',
@@ -352,25 +324,25 @@ export async function verifyWorldApprovalProof(input: {
 
   const principalKey = Buffer.from(need('WORLD_PRINCIPAL_HMAC_KEY'), 'hex');
   const actionHumanPrincipal = deriveActionHumanPrincipal({
-    actionDigest: pending.actionDigest,
+    actionDigest: session.actionDigest,
     key: principalKey,
     nullifier: validated.response.nullifier,
-    organizationId: pending.organizationId,
-    worldActionId: pending.request.binding.worldActionId,
+    organizationId: session.organizationId,
+    worldActionId: request.binding.worldActionId,
   });
-  if (store.usedActionHumans.has(actionHumanPrincipal)) {
-    pending.status = 'failed';
+  const claimedHuman = await store.claimActionHuman(
+    actionHumanPrincipal,
+    session.expiresAt,
+  );
+  if (!claimedHuman) {
+    await settle('failed');
     return { ok: false, reason: 'PROOF_REPLAYED' };
   }
 
-  pending.status = 'verified';
-  store.usedActionHumans.set(
-    actionHumanPrincipal,
-    Date.parse(pending.request.binding.expiresAt),
-  );
+  await settle('verified');
 
   return Object.freeze({
-    actionDigest: pending.actionDigest,
+    actionDigest: session.actionDigest,
     approvalSessionId: input.approvalSessionId,
     ok: true,
     verifiedAt: now.toISOString(),
@@ -387,27 +359,38 @@ export type ApprovalConsumptionResult =
 /**
  * Consume a verified approval so it can authorize exactly one execution.
  *
- * The status flips to 'executed' before any payment is submitted, so a
- * concurrent second call refuses rather than double-paying. Like the rest of
- * this store, consumption is in-memory demo state, not durable authority.
+ * The verified → executed transition is a single conditional UPDATE, so of any
+ * number of concurrent callers exactly one proceeds and the rest refuse. The
+ * flip happens before any payment is submitted; losing the race can never
+ * double-pay.
  */
-export function consumeVerifiedApproval(input: {
+export async function consumeVerifiedApproval(input: {
   readonly approvalSessionId: string;
   readonly actionDigest: string;
-}): ApprovalConsumptionResult {
-  const pending = approvalStore().pending.get(input.approvalSessionId);
-  if (pending === undefined || pending.status === 'failed') {
+  readonly store?: WorldApprovalSessionStore;
+}): Promise<ApprovalConsumptionResult> {
+  const store = input.store ?? defaultStore();
+  const session = await store.get(input.approvalSessionId);
+  if (session === undefined) {
     return { ok: false, reason: 'NOT_VERIFIED' };
   }
-  if (pending.status === 'executed') {
-    return { ok: false, reason: 'ALREADY_EXECUTED' };
-  }
-  if (pending.status !== 'verified') {
-    return { ok: false, reason: 'NOT_VERIFIED' };
-  }
-  if (pending.actionDigest !== input.actionDigest) {
+  if (session.actionDigest !== input.actionDigest) {
     return { ok: false, reason: 'DIGEST_MISMATCH' };
   }
-  pending.status = 'executed';
-  return { ok: true, actionDigest: pending.actionDigest };
+  if (session.status === 'executed') {
+    return { ok: false, reason: 'ALREADY_EXECUTED' };
+  }
+  const consumed = await store.transition(
+    session.approvalSessionId,
+    ['verified'],
+    'executed',
+  );
+  if (!consumed) {
+    // Either it was never verified, or a concurrent caller consumed it first.
+    return {
+      ok: false,
+      reason: session.status === 'verified' ? 'ALREADY_EXECUTED' : 'NOT_VERIFIED',
+    };
+  }
+  return { ok: true, actionDigest: session.actionDigest };
 }

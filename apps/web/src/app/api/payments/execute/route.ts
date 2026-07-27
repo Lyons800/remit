@@ -74,7 +74,10 @@ export async function POST(request: Request): Promise<Response> {
     });
   }
 
-  const consumed = consumeVerifiedApproval({ actionDigest, approvalSessionId });
+  const consumed = await consumeVerifiedApproval({
+    actionDigest,
+    approvalSessionId,
+  });
   if (!consumed.ok) {
     return Response.json(
       { error: messageFor[consumed.reason], reason: consumed.reason },
