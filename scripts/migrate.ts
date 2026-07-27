@@ -18,6 +18,7 @@ import {
   applyPaymentEffectContractsMigration,
   applyWorkspacePeopleMigration,
   applyWorldApprovalSessionsMigration,
+  applyInvoicesMigration,
 } from '@remit/persistence';
 import postgres from 'postgres';
 
@@ -51,6 +52,7 @@ const MIGRATIONS = [
     id: '0003_world_approval_sessions.sql',
     apply: applyWorldApprovalSessionsMigration,
   },
+  { id: '0004_invoices.sql', apply: applyInvoicesMigration },
 ] as const;
 
 async function main(): Promise<void> {

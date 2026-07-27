@@ -89,3 +89,10 @@ export async function applyWorldApprovalSessionsMigration(
     migrationSql,
   );
 }
+
+export async function applyInvoicesMigration(
+  sql: postgres.Sql,
+  migrationSql: string,
+): Promise<MigrationResult> {
+  return applyNamedMigration(sql, '0004_invoices.sql', migrationSql);
+}

@@ -1,4 +1,5 @@
 export * from './errors.js';
+export * from './invoice-repository.js';
 export * from './outbox-repository.js';
 export * from './payment-repository.js';
 export * from './payment-uniqueness-contract.js';
